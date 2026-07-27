@@ -63,6 +63,20 @@ target-version = "py311"
 select = ["E", "F", "W", "I"]
 
 
+[tool.semantic_release]
+version_toml = ["pyproject.toml:project.version"]
+branch = "main"
+commit_message = "build(release): {version}"
+# The package name is hardcoded on purpose. python-semantic-release sets no
+# $PACKAGE_NAME, so `uv lock --upgrade-package "$PACKAGE_NAME"` silently no-ops
+# and ships a stale lock file in the release commit.
+build_command = """
+    pip install uv
+    uv lock --upgrade-package refcheck
+    git add uv.lock
+"""
+
+
 # ---------- Build System ---------- #
 
 

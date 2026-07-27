@@ -141,6 +141,12 @@ class TestValidReferences:
         result = run_refcheck("valid/", cwd=test_fixtures)
         assert result.returncode == 0
 
+    def test_filename_list_is_not_a_script_invocation(self, test_fixtures):
+        """`for f in functions.sh aliases.sh` is a word list, not `sh aliases.sh`."""
+        result = run_refcheck("valid/filename-list.sh", cwd=test_fixtures)
+        assert result.returncode == 0
+        assert "aliases.sh" not in result.stdout
+
 
 class TestSelfReferences:
     """Test 9: Self-references in comments should be ignored."""

@@ -271,7 +271,10 @@ class ReferenceChecker:
 
     def check_script_references(self):
         """Check that bash script references point to existing files."""
-        script_pattern = re.compile(r'(?:bash|sh)\s+["\']?([^\s"\']+\.sh)["\']?')
+        # The lookbehind stops the trailing "sh" of a preceding filename from
+        # matching: in `for f in functions.sh aliases.sh`, "sh aliases.sh" would
+        # otherwise read as an invocation of a script that was never referenced.
+        script_pattern = re.compile(r'(?<![\w.-])(?:bash|sh)\s+["\']?([^\s"\']+\.sh)["\']?')
 
         for file_path in self.find_files("**/*.sh"):
             if self.skip_docs and file_path.suffix == ".md":

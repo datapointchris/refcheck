@@ -85,6 +85,10 @@ def test_fixtures(temp_dir):
         '#!/usr/bin/env bash\necho "No source or bash commands"\necho "Just plain shell script"\n'
     )
 
+    (valid / "filename-list.sh").write_text(
+        '#!/usr/bin/env bash\nfor f in functions.sh aliases.sh; do\n  echo "$f"\ndone\n'
+    )
+
     return temp_dir
 
 

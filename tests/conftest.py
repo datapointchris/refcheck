@@ -1,7 +1,6 @@
 """Shared fixtures for refcheck tests."""
 
 import json
-import os
 import subprocess
 import tempfile
 from pathlib import Path
@@ -52,46 +51,38 @@ def test_fixtures(temp_dir):
     docs.mkdir()
 
     (src / "good.sh").write_text(
-        '#!/usr/bin/env bash\n'
+        "#!/usr/bin/env bash\n"
         'source "$DOTFILES_DIR/platforms/common/.local/shell/logging.sh"\n'
         'bash "$DOTFILES_DIR/install.sh"\n'
         'echo "This file has valid references"\n'
     )
 
     (src / "broken-source.sh").write_text(
-        '#!/usr/bin/env bash\n'
-        'source "/nonexistent/file.sh"\n'
-        'echo "This has a broken source"\n'
+        '#!/usr/bin/env bash\nsource "/nonexistent/file.sh"\necho "This has a broken source"\n'
     )
 
     (src / "broken-script.sh").write_text(
-        '#!/usr/bin/env bash\n'
-        'bash /nonexistent/script.sh\n'
+        "#!/usr/bin/env bash\n"
+        "bash /nonexistent/script.sh\n"
         'echo "This has a broken script reference"\n'
     )
 
     (src / "old-pattern.sh").write_text(
-        '#!/usr/bin/env bash\n'
-        '# Reference to old path: management/tests/verify.sh\n'
+        "#!/usr/bin/env bash\n"
+        "# Reference to old path: management/tests/verify.sh\n"
         'echo "Has old pattern"\n'
     )
 
-    (docs / "readme.md").write_text(
-        "# Documentation\n" "Reference to management/tests/ in docs\n"
-    )
+    (docs / "readme.md").write_text("# Documentation\nReference to management/tests/ in docs\n")
 
     (src / "self-ref.sh").write_text(
-        '#!/usr/bin/env bash\n'
-        '# Usage: bash self-ref.sh\n'
-        'echo "Self-referencing file"\n'
+        '#!/usr/bin/env bash\n# Usage: bash self-ref.sh\necho "Self-referencing file"\n'
     )
 
     valid = temp_dir / "valid"
     valid.mkdir()
     (valid / "clean.sh").write_text(
-        '#!/usr/bin/env bash\n'
-        'echo "No source or bash commands"\n'
-        'echo "Just plain shell script"\n'
+        '#!/usr/bin/env bash\necho "No source or bash commands"\necho "Just plain shell script"\n'
     )
 
     return temp_dir
@@ -108,11 +99,11 @@ def suggestion_fixtures(temp_dir):
     (suggestions / "my-script.sh").touch()
 
     (suggestions / "broken-with-similar.sh").write_text(
-        '#!/usr/bin/env bash\nbash nonexistent/update.sh\n'
+        "#!/usr/bin/env bash\nbash nonexistent/update.sh\n"
     )
 
     (suggestions / "broken-variant.sh").write_text(
-        '#!/usr/bin/env bash\nbash nonexistent/my_script.sh\n'
+        "#!/usr/bin/env bash\nbash nonexistent/my_script.sh\n"
     )
 
     return temp_dir

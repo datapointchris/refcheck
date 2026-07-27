@@ -91,6 +91,18 @@ repos:
       - id: mypy
         args: [--install-types, --non-interactive]
 
+# > custom:after:python-lint - Test suite
+  - repo: local
+    hooks:
+      - id: pytest
+        name: pytest
+        entry: uv run pytest --tb=short
+        language: system
+        types: [python]
+        pass_filenames: false
+        always_run: false
+        stages: [pre-commit]
+
   # Strip AI branding from commits
   - repo: local
     hooks:

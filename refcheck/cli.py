@@ -4,10 +4,14 @@ import argparse
 import sys
 from pathlib import Path
 
+from pyselfupdate import notify
+
 from .checker import ReferenceChecker
 from .config import load_config
 from .output import print_results
 from .rules import learn_rules_from_git
+from .selfupdate import CONFIG as UPDATE_CONFIG
+from .selfupdate import print_version, run_update
 
 
 def main():
@@ -45,6 +49,10 @@ What it checks:
 
 Learn from git history:
   %(prog)s --learn-rules           # Generate rules from git renames
+
+Keep refcheck current:
+  %(prog)s --update                # Install the latest release
+  %(prog)s --update --check        # Report whether one is available
 
 Exit codes:
   0 - No errors (warnings OK unless --strict)
@@ -98,7 +106,29 @@ Exit codes:
         action="store_true",
         help="Generate rules.json from git rename history",
     )
+    parser.add_argument(
+        "--update",
+        action="store_true",
+        help="Update refcheck to the latest release",
+    )
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="With --update, report an available release without installing it",
+    )
+    parser.add_argument(
+        "--version",
+        action="store_true",
+        help="Show the installed version and exit",
+    )
     args = parser.parse_args()
+
+    if args.version:
+        print_version()
+        sys.exit(0)
+
+    if args.update:
+        sys.exit(run_update(check_only=args.check))
 
     config = load_config()
 
@@ -139,6 +169,8 @@ Exit codes:
         checker.search_path,
         checker.config,
     )
+
+    notify(UPDATE_CONFIG)
 
     if checker.issues:
         sys.exit(1)

@@ -2,7 +2,6 @@
 
 import re
 from pathlib import Path
-from typing import Dict, List, Optional, Set
 
 from .config import Config
 from .output import CheckType, Issue, Warning
@@ -47,14 +46,14 @@ class ReferenceChecker:
 
     def __init__(
         self,
-        root_dir: Path = None,
-        search_path: Path = None,
+        root_dir: Path | None = None,
+        search_path: Path | None = None,
         skip_docs: bool = False,
-        file_type: str = None,
+        file_type: str | None = None,
         warn_fragile: bool = True,
         strict: bool = False,
         test_mode: bool = False,
-        config: Config = None,
+        config: Config | None = None,
     ):
         self.root_dir = root_dir or Path.cwd()
         self.search_path = search_path or self.root_dir
@@ -64,19 +63,17 @@ class ReferenceChecker:
         self.strict = strict
         self.test_mode = test_mode
         self.config = config or Config()
-        self.issues: List[Issue] = []
-        self.warnings: List[Warning] = []
+        self.issues: list[Issue] = []
+        self.warnings: list[Warning] = []
         self.exclude_dirs = self.DEFAULT_EXCLUDES.copy()
         self.exclude_patterns = self.DEFAULT_EXCLUDE_PATTERNS.copy()
-        self._rules: Optional[Dict] = None
-        self._rules_path: Optional[Path] = None
+        self._rules: dict | None = None
+        self._rules_path: Path | None = None
 
         if not test_mode:
             self.exclude_patterns.extend(self.TEST_FIXTURE_PATTERNS)
 
-        self._suggestions = FileSuggestions(
-            self.root_dir, self.exclude_dirs, self.exclude_patterns
-        )
+        self._suggestions = FileSuggestions(self.root_dir, self.exclude_dirs, self.exclude_patterns)
 
     def should_skip_file(self, file_path: Path) -> bool:
         """Determine if file should be skipped."""
@@ -89,21 +86,21 @@ class ReferenceChecker:
                 return True
         return False
 
-    def load_rules(self) -> Dict:
+    def load_rules(self) -> dict:
         """Load rules from config directory."""
         if self._rules is not None:
             return self._rules
         self._rules, self._rules_path = load_rules(self.root_dir)
         return self._rules
 
-    def find_similar_files(self, missing_path: str) -> List[str]:
+    def find_similar_files(self, missing_path: str) -> list[str]:
         """Find files that might be renamed versions of missing_path."""
         rules = self.load_rules()
         return self._suggestions.find_similar_files(missing_path, rules)
 
-    def find_files(self, pattern: str = "**/*") -> List[Path]:
+    def find_files(self, pattern: str = "**/*") -> list[Path]:
         """Find all files matching pattern, respecting exclusions."""
-        files = []
+        files: list[Path] = []
         search_root = self.search_path
 
         # Handle single file argument
@@ -137,7 +134,7 @@ class ReferenceChecker:
 
         return files
 
-    def check_pattern(self, pattern: str, description: str = None):
+    def check_pattern(self, pattern: str, description: str | None = None):
         """Check for old path pattern references."""
         description = description or f"Old pattern: {pattern}"
 
@@ -150,7 +147,7 @@ class ReferenceChecker:
 
             try:
                 rel_path = file_path.relative_to(self.root_dir)
-                with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                with file_path.open(encoding="utf-8", errors="ignore") as f:
                     for line_num, line in enumerate(f, 1):
                         if pattern in line:
                             self.issues.append(
@@ -181,13 +178,12 @@ class ReferenceChecker:
             current = current.parent
         return self.root_dir
 
-    def parse_variable_assignments(self, file_path: Path) -> Dict[str, str]:
+    def parse_variable_assignments(self, file_path: Path) -> dict[str, str]:
         """Parse common shell variable assignment patterns."""
-        symbol_table = {}
+        symbol_table: dict[str, str] = {}
 
         try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                content = f.read()
+            content = file_path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             return symbol_table
 
@@ -205,7 +201,7 @@ class ReferenceChecker:
 
         return symbol_table
 
-    def resolve_path(self, path_str: str, symbol_table: Dict[str, str], file_path: Path) -> str:
+    def resolve_path(self, path_str: str, symbol_table: dict[str, str], file_path: Path) -> str:
         """Resolve a path containing shell variables."""
         resolved = path_str
 
@@ -227,7 +223,7 @@ class ReferenceChecker:
                 rel_path = file_path.relative_to(self.root_dir)
                 symbol_table = self.parse_variable_assignments(file_path)
 
-                with open(file_path, "r", encoding="utf-8") as f:
+                with file_path.open(encoding="utf-8") as f:
                     for line_num, line in enumerate(f, 1):
                         if "source" not in line:
                             continue
@@ -246,7 +242,9 @@ class ReferenceChecker:
                         original_path = source_path
                         if "$" in source_path:
                             try:
-                                source_path = self.resolve_path(source_path, symbol_table, file_path)
+                                source_path = self.resolve_path(
+                                    source_path, symbol_table, file_path
+                                )
                             except ValueError:
                                 continue
 
@@ -281,7 +279,7 @@ class ReferenceChecker:
 
             try:
                 rel_path = file_path.relative_to(self.root_dir)
-                with open(file_path, "r", encoding="utf-8") as f:
+                with file_path.open(encoding="utf-8") as f:
                     for line_num, line in enumerate(f, 1):
                         if "bash" not in line and "sh" not in line:
                             continue
@@ -323,7 +321,7 @@ class ReferenceChecker:
             try:
                 rel_path = file_path.relative_to(self.root_dir)
 
-                with open(file_path, "r", encoding="utf-8") as f:
+                with file_path.open(encoding="utf-8") as f:
                     for line_num, line in enumerate(f, 1):
                         if "source" not in line:
                             continue
@@ -358,7 +356,9 @@ class ReferenceChecker:
                         if 0 < len(valid_from) < len(test_dirs):
                             try:
                                 valid_desc = ", ".join(
-                                    str(d.relative_to(self.root_dir)) if d != self.root_dir else "repo root"
+                                    str(d.relative_to(self.root_dir))
+                                    if d != self.root_dir
+                                    else "repo root"
                                     for d in valid_from
                                 )
                             except ValueError:
@@ -378,13 +378,13 @@ class ReferenceChecker:
 
     def check_relative_traversal(self):
         """Detect relative directory traversal patterns fragile to file moves."""
-        traversal_pattern = re.compile(r'([A-Z_]+_DIR)=.*\$\(cd.*\.\./.*pwd\)')
+        traversal_pattern = re.compile(r"([A-Z_]+_DIR)=.*\$\(cd.*\.\./.*pwd\)")
 
         for file_path in self.find_files("**/*.sh"):
             try:
                 rel_path = file_path.relative_to(self.root_dir)
 
-                with open(file_path, "r", encoding="utf-8") as f:
+                with file_path.open(encoding="utf-8") as f:
                     for line_num, line in enumerate(f, 1):
                         match = traversal_pattern.search(line)
                         if not match:
@@ -397,8 +397,13 @@ class ReferenceChecker:
                                 file=rel_path,
                                 line_num=line_num,
                                 check_type=CheckType.FRAGILE_REFACTOR,
-                                message=f"{var_name} uses relative directory traversal (../) - fragile to file moves",
-                                suggestion="Consider dynamic root detection: git rev-parse --show-toplevel",
+                                message=(
+                                    f"{var_name} uses relative directory traversal "
+                                    "(../) - fragile to file moves"
+                                ),
+                                suggestion=(
+                                    "Consider dynamic root detection: git rev-parse --show-toplevel"
+                                ),
                             )
                         )
             except (OSError, UnicodeDecodeError):
@@ -414,10 +419,10 @@ class ReferenceChecker:
             self.check_relative_path_fragility()
             self.check_relative_traversal()
 
-    def get_rules(self) -> Dict:
+    def get_rules(self) -> dict:
         """Get loaded rules."""
         return self._rules or {}
 
-    def get_rules_path(self) -> Optional[Path]:
+    def get_rules_path(self) -> Path | None:
         """Get rules file path."""
         return self._rules_path

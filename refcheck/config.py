@@ -1,6 +1,7 @@
 """Configuration management for refcheck."""
 
 import re
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -52,15 +53,7 @@ def load_config() -> Config:
         return config
 
     try:
-        import tomllib
-    except ImportError:
-        try:
-            import tomli as tomllib
-        except ImportError:
-            return config
-
-    try:
-        with open(config_path, "rb") as f:
+        with config_path.open("rb") as f:
             data = tomllib.load(f)
 
         learn = data.get("learn", {})
@@ -73,7 +66,7 @@ def load_config() -> Config:
         if "show_no_rules_hint" in warnings:
             config.show_no_rules_hint = warnings["show_no_rules_hint"]
 
-    except Exception:
-        pass
+    except (OSError, tomllib.TOMLDecodeError, AttributeError, TypeError, ValueError):
+        return config
 
     return config

@@ -3,16 +3,14 @@
 import json
 import subprocess
 import sys
-from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Optional
 
 
-def get_repo_root(cwd: Path = None) -> Optional[Path]:
+def get_repo_root(cwd: Path | None = None) -> Path | None:
     """Get git repo root, or None if not in a repo."""
     try:
-        result = subprocess.run(
+        result = subprocess.run(  # nosec B603 B607
             ["git", "rev-parse", "--show-toplevel"],
             capture_output=True,
             text=True,
@@ -30,13 +28,13 @@ def get_rules_path(repo_root: Path) -> Path:
     return Path.home() / ".config" / "refcheck" / "repos" / safe_name / "rules.json"
 
 
-def load_rules(root_dir: Path) -> tuple[Dict, Optional[Path]]:
+def load_rules(root_dir: Path) -> tuple[dict, Path | None]:
     """
     Load rules from ~/.config/refcheck/repos/{safe-repo-path}/rules.json.
 
     Returns (rules_dict, rules_path) tuple.
     """
-    rules = {"directory_mappings": {}, "file_mappings": {}}
+    rules: dict = {"directory_mappings": {}, "file_mappings": {}}
     rules_path = None
 
     repo_root = get_repo_root(root_dir)
@@ -47,24 +45,23 @@ def load_rules(root_dir: Path) -> tuple[Dict, Optional[Path]]:
 
     if rules_path.exists():
         try:
-            with open(rules_path) as f:
+            with rules_path.open() as f:
                 loaded = json.load(f)
                 if loaded:
                     rules = loaded
-        except Exception:
-            pass
+        except (OSError, json.JSONDecodeError):
+            return rules, rules_path
 
     return rules, rules_path
 
 
-def get_rules_age_days(rules: Dict) -> Optional[int]:
+def get_rules_age_days(rules: dict) -> int | None:
     """
     Get the age of the rules in days from metadata.
 
     Returns None if rules have no timestamp.
     """
-    metadata = rules.get("_metadata", {})
-    generated = metadata.get("generated")
+    generated = rules.get("_metadata", {}).get("generated")
 
     if not generated:
         return None
@@ -96,7 +93,7 @@ def learn_rules_from_git(time_window: str = "6 months") -> None:
         sys.exit(128)
 
     try:
-        result = subprocess.run(
+        result = subprocess.run(  # nosec B603 B607
             [
                 "git",
                 "log",
@@ -115,9 +112,9 @@ def learn_rules_from_git(time_window: str = "6 months") -> None:
         print(f"Error running git: {e}", file=sys.stderr)
         sys.exit(1)
 
-    directory_mappings = defaultdict(int)
-    file_mappings = {}
-    commits_analyzed = set()
+    directory_mappings: dict[str, tuple[str, int]] = {}
+    file_mappings: dict[str, str] = {}
+    commits_analyzed: set[str] = set()
 
     for line in result.stdout.splitlines():
         line = line.strip()
@@ -159,21 +156,22 @@ def learn_rules_from_git(time_window: str = "6 months") -> None:
     rules_path.parent.mkdir(parents=True, exist_ok=True)
 
     sorted_dirs = sorted(directory_mappings.items(), key=lambda x: -x[1][1])
+    top_directory_mappings = {k: v[0] for k, v in sorted_dirs[:20]}
     rules = {
         "_metadata": {
             "generated": datetime.now().isoformat()[:19],
             "time_window": time_window,
             "commits_analyzed": len(commits_analyzed),
         },
-        "directory_mappings": {k: v[0] for k, v in sorted_dirs[:20]},
+        "directory_mappings": top_directory_mappings,
         "file_mappings": file_mappings,
     }
 
-    with open(rules_path, "w") as f:
+    with rules_path.open("w") as f:
         json.dump(rules, f, indent=2)
 
     print(f"✅ Generated {rules_path}")
     print(f"   Time window: {time_window}")
     print(f"   Commits analyzed: {len(commits_analyzed)}")
-    print(f"   Directory mappings: {len(rules['directory_mappings'])}")
+    print(f"   Directory mappings: {len(top_directory_mappings)}")
     print(f"   File mappings: {len(file_mappings)}")

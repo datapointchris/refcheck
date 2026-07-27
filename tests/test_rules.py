@@ -4,8 +4,6 @@ import json
 from datetime import datetime, timedelta
 from pathlib import Path
 
-import pytest
-
 from refcheck.rules import get_repo_root, get_rules_age_days, get_rules_path, load_rules
 
 
@@ -32,7 +30,9 @@ class TestGetRulesPath:
         repo_root = Path("/Users/chris/dotfiles")
         rules_path = get_rules_path(repo_root)
 
-        assert rules_path == Path.home() / ".config/refcheck/repos/Users--chris--dotfiles/rules.json"
+        assert (
+            rules_path == Path.home() / ".config/refcheck/repos/Users--chris--dotfiles/rules.json"
+        )
 
     def test_handles_nested_paths(self):
         repo_root = Path("/home/user/projects/my-project")

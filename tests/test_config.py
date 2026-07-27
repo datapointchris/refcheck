@@ -1,9 +1,5 @@
 """Tests for config module."""
 
-from pathlib import Path
-
-import pytest
-
 from refcheck.config import Config, load_config, parse_duration_to_days
 
 
@@ -93,7 +89,7 @@ class TestLoadConfig:
     def test_loads_full_config(self, config_dir):
         config_file = config_dir / "config.toml"
         config_file.write_text(
-            '[learn]\n'
+            "[learn]\n"
             'time_window = "1 year"\n'
             "\n"
             "[warnings]\n"

@@ -2,17 +2,16 @@
 
 from difflib import get_close_matches
 from pathlib import Path
-from typing import Dict, List, Optional, Set
 
 
 class FileSuggestions:
     """Find similar files for missing references."""
 
-    def __init__(self, root_dir: Path, exclude_dirs: Set[str], exclude_patterns: List[str]):
+    def __init__(self, root_dir: Path, exclude_dirs: set[str], exclude_patterns: list[str]):
         self.root_dir = root_dir
         self.exclude_dirs = exclude_dirs
         self.exclude_patterns = exclude_patterns
-        self._file_index: Optional[List[Path]] = None
+        self._file_index: list[Path] | None = None
 
     def should_skip_file(self, file_path: Path) -> bool:
         """Determine if file should be skipped."""
@@ -29,7 +28,7 @@ class FileSuggestions:
 
         return False
 
-    def build_file_index(self) -> List[Path]:
+    def build_file_index(self) -> list[Path]:
         """Build index of all files in repo for suggestion matching."""
         if self._file_index is not None:
             return self._file_index
@@ -47,7 +46,7 @@ class FileSuggestions:
             self._file_index.append(rel_path)
         return self._file_index
 
-    def find_similar_files(self, missing_path: str, rules: Dict) -> List[str]:
+    def find_similar_files(self, missing_path: str, rules: dict) -> list[str]:
         """
         Find files that might be renamed versions of missing_path.
 
@@ -60,7 +59,7 @@ class FileSuggestions:
         file_index = self.build_file_index()
         basename = Path(missing_path).name
         suggestions = []
-        seen_paths: Set[str] = set()
+        seen_paths: set[str] = set()
 
         def add_suggestion(path: str, reason: str):
             if path not in seen_paths:
@@ -103,7 +102,7 @@ class FileSuggestions:
         # 3. Fuzzy match using difflib (only if few suggestions so far)
         if len(suggestions) < 3:
             all_names = [f.name for f in file_index]
-            matches = get_close_matches(basename, all_names, n=3, cutoff=0.8)
+            matches = get_close_matches(basename, all_names, cutoff=0.8)
             for m in matches:
                 if m != basename and m not in variants:
                     for f in file_index:

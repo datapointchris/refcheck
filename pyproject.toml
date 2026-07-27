@@ -2,25 +2,58 @@
 name = "refcheck"
 version = "1.0.0"
 description = "Find broken file references and fragile path patterns in codebases"
+authors = [{ name = "Chris Birch", email = "datapointchris@gmail.com" }]
+license = { text = "MIT" }
+readme = "README.md"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "pyselfupdate>=0.2.0",
+]
 
-[project.optional-dependencies]
-dev = ["pytest>=8.0"]
+[project.urls]
+Repository = "https://github.com/datapointchris/refcheck"
 
 [project.scripts]
 refcheck = "refcheck.cli:main"
 
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+[dependency-groups]
+dev = [
+    "bandit>=1.7.8",
+    "mypy>=1.10.0",
+    "pre-commit>=4.3.0",
+    "pytest>=8.0.0",
+    "ruff>=0.7.0",
+]
 
-[tool.hatch.build.targets.wheel]
-packages = ["refcheck"]
+
+# ---------- Tool Configurations ---------- #
+
+
+[tool.bandit]
+exclude_dirs = [".git", ".mypy_cache", ".pytest_cache", ".ruff_cache", ".venv", "tests"]
+skips = ["B404", "B603"]
+
+
+[tool.codespell]
+skip = "*.lock"
+check-filenames = true
+
+
+[tool.mypy]
+pretty = true
+ignore_missing_imports = true
+check_untyped_defs = false
+warn_return_any = false
+
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+
+
+[tool.refurb]
+enable_all = true
+
 
 [tool.ruff]
 line-length = 100
@@ -28,3 +61,14 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]
+
+
+# ---------- Build System ---------- #
+
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["refcheck"]

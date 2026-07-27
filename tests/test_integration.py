@@ -90,9 +90,7 @@ class TestTypeFiltering:
         assert result.returncode == 1
 
     def test_filters_by_python_files(self, test_fixtures):
-        (test_fixtures / "src" / "test.py").write_text(
-            "# Python file\nimport nonexistent_module\n"
-        )
+        (test_fixtures / "src" / "test.py").write_text("# Python file\nimport nonexistent_module\n")
         result = run_refcheck("--type", "py", "src/", cwd=test_fixtures)
         assert result.returncode == 0
 
@@ -280,9 +278,7 @@ class TestConfigToml:
         config_dir.mkdir(parents=True)
         monkeypatch.setenv("HOME", str(tmp_path))
 
-        (config_dir / "config.toml").write_text(
-            '[warnings]\nstale_threshold = "30 days"\n'
-        )
+        (config_dir / "config.toml").write_text('[warnings]\nstale_threshold = "30 days"\n')
 
         safe_name = str(dotfiles_dir).lstrip("/").replace("/", "--")
         repos_dir = config_dir / "repos" / safe_name

@@ -1,6 +1,18 @@
 # CHANGELOG
 
 
+## v0.1.1 (2026-07-27)
+
+### Bug Fixes
+
+- Stop a filename list reading as a script invocation
+  ([`a97ef0c`](https://github.com/datapointchris/refcheck/commit/a97ef0cd1eff9bf473bdbc3f3dd15e0cf3cff006))
+
+The bash/sh pattern had no left boundary, so in `for f in functions.sh aliases.sh` the trailing "sh"
+  of the first filename plus the second matched as `sh aliases.sh`, reporting a broken reference to
+  a script that was never invoked. This was both of dotfiles' reported errors.
+
+
 ## v0.1.0 (2026-07-27)
 
 ### Chores

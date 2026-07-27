@@ -1,0 +1,11 @@
+- id: refcheck
+  name: refcheck
+  description: Validate file references and flag fragile path patterns
+  entry: refcheck
+  language: python
+  # A reference breaks in the file that was NOT edited: delete or move B, and
+  # the stale `source B` sits in A, which is not in the changeset. Filtering to
+  # staged files would miss the entire class of bug this hook exists to catch,
+  # so it always scans the whole repo.
+  pass_filenames: false
+  always_run: true

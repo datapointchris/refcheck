@@ -1,6 +1,21 @@
 # CHANGELOG
 
 
+## v0.2.1 (2026-07-27)
+
+### Bug Fixes
+
+- Don't resolve paths handed to a remote or container executor
+  ([`a440a55`](https://github.com/datapointchris/refcheck/commit/a440a55ab1b4d414a3cd10d3382d094e4a99024e))
+
+A command passed to pct exec, lxc/docker/kubectl exec, ssh or su -c runs on a filesystem this
+  process cannot see, so its paths were never ours to resolve. homelab's only reported error was
+  `bash install.sh` inside a `pct exec ... su - chris -c` string, pointing at a script in a
+  container.
+
+Same reasoning as DYNAMIC_PATH_PATTERNS: not a broken reference, just not local.
+
+
 ## v0.2.0 (2026-07-27)
 
 ### Features

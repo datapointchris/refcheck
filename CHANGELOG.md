@@ -1,6 +1,21 @@
 # CHANGELOG
 
 
+## v0.2.0 (2026-07-27)
+
+### Features
+
+- Ship a .pre-commit-hooks.yaml so repos can consume refcheck
+  ([`b446831`](https://github.com/datapointchris/refcheck/commit/b4468315cbdd89954dba34a15886a3c4b4ec5130))
+
+Makes refcheck a pre-commit hook repository, so a consuming repo pins `repo:
+  https://github.com/datapointchris/refcheck` at a rev instead of declaring a local hook against
+  whatever version happens to be installed on that machine.
+
+The hook always scans the whole repo rather than the staged files: a reference breaks in the file
+  that was not edited, so filtering to the changeset would miss the class of bug it exists to catch.
+
+
 ## v0.1.2 (2026-07-27)
 
 ### Bug Fixes

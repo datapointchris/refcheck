@@ -89,6 +89,16 @@ def test_fixtures(temp_dir):
         '#!/usr/bin/env bash\nfor f in functions.sh aliases.sh; do\n  echo "$f"\ndone\n'
     )
 
+    lib = valid / "lib"
+    lib.mkdir()
+    (lib / "helpers.sh").write_text('#!/usr/bin/env bash\necho "helpers"\n')
+    (valid / "documented-usage.sh").write_text(
+        "#!/usr/bin/env bash\n"
+        "# Usage:\n"
+        "#   source valid/lib/helpers.sh\n"
+        'echo "the source above is documentation"\n'
+    )
+
     return temp_dir
 
 

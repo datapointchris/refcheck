@@ -337,6 +337,13 @@ class ReferenceChecker:
                         if not source_path:
                             continue
 
+                        # A commented `source` has no working directory to be
+                        # fragile about. Broken-reference errors still scan
+                        # comments, because a stale path in a usage example is
+                        # exactly the drift this tool exists to catch.
+                        if line.strip().startswith("#"):
+                            continue
+
                         if (
                             "$" in source_path
                             or source_path.startswith("/")

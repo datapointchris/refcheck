@@ -147,6 +147,12 @@ class TestValidReferences:
         assert result.returncode == 0
         assert "aliases.sh" not in result.stdout
 
+    def test_commented_source_is_not_flagged_as_fragile(self, test_fixtures):
+        """A source in a usage comment has no working directory to be fragile about."""
+        result = run_refcheck("valid/documented-usage.sh", cwd=test_fixtures)
+        assert result.returncode == 0
+        assert "Fragile" not in result.stdout
+
 
 class TestSelfReferences:
     """Test 9: Self-references in comments should be ignored."""

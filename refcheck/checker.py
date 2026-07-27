@@ -34,6 +34,19 @@ class ReferenceChecker:
         "docs/archive/**",
     ]
 
+    # A command handed to one of these runs on another host or inside a
+    # container, so its paths describe a filesystem this process cannot see.
+    # Same reasoning as DYNAMIC_PATH_PATTERNS: not a broken reference, just not
+    # ours to resolve.
+    REMOTE_EXECUTION_PATTERNS = [
+        r"\bpct\s+exec\b",
+        r"\blxc\s+exec\b",
+        r"\bdocker\s+exec\b",
+        r"\bkubectl\s+exec\b",
+        r"\bssh\s+\S+",
+        r"\bsu\s+-\s*\S*\s+-c\b",
+    ]
+
     DYNAMIC_PATH_PATTERNS = [
         r"^\$",
         r"^/tmp/",
@@ -83,6 +96,13 @@ class ReferenceChecker:
         """Check if path is dynamic/runtime-generated."""
         for pattern in self.DYNAMIC_PATH_PATTERNS:
             if re.search(pattern, path):
+                return True
+        return False
+
+    def runs_on_another_host(self, line: str) -> bool:
+        """Check if the line hands its command to a remote or container executor."""
+        for pattern in self.REMOTE_EXECUTION_PATTERNS:
+            if re.search(pattern, line):
                 return True
         return False
 
@@ -228,6 +248,9 @@ class ReferenceChecker:
                         if "source" not in line:
                             continue
 
+                        if self.runs_on_another_host(line):
+                            continue
+
                         match = source_pattern.search(line)
                         if not match:
                             continue
@@ -285,6 +308,9 @@ class ReferenceChecker:
                 with file_path.open(encoding="utf-8") as f:
                     for line_num, line in enumerate(f, 1):
                         if "bash" not in line and "sh" not in line:
+                            continue
+
+                        if self.runs_on_another_host(line):
                             continue
 
                         for match in script_pattern.finditer(line):

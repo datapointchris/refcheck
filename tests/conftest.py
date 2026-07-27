@@ -89,6 +89,12 @@ def test_fixtures(temp_dir):
         '#!/usr/bin/env bash\nfor f in functions.sh aliases.sh; do\n  echo "$f"\ndone\n'
     )
 
+    (valid / "remote-exec.sh").write_text(
+        "#!/usr/bin/env bash\n"
+        'pct exec 100 -- su - chris -c "cd ~/dotfiles && bash install.sh"\n'
+        "ssh chris@10.0.0.1 bash /opt/remote-only.sh\n"
+    )
+
     lib = valid / "lib"
     lib.mkdir()
     (lib / "helpers.sh").write_text('#!/usr/bin/env bash\necho "helpers"\n')

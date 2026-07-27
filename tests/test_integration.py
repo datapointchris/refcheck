@@ -147,6 +147,13 @@ class TestValidReferences:
         assert result.returncode == 0
         assert "aliases.sh" not in result.stdout
 
+    def test_remote_execution_paths_are_not_local_references(self, test_fixtures):
+        """A script run through pct exec or ssh lives on a filesystem we cannot see."""
+        result = run_refcheck("valid/remote-exec.sh", cwd=test_fixtures)
+        assert result.returncode == 0
+        assert "install.sh" not in result.stdout
+        assert "remote-only.sh" not in result.stdout
+
     def test_commented_source_is_not_flagged_as_fragile(self, test_fixtures):
         """A source in a usage comment has no working directory to be fragile about."""
         result = run_refcheck("valid/documented-usage.sh", cwd=test_fixtures)

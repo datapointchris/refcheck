@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.1.2 (2026-07-27)
+
+### Bug Fixes
+
+- Don't warn about fragile paths inside comments
+  ([`068c7b9`](https://github.com/datapointchris/refcheck/commit/068c7b950447bbf6a5411e8fbc2c441895be00ae))
+
+A `source` in a usage comment has no working directory to be fragile about, so the cwd-fragility
+  warning had nothing to say about it. Both of homelab's fragile-path warnings were usage
+  docstrings. Broken-reference errors still scan comments, because a stale path in a usage example
+  is exactly the drift this tool exists to catch.
+
+
 ## v0.1.1 (2026-07-27)
 
 ### Bug Fixes

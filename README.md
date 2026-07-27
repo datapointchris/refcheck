@@ -67,6 +67,24 @@ Update in place with `refcheck --update`, which installs the latest GitHub
 release. Once a day, a run that is behind the latest release prints a one-line
 notice to stderr; set `NO_AUTO_UPDATE` to silence it.
 
+## As a pre-commit hook
+
+```yaml
+repos:
+  - repo: https://github.com/datapointchris/refcheck
+    rev: v0.2.1
+    hooks:
+      - id: refcheck
+```
+
+Add `args: [--strict]` to fail on warnings as well as errors.
+
+The hook scans the whole repository rather than the staged files, and this is
+deliberate: a reference breaks in the file that was *not* edited. Delete or move
+`b.sh` and the stale `source b.sh` sits in `a.sh`, which is nowhere in the
+changeset. Filtering to staged files would miss the entire class of bug the hook
+exists to catch.
+
 ## Usage
 
 ```bash

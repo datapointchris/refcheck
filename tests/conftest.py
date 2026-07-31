@@ -142,12 +142,22 @@ def rules_file(config_dir):
 
 @pytest.fixture
 def dotfiles_dir():
-    """Get the dotfiles directory for real-world tests."""
+    """The dotfiles repo, or None where it is not checked out.
+
+    The existence check has to come first: subprocess raises rather than
+    returning non-zero when `cwd` does not exist, so without it the None branch
+    below is unreachable and every real-world test errors instead of skipping
+    on a machine without ~/dotfiles — which is every CI runner.
+    """
+    repo = Path.home() / 'dotfiles'
+    if not repo.is_dir():
+        return None
+
     result = subprocess.run(
         ['git', 'rev-parse', '--show-toplevel'],
         capture_output=True,
         text=True,
-        cwd=Path.home() / 'dotfiles',
+        cwd=repo,
     )
     if result.returncode == 0:
         return Path(result.stdout.strip())

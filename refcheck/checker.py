@@ -4,7 +4,9 @@ import re
 from pathlib import Path
 
 from .config import Config
-from .output import CheckType, Issue, Warning
+from .output import CheckType
+from .output import Issue
+from .output import Warning
 from .rules import load_rules
 from .suggestions import FileSuggestions
 
@@ -13,25 +15,25 @@ class ReferenceChecker:
     """Validates file references across a codebase."""
 
     DEFAULT_EXCLUDES = {
-        ".git",
-        "node_modules",
-        ".venv",
-        "site",
-        "__pycache__",
-        ".cache",
+        '.git',
+        'node_modules',
+        '.venv',
+        'site',
+        '__pycache__',
+        '.cache',
     }
 
     DEFAULT_EXCLUDE_PATTERNS = [
-        "*.pyc",
-        ".claude/metrics/**",
-        ".planning/**",
-        "site/**",
+        '*.pyc',
+        '.claude/metrics/**',
+        '.planning/**',
+        'site/**',
     ]
 
     TEST_FIXTURE_PATTERNS = [
-        "tests/apps/test-refcheck.sh",
-        "tests/apps/fixtures/refcheck-*/**",
-        "docs/archive/**",
+        'tests/apps/test-refcheck.sh',
+        'tests/apps/fixtures/refcheck-*/**',
+        'docs/archive/**',
     ]
 
     # A command handed to one of these runs on another host or inside a
@@ -39,22 +41,22 @@ class ReferenceChecker:
     # Same reasoning as DYNAMIC_PATH_PATTERNS: not a broken reference, just not
     # ours to resolve.
     REMOTE_EXECUTION_PATTERNS = [
-        r"\bpct\s+exec\b",
-        r"\blxc\s+exec\b",
-        r"\bdocker\s+exec\b",
-        r"\bkubectl\s+exec\b",
-        r"\bssh\s+\S+",
-        r"\bsu\s+-\s*\S*\s+-c\b",
+        r'\bpct\s+exec\b',
+        r'\blxc\s+exec\b',
+        r'\bdocker\s+exec\b',
+        r'\bkubectl\s+exec\b',
+        r'\bssh\s+\S+',
+        r'\bsu\s+-\s*\S*\s+-c\b',
     ]
 
     DYNAMIC_PATH_PATTERNS = [
-        r"^\$",
-        r"^/tmp/",
-        r"^/root/",
-        r"^/home/",
-        r"^/Users/",
-        r"/nvm\.sh$",
-        r"^/lib/lib\.sh",
+        r'^\$',
+        r'^/tmp/',
+        r'^/root/',
+        r'^/home/',
+        r'^/Users/',
+        r'/nvm\.sh$',
+        r'^/lib/lib\.sh',
     ]
 
     def __init__(
@@ -94,17 +96,11 @@ class ReferenceChecker:
 
     def is_dynamic_path(self, path: str) -> bool:
         """Check if path is dynamic/runtime-generated."""
-        for pattern in self.DYNAMIC_PATH_PATTERNS:
-            if re.search(pattern, path):
-                return True
-        return False
+        return any(re.search(pattern, path) for pattern in self.DYNAMIC_PATH_PATTERNS)
 
     def runs_on_another_host(self, line: str) -> bool:
         """Check if the line hands its command to a remote or container executor."""
-        for pattern in self.REMOTE_EXECUTION_PATTERNS:
-            if re.search(pattern, line):
-                return True
-        return False
+        return any(re.search(pattern, line) for pattern in self.REMOTE_EXECUTION_PATTERNS)
 
     def load_rules(self) -> dict:
         """Load rules from config directory."""
@@ -118,14 +114,14 @@ class ReferenceChecker:
         rules = self.load_rules()
         return self._suggestions.find_similar_files(missing_path, rules)
 
-    def find_files(self, pattern: str = "**/*") -> list[Path]:
+    def find_files(self, pattern: str = '**/*') -> list[Path]:
         """Find all files matching pattern, respecting exclusions."""
         files: list[Path] = []
         search_root = self.search_path
 
         # Handle single file argument
         if search_root.is_file():
-            if self.file_type and search_root.suffix != f".{self.file_type}":
+            if self.file_type and search_root.suffix != f'.{self.file_type}':
                 return files
             try:
                 rel_path = search_root.relative_to(self.root_dir)
@@ -147,7 +143,7 @@ class ReferenceChecker:
             if self.should_skip_file(rel_path):
                 continue
 
-            if self.file_type and file_path.suffix != f".{self.file_type}":
+            if self.file_type and file_path.suffix != f'.{self.file_type}':
                 continue
 
             files.append(file_path)
@@ -156,18 +152,18 @@ class ReferenceChecker:
 
     def check_pattern(self, pattern: str, description: str | None = None):
         """Check for old path pattern references."""
-        description = description or f"Old pattern: {pattern}"
+        description = description or f'Old pattern: {pattern}'
 
         for file_path in self.find_files():
-            if self.skip_docs and file_path.suffix == ".md":
+            if self.skip_docs and file_path.suffix == '.md':
                 continue
 
-            if file_path.name in ("refcheck", "verify-references.py", "verify-file-references.sh"):
+            if file_path.name in ('refcheck', 'verify-references.py', 'verify-file-references.sh'):
                 continue
 
             try:
                 rel_path = file_path.relative_to(self.root_dir)
-                with file_path.open(encoding="utf-8", errors="ignore") as f:
+                with file_path.open(encoding='utf-8', errors='ignore') as f:
                     for line_num, line in enumerate(f, 1):
                         if pattern in line:
                             self.issues.append(
@@ -175,7 +171,7 @@ class ReferenceChecker:
                                     file=rel_path,
                                     line_num=line_num,
                                     check_type=CheckType.PATTERN,
-                                    message=f"Found: {pattern}",
+                                    message=f'Found: {pattern}',
                                     suggestion=description,
                                 )
                             )
@@ -193,7 +189,7 @@ class ReferenceChecker:
         """Find git repo root from file path."""
         current = file_path.parent
         while current != current.parent:
-            if (current / ".git").exists():
+            if (current / '.git').exists():
                 return current
             current = current.parent
         return self.root_dir
@@ -203,21 +199,21 @@ class ReferenceChecker:
         symbol_table: dict[str, str] = {}
 
         try:
-            content = file_path.read_text(encoding="utf-8")
+            content = file_path.read_text(encoding='utf-8')
         except (OSError, UnicodeDecodeError):
             return symbol_table
 
         if re.search(r'SCRIPT_DIR="\$\(cd.*BASH_SOURCE', content):
-            symbol_table["SCRIPT_DIR"] = str(file_path.parent)
+            symbol_table['SCRIPT_DIR'] = str(file_path.parent)
 
         match = re.search(r'DOTFILES_DIR="\$\(cd "\$SCRIPT_DIR/((?:\.\./?)+)" && pwd\)"', content)
         if match:
             relative_path = match.group(1)
-            levels_up = relative_path.count("..")
-            symbol_table["DOTFILES_DIR"] = str(self.go_up_n_levels(file_path, levels_up + 1))
+            levels_up = relative_path.count('..')
+            symbol_table['DOTFILES_DIR'] = str(self.go_up_n_levels(file_path, levels_up + 1))
 
         if re.search(r'DOTFILES_DIR="\$\{DOTFILES_DIR:-\$HOME/dotfiles\}"', content):
-            symbol_table["DOTFILES_DIR"] = str(self.find_repo_root(file_path))
+            symbol_table['DOTFILES_DIR'] = str(self.find_repo_root(file_path))
 
         return symbol_table
 
@@ -226,11 +222,11 @@ class ReferenceChecker:
         resolved = path_str
 
         for var_name, var_value in symbol_table.items():
-            resolved = resolved.replace(f"${var_name}", var_value)
-            resolved = resolved.replace(f"${{{var_name}}}", var_value)
+            resolved = resolved.replace(f'${var_name}', var_value)
+            resolved = resolved.replace(f'${{{var_name}}}', var_value)
 
-        if "$" in resolved:
-            raise ValueError(f"Cannot resolve variables in: {path_str}")
+        if '$' in resolved:
+            raise ValueError(f'Cannot resolve variables in: {path_str}')
 
         return resolved
 
@@ -238,14 +234,14 @@ class ReferenceChecker:
         """Check that source statements point to existing files."""
         source_pattern = re.compile(r'source\s+["\']([^"\']+)["\']|source\s+\$[^/]*(/[^\s]+)')
 
-        for file_path in self.find_files("**/*.sh"):
+        for file_path in self.find_files('**/*.sh'):
             try:
                 rel_path = file_path.relative_to(self.root_dir)
                 symbol_table = self.parse_variable_assignments(file_path)
 
-                with file_path.open(encoding="utf-8") as f:
+                with file_path.open(encoding='utf-8') as f:
                     for line_num, line in enumerate(f, 1):
-                        if "source" not in line:
+                        if 'source' not in line:
                             continue
 
                         if self.runs_on_another_host(line):
@@ -259,19 +255,17 @@ class ReferenceChecker:
                         if not source_path:
                             continue
 
-                        if "$" not in source_path and self.is_dynamic_path(source_path):
+                        if '$' not in source_path and self.is_dynamic_path(source_path):
                             continue
 
                         original_path = source_path
-                        if "$" in source_path:
+                        if '$' in source_path:
                             try:
-                                source_path = self.resolve_path(
-                                    source_path, symbol_table, file_path
-                                )
+                                source_path = self.resolve_path(source_path, symbol_table, file_path)
                             except ValueError:
                                 continue
 
-                        if source_path.startswith("/"):
+                        if source_path.startswith('/'):
                             resolved = Path(source_path)
                         else:
                             resolved = self.root_dir / source_path
@@ -283,9 +277,8 @@ class ReferenceChecker:
                                     file=rel_path,
                                     line_num=line_num,
                                     check_type=CheckType.SOURCE,
-                                    message=f"Missing: {original_path}"
-                                    + (f" → {source_path}" if original_path != source_path else ""),
-                                    suggestion="Verify path exists or update reference",
+                                    message=f'Missing: {original_path}' + (f' → {source_path}' if original_path != source_path else ''),
+                                    suggestion='Verify path exists or update reference',
                                     similar_files=similar,
                                 )
                             )
@@ -299,30 +292,30 @@ class ReferenceChecker:
         # otherwise read as an invocation of a script that was never referenced.
         script_pattern = re.compile(r'(?<![\w.-])(?:bash|sh)\s+["\']?([^\s"\']+\.sh)["\']?')
 
-        for file_path in self.find_files("**/*.sh"):
-            if self.skip_docs and file_path.suffix == ".md":
+        for file_path in self.find_files('**/*.sh'):
+            if self.skip_docs and file_path.suffix == '.md':
                 continue
 
             try:
                 rel_path = file_path.relative_to(self.root_dir)
-                with file_path.open(encoding="utf-8") as f:
+                with file_path.open(encoding='utf-8') as f:
                     for line_num, line in enumerate(f, 1):
-                        if "bash" not in line and "sh" not in line:
+                        if 'bash' not in line and 'sh' not in line:
                             continue
 
                         if self.runs_on_another_host(line):
                             continue
 
                         for match in script_pattern.finditer(line):
-                            script_path = match.group(1).rstrip("\"'")
+                            script_path = match.group(1).rstrip('"\'')
 
                             if not script_path or self.is_dynamic_path(script_path):
                                 continue
 
-                            if line.strip().startswith("#") and script_path == file_path.name:
+                            if line.strip().startswith('#') and script_path == file_path.name:
                                 continue
 
-                            if script_path.startswith("/"):
+                            if script_path.startswith('/'):
                                 resolved = Path(script_path)
                             else:
                                 resolved = self.root_dir / script_path
@@ -334,8 +327,8 @@ class ReferenceChecker:
                                         file=rel_path,
                                         line_num=line_num,
                                         check_type=CheckType.SCRIPT,
-                                        message=f"Missing: {script_path}",
-                                        suggestion="Verify script exists or update reference",
+                                        message=f'Missing: {script_path}',
+                                        suggestion='Verify script exists or update reference',
                                         similar_files=similar,
                                     )
                                 )
@@ -346,13 +339,13 @@ class ReferenceChecker:
         """Check if relative paths are fragile to working directory changes."""
         source_pattern = re.compile(r'source\s+(?:["\']([^"\']+)["\']|([^\s]+))')
 
-        for file_path in self.find_files("**/*.sh"):
+        for file_path in self.find_files('**/*.sh'):
             try:
                 rel_path = file_path.relative_to(self.root_dir)
 
-                with file_path.open(encoding="utf-8") as f:
+                with file_path.open(encoding='utf-8') as f:
                     for line_num, line in enumerate(f, 1):
-                        if "source" not in line:
+                        if 'source' not in line:
                             continue
 
                         match = source_pattern.search(line)
@@ -367,14 +360,10 @@ class ReferenceChecker:
                         # fragile about. Broken-reference errors still scan
                         # comments, because a stale path in a usage example is
                         # exactly the drift this tool exists to catch.
-                        if line.strip().startswith("#"):
+                        if line.strip().startswith('#'):
                             continue
 
-                        if (
-                            "$" in source_path
-                            or source_path.startswith("/")
-                            or self.is_dynamic_path(source_path)
-                        ):
+                        if '$' in source_path or source_path.startswith('/') or self.is_dynamic_path(source_path):
                             continue
 
                         test_dirs = [
@@ -391,22 +380,19 @@ class ReferenceChecker:
 
                         if 0 < len(valid_from) < len(test_dirs):
                             try:
-                                valid_desc = ", ".join(
-                                    str(d.relative_to(self.root_dir))
-                                    if d != self.root_dir
-                                    else "repo root"
-                                    for d in valid_from
+                                valid_desc = ', '.join(
+                                    str(d.relative_to(self.root_dir)) if d != self.root_dir else 'repo root' for d in valid_from
                                 )
                             except ValueError:
-                                valid_desc = ", ".join(str(d) for d in valid_from)
+                                valid_desc = ', '.join(str(d) for d in valid_from)
 
                             self.warnings.append(
                                 Warning(
                                     file=rel_path,
                                     line_num=line_num,
                                     check_type=CheckType.FRAGILE_CWD,
-                                    message=f"Relative path only valid from: {valid_desc}",
-                                    suggestion="Use absolute path or root directory variable",
+                                    message=f'Relative path only valid from: {valid_desc}',
+                                    suggestion='Use absolute path or root directory variable',
                                 )
                             )
             except (OSError, UnicodeDecodeError):
@@ -414,13 +400,13 @@ class ReferenceChecker:
 
     def check_relative_traversal(self):
         """Detect relative directory traversal patterns fragile to file moves."""
-        traversal_pattern = re.compile(r"([A-Z_]+_DIR)=.*\$\(cd.*\.\./.*pwd\)")
+        traversal_pattern = re.compile(r'([A-Z_]+_DIR)=.*\$\(cd.*\.\./.*pwd\)')
 
-        for file_path in self.find_files("**/*.sh"):
+        for file_path in self.find_files('**/*.sh'):
             try:
                 rel_path = file_path.relative_to(self.root_dir)
 
-                with file_path.open(encoding="utf-8") as f:
+                with file_path.open(encoding='utf-8') as f:
                     for line_num, line in enumerate(f, 1):
                         match = traversal_pattern.search(line)
                         if not match:
@@ -433,13 +419,8 @@ class ReferenceChecker:
                                 file=rel_path,
                                 line_num=line_num,
                                 check_type=CheckType.FRAGILE_REFACTOR,
-                                message=(
-                                    f"{var_name} uses relative directory traversal "
-                                    "(../) - fragile to file moves"
-                                ),
-                                suggestion=(
-                                    "Consider dynamic root detection: git rev-parse --show-toplevel"
-                                ),
+                                message=(f'{var_name} uses relative directory traversal (../) - fragile to file moves'),
+                                suggestion=('Consider dynamic root detection: git rev-parse --show-toplevel'),
                             )
                         )
             except (OSError, UnicodeDecodeError):

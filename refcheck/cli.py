@@ -11,13 +11,14 @@ from .config import load_config
 from .output import print_results
 from .rules import learn_rules_from_git
 from .selfupdate import CONFIG as UPDATE_CONFIG
-from .selfupdate import print_version, run_update
+from .selfupdate import print_version
+from .selfupdate import run_update
 
 
 def main():
     parser = argparse.ArgumentParser(
-        prog="refcheck",
-        description="Find broken file references and old path patterns",
+        prog='refcheck',
+        description='Find broken file references and old path patterns',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -60,66 +61,66 @@ Exit codes:
         """,
     )
     parser.add_argument(
-        "path",
-        nargs="?",
+        'path',
+        nargs='?',
         type=Path,
-        help="Directory to check (default: current directory)",
+        help='Directory to check (default: current directory)',
     )
     parser.add_argument(
-        "--pattern",
-        metavar="PATTERN",
+        '--pattern',
+        metavar='PATTERN',
         help="Check for specific old path pattern (e.g., 'old/path/')",
     )
     parser.add_argument(
-        "--desc",
-        metavar="DESC",
-        help="Description for pattern check",
+        '--desc',
+        metavar='DESC',
+        help='Description for pattern check',
     )
     parser.add_argument(
-        "--type",
-        "-t",
-        metavar="TYPE",
+        '--type',
+        '-t',
+        metavar='TYPE',
         help="Filter by file type (e.g., 'sh', 'py')",
     )
     parser.add_argument(
-        "--skip-docs",
-        action="store_true",
-        help="Skip documentation (.md) files",
+        '--skip-docs',
+        action='store_true',
+        help='Skip documentation (.md) files',
     )
     parser.add_argument(
-        "--strict",
-        action="store_true",
-        help="Treat warnings as errors (exit 1 if warnings found)",
+        '--strict',
+        action='store_true',
+        help='Treat warnings as errors (exit 1 if warnings found)',
     )
     parser.add_argument(
-        "--no-warn",
-        action="store_true",
-        help="Disable fragile path warnings (only check for errors)",
+        '--no-warn',
+        action='store_true',
+        help='Disable fragile path warnings (only check for errors)',
     )
     parser.add_argument(
-        "--test-mode",
-        action="store_true",
-        help="Include test fixtures (normally excluded)",
+        '--test-mode',
+        action='store_true',
+        help='Include test fixtures (normally excluded)',
     )
     parser.add_argument(
-        "--learn-rules",
-        action="store_true",
-        help="Generate rules.json from git rename history",
+        '--learn-rules',
+        action='store_true',
+        help='Generate rules.json from git rename history',
     )
     parser.add_argument(
-        "--update",
-        action="store_true",
-        help="Update refcheck to the latest release",
+        '--update',
+        action='store_true',
+        help='Update refcheck to the latest release',
     )
     parser.add_argument(
-        "--check",
-        action="store_true",
-        help="With --update, report an available release without installing it",
+        '--check',
+        action='store_true',
+        help='With --update, report an available release without installing it',
     )
     parser.add_argument(
-        "--version",
-        action="store_true",
-        help="Show the installed version and exit",
+        '--version',
+        action='store_true',
+        help='Show the installed version and exit',
     )
     args = parser.parse_args()
 
@@ -172,13 +173,11 @@ Exit codes:
 
     notify(UPDATE_CONFIG)
 
-    if checker.issues:
-        sys.exit(1)
-    elif checker.strict and checker.warnings:
+    if checker.issues or checker.strict and checker.warnings:
         sys.exit(1)
     else:
         sys.exit(0)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

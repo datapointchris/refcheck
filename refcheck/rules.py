@@ -11,7 +11,7 @@ def get_repo_root(cwd: Path | None = None) -> Path | None:
     """Get git repo root, or None if not in a repo."""
     try:
         result = subprocess.run(  # nosec B603 B607
-            ["git", "rev-parse", "--show-toplevel"],
+            ['git', 'rev-parse', '--show-toplevel'],
             capture_output=True,
             text=True,
             check=True,
@@ -24,8 +24,8 @@ def get_repo_root(cwd: Path | None = None) -> Path | None:
 
 def get_rules_path(repo_root: Path) -> Path:
     """Get the rules file path for a given repo root."""
-    safe_name = str(repo_root).lstrip("/").replace("/", "--")
-    return Path.home() / ".config" / "refcheck" / "repos" / safe_name / "rules.json"
+    safe_name = str(repo_root).lstrip('/').replace('/', '--')
+    return Path.home() / '.config' / 'refcheck' / 'repos' / safe_name / 'rules.json'
 
 
 def load_rules(root_dir: Path) -> tuple[dict, Path | None]:
@@ -34,7 +34,7 @@ def load_rules(root_dir: Path) -> tuple[dict, Path | None]:
 
     Returns (rules_dict, rules_path) tuple.
     """
-    rules: dict = {"directory_mappings": {}, "file_mappings": {}}
+    rules: dict = {'directory_mappings': {}, 'file_mappings': {}}
     rules_path = None
 
     repo_root = get_repo_root(root_dir)
@@ -61,7 +61,7 @@ def get_rules_age_days(rules: dict) -> int | None:
 
     Returns None if rules have no timestamp.
     """
-    generated = rules.get("_metadata", {}).get("generated")
+    generated = rules.get('_metadata', {}).get('generated')
 
     if not generated:
         return None
@@ -75,7 +75,7 @@ def get_rules_age_days(rules: dict) -> int | None:
         return None
 
 
-def learn_rules_from_git(time_window: str = "6 months") -> None:
+def learn_rules_from_git(time_window: str = '6 months') -> None:
     """
     Scan git history for renames and generate rules.json.
 
@@ -87,7 +87,7 @@ def learn_rules_from_git(time_window: str = "6 months") -> None:
     repo_root = get_repo_root()
     if repo_root is None:
         print(
-            "fatal: not a git repository (or any of the parent directories): .git",
+            'fatal: not a git repository (or any of the parent directories): .git',
             file=sys.stderr,
         )
         sys.exit(128)
@@ -95,13 +95,13 @@ def learn_rules_from_git(time_window: str = "6 months") -> None:
     try:
         result = subprocess.run(  # nosec B603 B607
             [
-                "git",
-                "log",
-                f"--since={time_window} ago",
-                "--diff-filter=R",
-                "-M",
-                "--name-status",
-                "--format=%H %aI",
+                'git',
+                'log',
+                f'--since={time_window} ago',
+                '--diff-filter=R',
+                '-M',
+                '--name-status',
+                '--format=%H %aI',
             ],
             capture_output=True,
             text=True,
@@ -109,7 +109,7 @@ def learn_rules_from_git(time_window: str = "6 months") -> None:
             cwd=repo_root,
         )
     except subprocess.CalledProcessError as e:
-        print(f"Error running git: {e}", file=sys.stderr)
+        print(f'Error running git: {e}', file=sys.stderr)
         sys.exit(1)
 
     directory_mappings: dict[str, tuple[str, int]] = {}
@@ -121,12 +121,12 @@ def learn_rules_from_git(time_window: str = "6 months") -> None:
         if not line:
             continue
 
-        if " " in line and len(line.split()[0]) == 40:
+        if ' ' in line and len(line.split()[0]) == 40:
             commits_analyzed.add(line.split()[0][:8])
             continue
 
-        if line.startswith("R"):
-            parts = line.split("\t")
+        if line.startswith('R'):
+            parts = line.split('\t')
             if len(parts) == 3:
                 old_path = parts[1]
                 new_path = parts[2]
@@ -139,13 +139,13 @@ def learn_rules_from_git(time_window: str = "6 months") -> None:
                 if old_name != new_name:
                     file_mappings[old_name] = new_name
 
-                if old_dir != new_dir and old_dir != ".":
-                    old_parts = old_dir.split("/")
-                    new_parts = new_dir.split("/")
+                if old_dir != new_dir and old_dir != '.':
+                    old_parts = old_dir.split('/')
+                    new_parts = new_dir.split('/')
 
                     if old_parts[0] != new_parts[0] or len(old_parts) != len(new_parts):
-                        old_key = f"{old_dir}/"
-                        new_val = f"{new_dir}/"
+                        old_key = f'{old_dir}/'
+                        new_val = f'{new_dir}/'
                         if old_key in directory_mappings:
                             existing_new, count = directory_mappings[old_key]
                             directory_mappings[old_key] = (existing_new, count + 1)
@@ -158,20 +158,20 @@ def learn_rules_from_git(time_window: str = "6 months") -> None:
     sorted_dirs = sorted(directory_mappings.items(), key=lambda x: -x[1][1])
     top_directory_mappings = {k: v[0] for k, v in sorted_dirs[:20]}
     rules = {
-        "_metadata": {
-            "generated": datetime.now().isoformat()[:19],
-            "time_window": time_window,
-            "commits_analyzed": len(commits_analyzed),
+        '_metadata': {
+            'generated': datetime.now().isoformat()[:19],
+            'time_window': time_window,
+            'commits_analyzed': len(commits_analyzed),
         },
-        "directory_mappings": top_directory_mappings,
-        "file_mappings": file_mappings,
+        'directory_mappings': top_directory_mappings,
+        'file_mappings': file_mappings,
     }
 
-    with rules_path.open("w") as f:
+    with rules_path.open('w') as f:
         json.dump(rules, f, indent=2)
 
-    print(f"✅ Generated {rules_path}")
-    print(f"   Time window: {time_window}")
-    print(f"   Commits analyzed: {len(commits_analyzed)}")
-    print(f"   Directory mappings: {len(top_directory_mappings)}")
-    print(f"   File mappings: {len(file_mappings)}")
+    print(f'✅ Generated {rules_path}')
+    print(f'   Time window: {time_window}')
+    print(f'   Commits analyzed: {len(commits_analyzed)}')
+    print(f'   Directory mappings: {len(top_directory_mappings)}')
+    print(f'   File mappings: {len(file_mappings)}')

@@ -23,10 +23,7 @@ class FileSuggestions:
             if file_path.match(pattern):
                 return True
 
-        if file_path.suffix in {".pyc", ".so", ".o", ".a", ".dylib"}:
-            return True
-
-        return False
+        return file_path.suffix in {'.pyc', '.so', '.o', '.a', '.dylib'}
 
     def build_file_index(self) -> list[Path]:
         """Build index of all files in repo for suggestion matching."""
@@ -34,7 +31,7 @@ class FileSuggestions:
             return self._file_index
 
         self._file_index = []
-        for file_path in self.root_dir.rglob("*"):
+        for file_path in self.root_dir.rglob('*'):
             if not file_path.is_file():
                 continue
             try:
@@ -64,40 +61,40 @@ class FileSuggestions:
         def add_suggestion(path: str, reason: str):
             if path not in seen_paths:
                 seen_paths.add(path)
-                suggestions.append(f"{path} ({reason})")
+                suggestions.append(f'{path} ({reason})')
 
         # Check directory mappings from rules
-        for old_prefix, new_prefix in rules.get("directory_mappings", {}).items():
+        for old_prefix, new_prefix in rules.get('directory_mappings', {}).items():
             if missing_path.startswith(old_prefix):
                 mapped_path = missing_path.replace(old_prefix, new_prefix, 1)
                 if (self.root_dir / mapped_path).exists():
-                    add_suggestion(mapped_path, "known mapping")
+                    add_suggestion(mapped_path, 'known mapping')
 
         # Check file mappings from rules
-        if basename in rules.get("file_mappings", {}):
-            new_name = rules["file_mappings"][basename]
+        if basename in rules.get('file_mappings', {}):
+            new_name = rules['file_mappings'][basename]
             for f in file_index:
                 if f.name == new_name:
-                    add_suggestion(str(f), "known mapping")
+                    add_suggestion(str(f), 'known mapping')
 
         # 1. Exact basename match
         for f in file_index:
             if f.name == basename:
-                add_suggestion(str(f), "basename match")
+                add_suggestion(str(f), 'basename match')
 
         # 2. Transform variants (hyphen <-> underscore)
         variants = {
-            basename.replace("-", "_"),
-            basename.replace("_", "-"),
+            basename.replace('-', '_'),
+            basename.replace('_', '-'),
             basename.lower(),
-            basename.replace("-", "_").lower(),
-            basename.replace("_", "-").lower(),
+            basename.replace('-', '_').lower(),
+            basename.replace('_', '-').lower(),
         }
         variants.discard(basename)
 
         for f in file_index:
             if f.name in variants:
-                add_suggestion(str(f), "name variant")
+                add_suggestion(str(f), 'name variant')
 
         # 3. Fuzzy match using difflib (only if few suggestions so far)
         if len(suggestions) < 3:
@@ -107,7 +104,7 @@ class FileSuggestions:
                 if m != basename and m not in variants:
                     for f in file_index:
                         if f.name == m:
-                            add_suggestion(str(f), "similar name")
+                            add_suggestion(str(f), 'similar name')
                             break
 
         return suggestions[:5]

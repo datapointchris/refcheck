@@ -1,6 +1,22 @@
 # CHANGELOG
 
 
+## v0.3.2 (2026-07-31)
+
+### Bug Fixes
+
+- **tests**: Skip the real-world tests instead of erroring without dotfiles
+  ([`08fe89a`](https://github.com/datapointchris/refcheck/commit/08fe89a2fa1766fcbea1a72a67ea64ad3644e3d1))
+
+The fixture ran `git rev-parse` with cwd set to ~/dotfiles and returned None when that failed, but
+  subprocess raises rather than returning non-zero when cwd does not exist -- so the None branch was
+  unreachable and all 11 tests errored on any machine without the repo checked out. They passed here
+  only because this machine has one.
+
+Checking the directory exists first makes the skip reachable, which is what the tests already
+  expect.
+
+
 ## v0.3.1 (2026-07-31)
 
 ### Bug Fixes

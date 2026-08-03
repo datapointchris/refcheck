@@ -1,6 +1,33 @@
 # CHANGELOG
 
 
+## v0.3.4 (2026-08-03)
+
+### Bug Fixes
+
+- **pattern**: Stop reporting hits inside paths that resolve
+  ([`7ee2f86`](https://github.com/datapointchris/refcheck/commit/7ee2f8606f34f8eee67282c15d5ea418c401c8bd))
+
+--pattern did a plain substring test, so after moving boards/ under config/ it reported
+  `config/boards/arm/...` — the three files the move had just corrected — as stale references to
+  boards/arm.
+
+A substring cannot distinguish a stale path from a correct longer one ending the same way, so
+  resolve the surrounding token instead: a hit inside a path that exists on disk is not reported,
+  and one that does not resolve still is. Prefixing a stale path with a directory that does not
+  exist does not launder it.
+
+### Chores
+
+- **toolchain**: Adopt the generated configs and CI
+  ([`524ce37`](https://github.com/datapointchris/refcheck/commit/524ce377d79e8603980fb18b9d0f6aacc6af6342))
+
+Brings the repo onto forge toolchain manifest 11.
+
+bandit, refurb and pyupgrade drop out: pyupgrade is ruff's UP rules, already selected, and the other
+  two are the manifest's deliberate narrowing to the rule set every repo actually runs.
+
+
 ## v0.3.3 (2026-08-03)
 
 ### Bug Fixes

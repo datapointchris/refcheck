@@ -1,6 +1,40 @@
 # CHANGELOG
 
 
+## v0.3.3 (2026-08-03)
+
+### Bug Fixes
+
+- Stop scanning binary files and append-only event logs
+  ([`b4e74cd`](https://github.com/datapointchris/refcheck/commit/b4e74cdafca2d6b423a17ea33bcb976e3774a0c7))
+
+A --pattern sweep of ~/dev reported 31 misses. Twenty-nine were inside indy.db — 1.4 GB of SQLite
+  read as text, because the binary check was a suffix list and .db was not on it. The other nine
+  were a 197 MB devstats event log recording every file a hook had ever checked.
+
+Binary detection is now the NUL-byte-in-first-block heuristic git uses, so it holds for formats
+  nobody thought to enumerate. Event logs are excluded by pattern instead: they are text, and they
+  record what a path *was* rather than what should exist, so a hit in one is history, not a
+  reference.
+
+Same query now reports zero. This tool is only worth running if its output can be trusted at a
+  glance, and 31 false positives is how it stopped being run.
+
+### Documentation
+
+- Flush dormant markdownlint violations
+  ([`f773898`](https://github.com/datapointchris/refcheck/commit/f773898b18082f5a2734504ddc81cbd0b35dd1e1))
+
+markdownlint only runs on the files a commit touches, so unmodified docs accumulate violations
+  invisibly. The toolchain sync bumps markdownlint to v0.47, which added MD060, and runs --all-files
+  — surfacing every one of them at once, in the middle of an unrelated change.
+
+Table separators are normalized to the compact `| --- |` style MD060 expects, which --fix cannot
+  repair; everything else is markdownlint --fix. CHANGELOG.md is excluded instead of normalized:
+  semantic-release regenerates it on every release, so any fix there is undone and comes back as a
+  rebase conflict.
+
+
 ## v0.3.2 (2026-07-31)
 
 ### Bug Fixes

@@ -28,6 +28,10 @@ class ReferenceChecker:
         '.claude/metrics/**',
         '.planning/**',
         'site/**',
+        # Append-only event logs record what a path *was*, not what should
+        # exist. A 197 MB devstats log naming every file a hook once checked
+        # reported nine misses for one query, all of them history.
+        '*.jsonl',
     ]
 
     TEST_FIXTURE_PATTERNS = [

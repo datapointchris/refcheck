@@ -32,6 +32,24 @@ class TestFileSuggestions:
         assert suggestions.should_skip_file(Path('build/app.o'))
         assert suggestions.should_skip_file(Path('lib/lib.dylib'))
 
+    def test_should_skip_binary_content_whatever_the_extension(self, temp_dir, suggestions):
+        """A suffix list never keeps up; content decides.
+
+        Regression for a 1.4 GB indy.db being read as text and pattern-matched,
+        which produced 29 of the 31 hits reported for a single --pattern query.
+        """
+        database = temp_dir / 'index.db'
+        database.write_bytes(b'SQLite format 3\x00' + b'\x01\x02\x03' * 100)
+        text = temp_dir / 'notes.md'
+        text.write_text('# Notes\n\nA reference to src/main.py.\n')
+
+        assert suggestions.should_skip_file(database)
+        assert not suggestions.should_skip_file(text)
+
+    def test_missing_file_is_not_treated_as_binary(self, temp_dir, suggestions):
+        """should_skip_file is called on paths that may not exist."""
+        assert not suggestions.should_skip_file(temp_dir / 'does-not-exist.md')
+
     def test_build_file_index(self, temp_dir, suggestions):
         (temp_dir / 'src').mkdir()
         (temp_dir / 'src' / 'main.py').touch()

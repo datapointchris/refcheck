@@ -7,6 +7,8 @@ from pathlib import Path
 class FileSuggestions:
     """Find similar files for missing references."""
 
+    BINARY_SUFFIXES = {'.pyc', '.so', '.o', '.a', '.dylib'}
+
     def __init__(self, root_dir: Path, exclude_dirs: set[str], exclude_patterns: list[str]):
         self.root_dir = root_dir
         self.exclude_dirs = exclude_dirs
@@ -23,7 +25,25 @@ class FileSuggestions:
             if file_path.match(pattern):
                 return True
 
-        return file_path.suffix in {'.pyc', '.so', '.o', '.a', '.dylib'}
+        if file_path.suffix in self.BINARY_SUFFIXES:
+            return True
+
+        return self._holds_binary_content(file_path)
+
+    @staticmethod
+    def _holds_binary_content(file_path: Path) -> bool:
+        """True if the first block holds a NUL byte — the heuristic git uses.
+
+        A suffix list never keeps up. `~/dev/indy/indy.db` is 1.4 GB of SQLite
+        with no matching extension, so it was read as text and pattern-matched,
+        producing 29 of the 31 hits for one `--pattern` query. Every false
+        positive spends the credibility this tool needs to get used at all.
+        """
+        try:
+            with file_path.open('rb') as handle:
+                return b'\0' in handle.read(8192)
+        except OSError:
+            return False
 
     def build_file_index(self) -> list[Path]:
         """Build index of all files in repo for suggestion matching."""

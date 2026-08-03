@@ -259,7 +259,7 @@ fi
 ## Flags
 
 | Flag | Description | Example |
-|------|-------------|---------|
+| --- | --- | --- |
 | `path` | Directory to check (positional) | `refcheck install/` |
 | `--pattern PATTERN` | Find old pattern | `--pattern "old/"` |
 | `--desc DESC` | Description for pattern | `--desc "Now new/"` |

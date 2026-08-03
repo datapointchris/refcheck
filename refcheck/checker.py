@@ -154,6 +154,40 @@ class ReferenceChecker:
 
         return files
 
+    # Characters that can sit inside a path token in prose, a Dockerfile or a
+    # CI file. Backticks, quotes and sentence punctuation are deliberately out,
+    # so a markdown `path/like/this` yields the path and not the fence.
+    PATH_TOKEN_CHARS = re.compile(r'[\w./~${}-]')
+
+    def _pattern_hit_still_resolves(self, pattern: str, line: str) -> bool:
+        """True when every hit on this line sits inside a path that exists.
+
+        `--pattern boards/arm` matched `config/boards/arm/...` after the
+        directory moved under config/, reporting the file that had just been
+        fixed. A substring match cannot tell a stale reference from a correct
+        longer path that happens to end the same way, so resolve the whole
+        token: if it is on disk it is not stale, and a genuinely moved path
+        still fails to resolve and is still reported.
+        """
+        if '/' not in pattern:
+            return False
+
+        start = 0
+        while (index := line.find(pattern, start)) != -1:
+            left = index
+            while left > 0 and self.PATH_TOKEN_CHARS.match(line[left - 1]):
+                left -= 1
+            right = index + len(pattern)
+            while right < len(line) and self.PATH_TOKEN_CHARS.match(line[right]):
+                right += 1
+
+            token = line[left:right].strip('.')
+            if left == index or not token or not (self.root_dir / token).exists():
+                return False
+            start = index + len(pattern)
+
+        return True
+
     def check_pattern(self, pattern: str, description: str | None = None):
         """Check for old path pattern references."""
         description = description or f'Old pattern: {pattern}'
@@ -169,7 +203,7 @@ class ReferenceChecker:
                 rel_path = file_path.relative_to(self.root_dir)
                 with file_path.open(encoding='utf-8', errors='ignore') as f:
                     for line_num, line in enumerate(f, 1):
-                        if pattern in line:
+                        if pattern in line and not self._pattern_hit_still_resolves(pattern, line):
                             self.issues.append(
                                 Issue(
                                     file=rel_path,

@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pytest
 
+from refcheck.checker import ReferenceChecker
+
 
 def run_refcheck(*args, cwd=None):
     """Run refcheck command and return result."""
@@ -374,3 +376,30 @@ class TestStaleRulesWarning:
 
         result = run_refcheck('--no-warn', cwd=dotfiles_dir)
         assert 'Rules last updated' not in result.stdout
+
+
+def test_pattern_ignores_hit_inside_a_path_that_exists(tmp_path):
+    """A moved directory reached by a longer, correct path is not stale.
+
+    `--pattern boards/arm` reported `config/boards/arm/...` right after the
+    move that made it correct — the substring is there, but the path resolves.
+    """
+    (tmp_path / 'config' / 'boards' / 'arm' / 'piantor').mkdir(parents=True)
+    (tmp_path / 'README.md').write_text('Board def in `config/boards/arm/piantor/`, moved from `boards/arm/piantor/`.\n')
+
+    checker = ReferenceChecker(tmp_path)
+    checker.check_pattern('boards/arm', 'moved under config/')
+
+    # The stale half of that sentence is still a hit; the corrected half is not.
+    assert len(checker.issues) == 1
+
+
+def test_pattern_still_reports_a_path_that_does_not_resolve(tmp_path):
+    """Prefixing a stale path does not launder it."""
+    (tmp_path / 'docs').mkdir()
+    (tmp_path / 'docs' / 'guide.md').write_text('See vendor/boards/arm/thing for the pinout.\n')
+
+    checker = ReferenceChecker(tmp_path)
+    checker.check_pattern('boards/arm', 'moved under config/')
+
+    assert len(checker.issues) == 1

@@ -1,6 +1,21 @@
 # CHANGELOG
 
 
+## v0.3.6 (2026-08-04)
+
+### Bug Fixes
+
+- **pattern**: Never report a hit inside a URL
+  ([`fd3f0f7`](https://github.com/datapointchris/refcheck/commit/fd3f0f75e9a6db914ff483095294c3bdb26dc9e8))
+
+`:` is not a path character, so left-expansion of a matched token stops just after a URL scheme's
+  `//` and the whole host+path is treated as a file reference. `--pattern docs/claude-code` reported
+  every link to docs.anthropic.com/en/docs/claude-code/hooks as a moved path.
+
+Skip a hit whose expansion butts up against `:`. Per-hit, so a stale path on the same line as a URL
+  is still reported.
+
+
 ## v0.3.5 (2026-08-04)
 
 ### Bug Fixes

@@ -181,6 +181,13 @@ class ReferenceChecker:
             while right < len(line) and self.PATH_TOKEN_CHARS.match(line[right]):
                 right += 1
 
+            # `:` is not a path character, so expansion stops right after a URL scheme's
+            # `//`. A hit inside a URL is never a file reference — `docs/claude-code` in
+            # docs.anthropic.com/en/docs/claude-code/hooks was reported as a moved path.
+            if left > 0 and line[left - 1] == ':':
+                start = index + len(pattern)
+                continue
+
             token = line[left:right].strip('.')
             if left == index or not token or not (self.root_dir / token).exists():
                 return False

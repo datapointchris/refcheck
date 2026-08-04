@@ -403,3 +403,25 @@ def test_pattern_still_reports_a_path_that_does_not_resolve(tmp_path):
     checker.check_pattern('boards/arm', 'moved under config/')
 
     assert len(checker.issues) == 1
+
+
+def test_pattern_ignores_a_hit_inside_a_url(tmp_path):
+    """A URL is never a file reference, however much of the pattern it contains."""
+    (tmp_path / 'docs').mkdir()
+    (tmp_path / 'docs' / 'hooks.md').write_text('- [Hooks Guide](https://docs.anthropic.com/en/docs/claude-code/hooks) - Official docs\n')
+
+    checker = ReferenceChecker(tmp_path)
+    checker.check_pattern('docs/claude-code', 'moved to the docs hub')
+
+    assert checker.issues == []
+
+
+def test_pattern_reports_a_stale_path_on_a_line_that_also_holds_a_url(tmp_path):
+    """The URL exemption is per-hit, not per-line."""
+    (tmp_path / 'docs').mkdir()
+    (tmp_path / 'docs' / 'hooks.md').write_text('See docs/claude-code/index.md and https://docs.anthropic.com/en/docs/claude-code/hooks\n')
+
+    checker = ReferenceChecker(tmp_path)
+    checker.check_pattern('docs/claude-code', 'moved to the docs hub')
+
+    assert len(checker.issues) == 1

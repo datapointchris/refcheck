@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v0.3.5 (2026-08-04)
+
+### Bug Fixes
+
+- Report the update in the verb that ran it
+  ([`01b0947`](https://github.com/datapointchris/refcheck/commit/01b0947082da06d9b37351bcf2f3d197b563ba65))
+
+refcheck copies the report format rather than importing run_update, so it kept saying "upgraded" and
+  "upgrade failed" after pyselfupdate was fixed. The flag is --update; one flag, one vocabulary.
+
+
 ## v0.3.4 (2026-08-03)
 
 ### Bug Fixes

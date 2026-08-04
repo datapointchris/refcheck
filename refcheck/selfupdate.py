@@ -48,7 +48,7 @@ def run_update(check_only: bool = False) -> int:
     try:
         result = check(CONFIG) if check_only else update(CONFIG)
     except SelfUpdateError as error:
-        print(f'✗ refcheck upgrade failed: {error}', file=sys.stderr)
+        print(f'✗ refcheck update failed: {error}', file=sys.stderr)
         return 1
 
     if not result.update_available:
@@ -56,7 +56,7 @@ def run_update(check_only: bool = False) -> int:
         return 0
 
     if result.applied:
-        print(f'✓ refcheck upgraded: {result.current} → {result.latest}')
+        print(f'✓ refcheck updated: {result.current} → {result.latest}')
     else:
         print(f'✓ refcheck update available: {result.current} → {result.latest}')
 

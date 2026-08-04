@@ -7,7 +7,7 @@ license = { text = "MIT" }
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "pyselfupdate>=0.2.0",
+    "pyselfupdate>=0.2.2",
 ]
 
 [project.urls]

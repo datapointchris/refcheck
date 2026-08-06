@@ -425,3 +425,24 @@ def test_pattern_reports_a_stale_path_on_a_line_that_also_holds_a_url(tmp_path):
     checker.check_pattern('docs/claude-code', 'moved to the docs hub')
 
     assert len(checker.issues) == 1
+
+
+def test_pattern_ignores_hits_inside_tool_caches(tmp_path):
+    """A tool cache records what a path *was* on the last run, like the .jsonl logs.
+
+    Renaming a test package reported twenty misses against
+    .pytest_cache/v/cache/nodeids — a file the next pytest run rewrites — which
+    buried the one real hit in the docs.
+    """
+    for cache in ('.pytest_cache/v/cache', '.ruff_cache', '.mypy_cache'):
+        (tmp_path / cache).mkdir(parents=True)
+        (tmp_path / cache / 'nodeids').write_text('tests/appcore/test_formatting.py::test_clip\n')
+
+    (tmp_path / 'docs').mkdir()
+    (tmp_path / 'docs' / 'guide.md').write_text('The palette lives in tests/appcore/test_formatting.py.\n')
+
+    checker = ReferenceChecker(tmp_path)
+    checker.check_pattern('tests/appcore', 'moved to the pytermstyle repo')
+
+    assert len(checker.issues) == 1
+    assert 'docs/guide.md' in str(checker.issues[0])

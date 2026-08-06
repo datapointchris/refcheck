@@ -67,6 +67,46 @@ def test_fixtures(temp_dir):
 
     (docs / 'readme.md').write_text('# Documentation\nReference to management/tests/ in docs\n')
 
+    # docs/ is asserted clean by TestDirectoryFiltering, so prose that is meant
+    # to fail lives in its own directory.
+    stale_docs = temp_dir / 'stale-docs'
+    stale_docs.mkdir()
+    (stale_docs / 'stale-source.md').write_text(
+        '# Architecture\n\nEvery installer starts with:\n\n```bash\nsource "$DOTFILES_DIR/valid/gone.sh"\nbash valid/also-gone.sh\n```\n'
+    )
+
+    (docs / 'placeholders.md').write_text(
+        '# Adding an installer\n\n'
+        'Create the file, then:\n\n'
+        '```bash\n'
+        'bash install/github-releases/toolname.sh\n'
+        'bash install/plugins/{tool}-plugins.sh\n'
+        'source "$DOTFILES_DIR/shell/my-library.sh"\n'
+        'bash script.sh\n'
+        '```\n'
+    )
+
+    (docs / 'live-source.md').write_text('# Using the helpers\n\n```bash\nsource "$DOTFILES_DIR/valid/lib/helpers.sh"\n```\n')
+
+    (docs / 'other-trees.md').write_text(
+        '# Shell semantics\n\n'
+        '```bash\n'
+        'source child.sh\n'
+        'bash ./test/mylib_test.sh\n'
+        '```\n\n'
+        '```hcl\n'
+        'resource "aws_lambda_function" "notifier" {}\n'
+        '```\n\n'
+        '```bash file=nowhere/deploy.sh\n'
+        'echo hi\n'
+        '```\n\n'
+        'Newsboat config: `urls-source "freshrss"`\n'
+    )
+
+    # A rename inside a directory the repo still has stays reportable — that is
+    # the case describes_another_tree must not swallow.
+    (stale_docs / 'renamed-dir.md').write_text('# Tests\n\n```bash\nbash valid/gone/runner.sh\n```\n')
+
     (src / 'self-ref.sh').write_text('#!/usr/bin/env bash\n# Usage: bash self-ref.sh\necho "Self-referencing file"\n')
 
     valid = temp_dir / 'valid'

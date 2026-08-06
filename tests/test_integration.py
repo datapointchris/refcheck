@@ -160,6 +160,62 @@ class TestValidReferences:
         assert 'Fragile' not in result.stdout
 
 
+class TestMarkdownReferences:
+    """Docs carry the same references as code and must be resolved the same way."""
+
+    def test_finds_stale_source_in_markdown(self, test_fixtures):
+        """The regression: these checks globbed **/*.sh, so docs were never read."""
+        result = run_refcheck('stale-docs/stale-source.md', cwd=test_fixtures)
+        assert result.returncode == 1
+        assert 'gone.sh' in result.stdout
+
+    def test_finds_stale_script_invocation_in_markdown(self, test_fixtures):
+        result = run_refcheck('stale-docs/stale-source.md', cwd=test_fixtures)
+        assert 'also-gone.sh' in result.stdout
+
+    def test_resolves_dotfiles_dir_in_markdown(self, test_fixtures):
+        """Prose has no assignments to parse, so $DOTFILES_DIR must be seeded."""
+        result = run_refcheck('docs/live-source.md', cwd=test_fixtures)
+        assert result.returncode == 0
+        assert 'helpers.sh' not in result.stdout
+
+    def test_placeholders_are_not_reported(self, test_fixtures):
+        """A how-to naming toolname.sh describes a file it never intended to ship."""
+        result = run_refcheck('docs/placeholders.md', cwd=test_fixtures)
+        assert result.returncode == 0
+        for stand_in in ('toolname.sh', 'tool}-plugins.sh', 'my-library.sh', 'script.sh'):
+            assert stand_in not in result.stdout
+
+    def test_placeholder_stems_still_resolve_in_shell(self, test_fixtures):
+        """`bash script.sh` is prose in a README and a real invocation in code."""
+        result = run_refcheck('src/broken-script.sh', cwd=test_fixtures)
+        assert result.returncode == 1
+        assert 'script.sh' in result.stdout
+
+    def test_skip_docs_excludes_markdown_references(self, test_fixtures):
+        result = run_refcheck('stale-docs/stale-source.md', '--skip-docs', cwd=test_fixtures)
+        assert result.returncode == 0
+
+    def test_other_projects_trees_are_not_reported(self, test_fixtures):
+        """Docs quote other people's layouts; none of it is a claim about this repo."""
+        result = run_refcheck('docs/other-trees.md', cwd=test_fixtures)
+        assert result.returncode == 0
+        for foreign in ('child.sh', 'mylib_test.sh', 'deploy.sh'):
+            assert foreign not in result.stdout
+
+    def test_resource_is_not_a_source_statement(self, test_fixtures):
+        """`resource "aws_lambda_function"` ends in `source "..."` without a boundary."""
+        result = run_refcheck('docs/other-trees.md', cwd=test_fixtures)
+        assert 'aws_lambda_function' not in result.stdout
+        assert 'freshrss' not in result.stdout
+
+    def test_rename_under_an_existing_directory_is_still_reported(self, test_fixtures):
+        """The signal the tree rule must preserve: our directory, moved file."""
+        result = run_refcheck('stale-docs/renamed-dir.md', cwd=test_fixtures)
+        assert result.returncode == 1
+        assert 'runner.sh' in result.stdout
+
+
 class TestSelfReferences:
     """Test 9: Self-references in comments should be ignored."""
 

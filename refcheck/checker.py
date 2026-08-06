@@ -70,6 +70,32 @@ class ReferenceChecker:
         r'^/lib/lib\.sh',
     ]
 
+    # A doc that explains how to add an installer writes
+    # `install/common/github-releases/toolname.sh`, and the file is never meant
+    # to exist. Reporting a stand-in is the kind of noise that teaches a reader
+    # to skim past the real findings underneath it, so these are matched on the
+    # basename only — a genuine path under a templated directory still resolves
+    # and still gets reported when it goes stale.
+    PLACEHOLDER_BRACES = re.compile(r'[{<][^}>]*[}>]')
+
+    PLACEHOLDER_STEMS = {
+        'tool',
+        'toolname',
+        'tool-name',
+        'script',
+        'scriptname',
+        'script-name',
+        'installer-script',
+        'filename',
+        'example',
+        'placeholder',
+        'foo',
+        'bar',
+        'baz',
+    }
+
+    PLACEHOLDER_PREFIXES = ('my-', 'my_', 'your-', 'your_', 'example-', 'example_')
+
     def __init__(
         self,
         root_dir: Path | None = None,
@@ -113,6 +139,57 @@ class ReferenceChecker:
         """Check if the line hands its command to a remote or container executor."""
         return any(re.search(pattern, line) for pattern in self.REMOTE_EXECUTION_PATTERNS)
 
+    def describes_another_tree(self, path: str, file_path: Path) -> bool:
+        """Check if a documented path belongs to some project other than this one.
+
+        Prose quotes other people's trees constantly — a guide to a test
+        framework writes `./test/mylib_test.sh`, one explaining `set -e` writes
+        `source child.sh`. Neither is a claim about this repo, and reporting
+        them buries the references that are.
+
+        The discriminator is the leading directory. A stale reference to our own
+        code still names a directory we have, which is what makes the rename
+        case work: `tests/install/utils/verify.sh` is reported because `tests/`
+        exists, even though `utils/` has since become `verification/`. A bare
+        filename anchors to nothing and is always illustrative.
+        """
+        if file_path.suffix != '.md':
+            return False
+
+        # $DOTFILES_DIR is already resolved to an absolute path by this point,
+        # and it is repo-rooted by construction — judge it on the part below the
+        # root, not on the leading slash.
+        candidate = path
+        if path.startswith('/'):
+            try:
+                candidate = str(Path(path).relative_to(self.root_dir))
+            except ValueError:
+                return True
+
+        head = candidate.split('/', 1)[0]
+        if head in ('', '.', '..', '~'):
+            return True
+
+        return not (self.root_dir / head).is_dir()
+
+    def names_a_placeholder(self, path: str, file_path: Path) -> bool:
+        """Check if a documented reference is a stand-in, not a path meant to exist.
+
+        Prose only. `bash script.sh` in a shell script is a real invocation and
+        has to resolve; the identical line in a README is a stand-in for
+        whatever the reader is writing. Applying the stem list to code would
+        stop reporting genuine misses in any repo that happened to ship a
+        `tool.sh`.
+        """
+        if file_path.suffix != '.md':
+            return False
+
+        basename = path.rsplit('/', 1)[-1]
+        if self.PLACEHOLDER_BRACES.search(basename):
+            return True
+        stem = basename.rsplit('.', 1)[0].lower()
+        return stem in self.PLACEHOLDER_STEMS or stem.startswith(self.PLACEHOLDER_PREFIXES)
+
     def load_rules(self) -> dict:
         """Load rules from config directory."""
         if self._rules is not None:
@@ -124,6 +201,25 @@ class ReferenceChecker:
         """Find files that might be renamed versions of missing_path."""
         rules = self.load_rules()
         return self._suggestions.find_similar_files(missing_path, rules)
+
+    def reference_check_files(self) -> list[Path]:
+        """Files whose source/script references get validated.
+
+        Markdown is in because a usage example naming a library is exactly the
+        drift this tool exists to catch, and for a long time it was scanned by
+        nothing: these checks globbed `**/*.sh`, so `refcheck docs/` reported
+        "all references valid" over five copies of
+        `source "$DOTFILES_DIR/install/common/lib/error-handling.sh"` pointing
+        at a path no code had used in months. A false clean is worse than a
+        false positive, because it certifies the rot.
+
+        Filtering one full listing rather than globbing per suffix is what makes
+        a single-file argument behave: find_files ignores its pattern in that
+        case and returns the file, so two globs returned it twice and scanned
+        it twice, and --skip-docs could never exclude it.
+        """
+        suffixes = {'.sh'} if self.skip_docs else {'.sh', '.md'}
+        return [f for f in self.find_files() if f.suffix in suffixes]
 
     def find_files(self, pattern: str = '**/*') -> list[Path]:
         """Find all files matching pattern, respecting exclusions."""
@@ -250,6 +346,16 @@ class ReferenceChecker:
         """Parse common shell variable assignment patterns."""
         symbol_table: dict[str, str] = {}
 
+        # Prose has no assignments to parse, but its $DOTFILES_DIR names the
+        # same repo root every script's does, and without seeding it every
+        # documented `source "$DOTFILES_DIR/..."` fails to resolve and is
+        # skipped. $SCRIPT_DIR stays unresolved on purpose: in prose there is
+        # no one script for it to be relative to, so guessing would invent
+        # misses.
+        if file_path.suffix == '.md':
+            symbol_table['DOTFILES_DIR'] = str(self.find_repo_root(file_path))
+            return symbol_table
+
         try:
             content = file_path.read_text(encoding='utf-8')
         except (OSError, UnicodeDecodeError):
@@ -284,9 +390,14 @@ class ReferenceChecker:
 
     def check_source_statements(self):
         """Check that source statements point to existing files."""
-        source_pattern = re.compile(r'source\s+["\']([^"\']+)["\']|source\s+\$[^/]*(/[^\s]+)')
+        # The lookbehind keeps the tail of a longer word out: `resource
+        # "aws_lambda_function"` in a Terraform block reported a missing file
+        # named after the resource, and newsboat's `urls-source "freshrss"` did
+        # the same. Shell rarely writes either, so this only surfaced once prose
+        # was scanned.
+        source_pattern = re.compile(r'(?<![\w-])source\s+["\']([^"\']+)["\']|(?<![\w-])source\s+\$[^/]*(/[^\s]+)')
 
-        for file_path in self.find_files('**/*.sh'):
+        for file_path in self.reference_check_files():
             try:
                 rel_path = file_path.relative_to(self.root_dir)
                 symbol_table = self.parse_variable_assignments(file_path)
@@ -310,12 +421,18 @@ class ReferenceChecker:
                         if '$' not in source_path and self.is_dynamic_path(source_path):
                             continue
 
+                        if self.names_a_placeholder(source_path, file_path):
+                            continue
+
                         original_path = source_path
                         if '$' in source_path:
                             try:
                                 source_path = self.resolve_path(source_path, symbol_table, file_path)
                             except ValueError:
                                 continue
+
+                        if self.describes_another_tree(source_path, file_path):
+                            continue
 
                         if source_path.startswith('/'):
                             resolved = Path(source_path)
@@ -344,15 +461,18 @@ class ReferenceChecker:
         # otherwise read as an invocation of a script that was never referenced.
         script_pattern = re.compile(r'(?<![\w.-])(?:bash|sh)\s+["\']?([^\s"\']+\.sh)["\']?')
 
-        for file_path in self.find_files('**/*.sh'):
-            if self.skip_docs and file_path.suffix == '.md':
-                continue
-
+        for file_path in self.reference_check_files():
             try:
                 rel_path = file_path.relative_to(self.root_dir)
                 with file_path.open(encoding='utf-8') as f:
                     for line_num, line in enumerate(f, 1):
                         if 'bash' not in line and 'sh' not in line:
+                            continue
+
+                        # ```bash file=scripts/deploy.sh opens a fence, it does
+                        # not run anything, and its attributes parse as an
+                        # invocation of a file named `file=scripts/deploy.sh`.
+                        if line.lstrip().startswith('```'):
                             continue
 
                         if self.runs_on_another_host(line):
@@ -362,6 +482,12 @@ class ReferenceChecker:
                             script_path = match.group(1).rstrip('"\'')
 
                             if not script_path or self.is_dynamic_path(script_path):
+                                continue
+
+                            if self.names_a_placeholder(script_path, file_path):
+                                continue
+
+                            if self.describes_another_tree(script_path, file_path):
                                 continue
 
                             if line.strip().startswith('#') and script_path == file_path.name:

@@ -1,6 +1,23 @@
 # CHANGELOG
 
 
+## v0.3.7 (2026-08-06)
+
+### Bug Fixes
+
+- Exclude tool caches from the scan
+  ([`8fc572a`](https://github.com/datapointchris/refcheck/commit/8fc572a1bc57a71556f0748af439e0706c65853f))
+
+A sweep for "appcore" after extracting it from dotfiles returned 21 hits: one real reference in the
+  docs and twenty in .pytest_cache/v/cache/nodeids, which holds a node ID per collected test and is
+  rewritten by the next pytest run.
+
+Same category as the .jsonl exclusion already here — a cache records what a path *was*, not what
+  should exist — so .pytest_cache, .ruff_cache and .mypy_cache join the default excludes. The ratio
+  is the whole point: a real finding buried twenty deep is a finding nobody reads, and false
+  positives are why this tool went unused before.
+
+
 ## v0.3.6 (2026-08-04)
 
 ### Bug Fixes

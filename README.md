@@ -14,6 +14,11 @@ fragile path patterns, and validates variable-based paths.
 2. **Broken script references** - Missing files in `bash` or `sh` commands
 3. **Old path patterns** - Stale references after refactoring
 
+Shell scripts and markdown are both checked. Documentation goes stale in
+exactly the way code does — a usage example naming a library that has since
+moved is the drift this tool exists to catch — so prose is scanned unless you
+pass `--skip-docs`.
+
 ### Warnings (exit 0 unless --strict)
 
 1. **Fragile to working directory** - Relative paths that only work from
@@ -49,6 +54,17 @@ fragile path patterns, and validates variable-based paths.
 - Detects broken paths hidden behind variables
 - Shows both original and resolved paths in error messages
 - Gracefully skips unresolvable variables to avoid false positives
+- In prose, `$DOTFILES_DIR` is the repo root; `$SCRIPT_DIR` stays unresolved,
+  because a doc has no one script for it to be relative to
+
+**Quiet on documentation that is not about your repo:**
+
+Prose quotes other projects' trees constantly, so a reference is only checked
+when its leading directory is one your repo actually has. A rename *under* a
+directory you still have is reported — that is the case worth catching — while
+`source child.sh` in a page explaining `set -e` is not. Documentation
+placeholders (`toolname.sh`, `{tool}-plugins.sh`) are skipped in prose but not
+in shell, where `bash script.sh` is a real invocation.
 
 **Warning system:**
 
@@ -264,7 +280,7 @@ fi
 | `--pattern PATTERN` | Find old pattern | `--pattern "old/"` |
 | `--desc DESC` | Description for pattern | `--desc "Now new/"` |
 | `--type, -t TYPE` | Filter by file type | `--type sh` |
-| `--skip-docs` | Skip markdown files | `--skip-docs` |
+| `--skip-docs` | Skip markdown files, for both reference and pattern checks | `--skip-docs` |
 | `--strict` | Treat warnings as errors (exit 1) | `--strict` |
 | `--no-warn` | Disable fragile path warnings | `--no-warn` |
 | `--learn-rules` | Generate rules from git history | `--learn-rules` |

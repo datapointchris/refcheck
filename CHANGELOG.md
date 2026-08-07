@@ -1,6 +1,55 @@
 # CHANGELOG
 
 
+## v0.3.8 (2026-08-07)
+
+### Bug Fixes
+
+- Validate references in markdown, not just shell
+  ([`bd0205d`](https://github.com/datapointchris/refcheck/commit/bd0205dcea4bf0b1effd6bee403e4d4d17b8d8b5))
+
+check_source_statements and check_script_references globbed **/*.sh, so prose was never read.
+  `refcheck docs/` in dotfiles reported "all file references valid" over five copies of `source
+  "$DOTFILES_DIR/install/common/lib/error-handling.sh"` naming a path no code had used in months. A
+  false clean is worse than a false positive because it certifies the rot as checked.
+
+Scanning prose needed four suppressions to stay quiet enough to trust, measured across seven repos:
+
+- Prose has no assignments to parse, so $DOTFILES_DIR is seeded with the repo root. Without it every
+  documented source failed to resolve and was skipped. $SCRIPT_DIR stays unresolved: there is no one
+  script for it to be relative to. - A reference is only ours to validate when its leading directory
+  is one this repo has. Docs quote other people's trees constantly, and a bare filename anchors to
+  nothing. A rename under a directory we still have is preserved, which is the case that matters. -
+  Documentation placeholders (toolname.sh, {tool}-plugins.sh) name files never meant to exist. Prose
+  only: `bash script.sh` is a real invocation in a shell script. - A fence opener carrying
+  attributes runs nothing.
+
+Also fixes a pre-existing regex bug the wider scan exposed: `source` lacked a word boundary, so
+  `resource "aws_lambda_function"` and newsboat's `urls-source "freshrss"` both parsed as source
+  statements. Shell rarely writes either, so only prose surfaced it.
+
+Filtering one listing rather than globbing per suffix is what makes a single-file argument work;
+  find_files ignores its pattern there, so two globs scanned the file twice and --skip-docs could
+  not exclude it.
+
+After: 10 findings in dotfiles, all genuine, and zero across homelab, ichrisbirch, docs, forge,
+  syncer and refcheck itself.
+
+### Chores
+
+- **lint**: Disable SC1091/SC1090 from the forge toolchain
+  ([`be7d723`](https://github.com/datapointchris/refcheck/commit/be7d723796f3c91364c978300a592742ec4f7282))
+
+### Documentation
+
+- Describe markdown checking and its suppressions
+  ([`ee15231`](https://github.com/datapointchris/refcheck/commit/ee152318d88524df33204f5aa8d6c844a904e2e0))
+
+The README said refcheck validated source and script references without saying which files it read,
+  which was accurate right up until it started reading prose. Records what is now scanned, the two
+  variable rules that differ in prose, and why a reference to another project's tree is quiet.
+
+
 ## v0.3.7 (2026-08-06)
 
 ### Bug Fixes

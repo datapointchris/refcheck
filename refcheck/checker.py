@@ -39,6 +39,10 @@ class ReferenceChecker:
         # exist. A 197 MB devstats log naming every file a hook once checked
         # reported nine misses for one query, all of them history.
         '*.jsonl',
+        # Same reasoning: a run transcript names what existed when it ran. A
+        # gitignored test-wsl-docker.log reported the pre-rename name of a tool
+        # that had just been renamed everywhere it is actually referenced.
+        '*.log',
     ]
 
     TEST_FIXTURE_PATTERNS = [

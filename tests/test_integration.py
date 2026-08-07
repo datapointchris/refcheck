@@ -483,6 +483,23 @@ def test_pattern_reports_a_stale_path_on_a_line_that_also_holds_a_url(tmp_path):
     assert len(checker.issues) == 1
 
 
+def test_pattern_ignores_hits_inside_run_logs(tmp_path):
+    """A run transcript names what existed when it ran, like the .jsonl logs.
+
+    Renaming backmeup to packup reported one miss against a gitignored
+    test-wsl-docker.log, after every live reference had already been updated.
+    """
+    (tmp_path / 'test-wsl-docker.log').write_text('✓ backmeup help\n')
+    (tmp_path / 'docs').mkdir()
+    (tmp_path / 'docs' / 'guide.md').write_text('Run backmeup to archive a directory.\n')
+
+    checker = ReferenceChecker(tmp_path)
+    checker.check_pattern('backmeup', 'renamed to packup')
+
+    assert len(checker.issues) == 1
+    assert 'docs/guide.md' in str(checker.issues[0])
+
+
 def test_pattern_ignores_hits_inside_tool_caches(tmp_path):
     """A tool cache records what a path *was* on the last run, like the .jsonl logs.
 

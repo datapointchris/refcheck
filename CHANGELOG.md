@@ -1,6 +1,18 @@
 # CHANGELOG
 
 
+## v0.3.9 (2026-08-07)
+
+### Bug Fixes
+
+- Exclude run logs from pattern scanning
+  ([`b5c8edc`](https://github.com/datapointchris/refcheck/commit/b5c8edc064b199c03ebc06680e03e0b7d4dbdc01))
+
+A .log file is a transcript of what existed when it ran, the same class of artifact as the .jsonl
+  event logs already excluded. Renaming a tool reported a miss against a gitignored test log after
+  every live reference was updated.
+
+
 ## v0.3.8 (2026-08-07)
 
 ### Bug Fixes

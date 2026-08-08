@@ -1,9 +1,9 @@
 """Command-line interface for refcheck."""
 
-import argparse
-import sys
 from pathlib import Path
+from typing import Annotated
 
+import typer
 from pyselfupdate import notify
 
 from .checker import ReferenceChecker
@@ -14,131 +14,105 @@ from .selfupdate import CONFIG as UPDATE_CONFIG
 from .selfupdate import print_version
 from .selfupdate import run_update
 
+HELP = (
+    'Find file references that no longer resolve, and path patterns that will break the next time '
+    'something moves. A reference breaks in the file that was not edited, so refcheck always reads the '
+    'whole tree rather than a changeset. Give it a directory to narrow the search, or --pattern to ask '
+    'the one question a move leaves behind: what still points at the old name?'
+)
 
-def main():
-    parser = argparse.ArgumentParser(
-        prog='refcheck',
-        description='Find broken file references and old path patterns',
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  # Validate all references + warn about fragile paths
-  %(prog)s
-  %(prog)s --skip-docs              # Skip markdown files
+EPILOG = '\n\n'.join(
+    [
+        '[b]Examples[/b]',
+        '[b]refcheck[/b] — every source and bash reference in the repo, plus fragile-path warnings',
+        '[b]refcheck apps/ --type sh[/b] — narrow to one directory and one file type',
+        '[b]refcheck --strict[/b] — CI mode, where a warning is a failure',
+        '[b]refcheck --pattern "old/path/" --desc "now new/path/"[/b] — after a move, what still points at the old name',
+        "[b]refcheck --learn-rules[/b] — derive pattern rules from git's own rename history",
+        '[b]What counts as what[/b]',
+        (
+            'Errors, always checked, exit 1: a source statement or a bash/sh invocation naming a file '
+            'that is not there, and any --pattern hit.'
+        ),
+        (
+            'Warnings, checked by default, exit 0 unless --strict: relative paths that only resolve from '
+            'one directory, and directory variables built by ../ traversal.'
+        ),
+    ]
+)
 
-  # Check specific directory
-  %(prog)s management/
-  %(prog)s apps/ --type sh          # Only shell scripts in apps/
+app = typer.Typer(
+    add_completion=False,
+    context_settings={'help_option_names': ['-h', '--help']},
+)
 
-  # Control warnings
-  %(prog)s --no-warn                # Only check errors, skip fragile path warnings
-  %(prog)s --strict                 # Treat warnings as errors (CI mode)
 
-  # Find old patterns after refactoring
-  %(prog)s --pattern "old/path/"
-  %(prog)s --pattern "FooClass" --desc "Renamed to BarClass"
-
-What it checks:
-  Errors (always checked, exit 1):
-    - Broken source commands (source statements pointing to non-existent files)
-    - Broken bash commands (bash/sh invocations pointing to non-existent scripts)
-    - Old path patterns (after moving/renaming directories)
-
-  Warnings (checked by default, exit 0 unless --strict):
-    - Fragile CWD paths: Relative paths that only work from specific directories
-    - Fragile traversal paths: Directory variables using ../ traversal
-
-Learn from git history:
-  %(prog)s --learn-rules           # Generate rules from git renames
-
-Keep refcheck current:
-  %(prog)s --update                # Install the latest release
-  %(prog)s --update --check        # Report whether one is available
-
-Exit codes:
-  0 - No errors (warnings OK unless --strict)
-  1 - Found errors, or warnings in --strict mode
-        """,
-    )
-    parser.add_argument(
-        'path',
-        nargs='?',
-        type=Path,
-        help='Directory to check (default: current directory)',
-    )
-    parser.add_argument(
-        '--pattern',
-        metavar='PATTERN',
-        help="Check for specific old path pattern (e.g., 'old/path/')",
-    )
-    parser.add_argument(
-        '--desc',
-        metavar='DESC',
-        help='Description for pattern check',
-    )
-    parser.add_argument(
-        '--type',
-        '-t',
-        metavar='TYPE',
-        help="Filter by file type (e.g., 'sh', 'py')",
-    )
-    parser.add_argument(
-        '--skip-docs',
-        action='store_true',
-        help='Skip documentation (.md) files',
-    )
-    parser.add_argument(
-        '--strict',
-        action='store_true',
-        help='Treat warnings as errors (exit 1 if warnings found)',
-    )
-    parser.add_argument(
-        '--no-warn',
-        action='store_true',
-        help='Disable fragile path warnings (only check for errors)',
-    )
-    parser.add_argument(
-        '--test-mode',
-        action='store_true',
-        help='Include test fixtures (normally excluded)',
-    )
-    parser.add_argument(
-        '--learn-rules',
-        action='store_true',
-        help='Generate rules.json from git rename history',
-    )
-    parser.add_argument(
-        '--update',
-        action='store_true',
-        help='Update refcheck to the latest release',
-    )
-    parser.add_argument(
-        '--check',
-        action='store_true',
-        help='With --update, report an available release without installing it',
-    )
-    parser.add_argument(
-        '--version',
-        action='store_true',
-        help='Show the installed version and exit',
-    )
-    args = parser.parse_args()
-
-    if args.version:
+@app.command(help=HELP, epilog=EPILOG)
+def main(
+    path: Annotated[
+        Path | None,
+        typer.Argument(help='Directory to check. Defaults to the current one.', rich_help_panel='Scope'),
+    ] = None,
+    file_type: Annotated[
+        str | None,
+        typer.Option('--type', '-t', help="Only files of this extension, e.g. 'sh' or 'py'.", rich_help_panel='Filters'),
+    ] = None,
+    skip_docs: Annotated[
+        bool,
+        typer.Option('--skip-docs', help='Leave markdown out of the scan.', rich_help_panel='Filters'),
+    ] = False,
+    test_mode: Annotated[
+        bool,
+        typer.Option('--test-mode', help='Include test fixtures, which are excluded by default.', rich_help_panel='Filters'),
+    ] = False,
+    pattern: Annotated[
+        str | None,
+        typer.Option('--pattern', help="An old path or name to hunt for, e.g. 'old/path/'.", rich_help_panel='Pattern search'),
+    ] = None,
+    desc: Annotated[
+        str | None,
+        typer.Option('--desc', help='What the pattern became, shown alongside each hit.', rich_help_panel='Pattern search'),
+    ] = None,
+    strict: Annotated[
+        bool,
+        typer.Option('--strict', help='Treat warnings as errors, so CI fails on them.', rich_help_panel='Severity'),
+    ] = False,
+    no_warn: Annotated[
+        bool,
+        typer.Option('--no-warn', help='Check only for errors, skipping fragile-path warnings.', rich_help_panel='Severity'),
+    ] = False,
+    learn_rules: Annotated[
+        bool,
+        typer.Option('--learn-rules', help="Write rules.json from git's rename history.", rich_help_panel='Maintenance'),
+    ] = False,
+    update: Annotated[
+        bool,
+        typer.Option('--update', help='Install the latest refcheck release.', rich_help_panel='Maintenance'),
+    ] = False,
+    check: Annotated[
+        bool,
+        typer.Option('--check', help='With --update, report an available release without installing it.', rich_help_panel='Maintenance'),
+    ] = False,
+    version: Annotated[
+        bool,
+        typer.Option('--version', help='Show the installed version and exit.', rich_help_panel='Maintenance'),
+    ] = False,
+):
+    if version:
         print_version()
-        sys.exit(0)
+        raise typer.Exit(0)
 
-    if args.update:
-        sys.exit(run_update(check_only=args.check))
+    if update:
+        raise typer.Exit(run_update(check_only=check))
 
     config = load_config()
 
-    if args.learn_rules:
+    if learn_rules:
         learn_rules_from_git(config.time_window)
-        sys.exit(0)
+        raise typer.Exit(0)
 
     root_dir = Path.cwd()
-    search_path = args.path.resolve() if args.path else root_dir
+    search_path = path.resolve() if path else root_dir
 
     try:
         search_path.relative_to(root_dir)
@@ -148,16 +122,16 @@ Exit codes:
     checker = ReferenceChecker(
         root_dir=root_dir,
         search_path=search_path,
-        skip_docs=args.skip_docs,
-        file_type=args.type,
-        warn_fragile=not args.no_warn,
-        strict=args.strict,
-        test_mode=args.test_mode,
+        skip_docs=skip_docs,
+        file_type=file_type,
+        warn_fragile=not no_warn,
+        strict=strict,
+        test_mode=test_mode,
         config=config,
     )
 
-    if args.pattern:
-        checker.check_pattern(args.pattern, args.desc)
+    if pattern:
+        checker.check_pattern(pattern, desc)
     else:
         checker.run_all_checks()
 
@@ -174,10 +148,9 @@ Exit codes:
     notify(UPDATE_CONFIG)
 
     if checker.issues or checker.strict and checker.warnings:
-        sys.exit(1)
-    else:
-        sys.exit(0)
+        raise typer.Exit(1)
+    raise typer.Exit(0)
 
 
 if __name__ == '__main__':
-    main()
+    app()

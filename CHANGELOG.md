@@ -1,6 +1,30 @@
 # CHANGELOG
 
 
+## v0.4.0 (2026-08-08)
+
+### Features
+
+- **cli**: Give refcheck colored, sectioned help
+  ([`a2c7db0`](https://github.com/datapointchris/refcheck/commit/a2c7db07a19b2c9bbf70139588a9af85879ccd6a))
+
+argparse rendered monochrome help under its plumbing-named 'positional arguments:' / 'options:'
+  headings, so refcheck did not meet the section-grouping rule in cli-design.md. Typer is the fleet
+  standard for a standalone Python CLI and groups options through rich_help_panel. rich-argparse was
+  the alternative and would only have half-solved it: a one-line formatter_class swap colors
+  argparse in place but keeps its headings.
+
+Options now group as Scope / Filters / Pattern search / Severity / Maintenance, the description says
+  what the tool is for and why it reads the whole tree, and each example names the situation it
+  answers. The error-vs-warning contract moved out of a wall of epilog text into its own section.
+
+The command surface is unchanged: a single Typer command keeps the flat parser, every flag and the
+  positional path keep their names, and -h works via help_option_names. The pre-commit hook entry
+  stays a bare 'refcheck'.
+
+feat, not refactor: the help is user-visible, and refactor would mean the change never ships.
+
+
 ## v0.3.9 (2026-08-07)
 
 ### Bug Fixes

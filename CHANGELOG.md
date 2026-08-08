@@ -1,6 +1,29 @@
 # CHANGELOG
 
 
+## v0.4.1 (2026-08-08)
+
+### Bug Fixes
+
+- **update**: Use pyselfupdate's updater instead of a copy
+  ([`ffc28e4`](https://github.com/datapointchris/refcheck/commit/ffc28e46171e01792cd6e80bd013cb9a26493997))
+
+selfupdate.py carried a hand-copied run_update whose stated reason was that pyselfupdate.typercmd
+  'pulls in typer, and refcheck's CLI is argparse'. The CLI is typer now, so the premise is gone and
+  the copy can be imported.
+
+The copy had drifted into the bug typercmd exists to prevent: it fetched the changelog after
+  update() had already replaced this interpreter's environment. That is the syncer 4.0.0 failure
+  verbatim -- a lazy import resolved against packages the new release had just deleted. It flushed
+  stdout in acknowledgement of the hazard but still made a network call on the far side of the
+  install. typercmd orders every network read before the install and exits without unwinding.
+
+--version becomes an eager callback, which is what cli-design.md asks of a Python CLI, rather than a
+  bool read at the top of the command body.
+
+Requires the pyselfupdate[typer] extra, which costs nothing now that typer is a direct dependency.
+
+
 ## v0.4.0 (2026-08-08)
 
 ### Features

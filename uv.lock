@@ -361,6 +361,11 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/cf/24/92e4b0fd575e537488ef0fce2fee36adb0ec058ac42d083796264101029c/pyselfupdate-0.2.2-py3-none-any.whl", hash = "sha256:2a99d98714ebdd33bd2cfdae1fba32027525c10f3aac0084459a3a352da373b1", size = 26550, upload-time = "2026-08-04T22:05:11.802Z" },
 ]
 
+[package.optional-dependencies]
+typer = [
+    { name = "typer" },
+]
+
 [[package]]
 name = "pytest"
 version = "9.0.2"
@@ -450,7 +455,7 @@ name = "refcheck"
 version = "0.4.0"
 source = { editable = "." }
 dependencies = [
-    { name = "pyselfupdate" },
+    { name = "pyselfupdate", extra = ["typer"] },
     { name = "typer" },
 ]
 
@@ -465,7 +470,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "pyselfupdate", specifier = ">=0.2.2" },
+    { name = "pyselfupdate", extras = ["typer"], specifier = ">=0.2.2" },
     { name = "typer", specifier = ">=0.12.0" },
 ]
 

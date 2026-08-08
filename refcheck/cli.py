@@ -5,6 +5,7 @@ from typing import Annotated
 
 import typer
 from pyselfupdate import notify
+from pyselfupdate.typercmd import run_update
 
 from .checker import ReferenceChecker
 from .config import load_config
@@ -12,7 +13,6 @@ from .output import print_results
 from .rules import learn_rules_from_git
 from .selfupdate import CONFIG as UPDATE_CONFIG
 from .selfupdate import print_version
-from .selfupdate import run_update
 
 HELP = (
     'Find file references that no longer resolve, and path patterns that will break the next time '
@@ -45,6 +45,12 @@ app = typer.Typer(
     add_completion=False,
     context_settings={'help_option_names': ['-h', '--help']},
 )
+
+
+def _version_callback(value: bool) -> None:
+    if value:
+        print_version()
+        raise typer.Exit(0)
 
 
 @app.command(help=HELP, epilog=EPILOG)
@@ -95,15 +101,18 @@ def main(
     ] = False,
     version: Annotated[
         bool,
-        typer.Option('--version', help='Show the installed version and exit.', rich_help_panel='Maintenance'),
+        typer.Option(
+            '--version',
+            callback=_version_callback,
+            is_eager=True,
+            help='Show the installed version and exit.',
+            rich_help_panel='Maintenance',
+        ),
     ] = False,
 ):
-    if version:
-        print_version()
-        raise typer.Exit(0)
-
     if update:
-        raise typer.Exit(run_update(check_only=check))
+        run_update(UPDATE_CONFIG, check_only=check)
+        raise typer.Exit(0)
 
     config = load_config()
 

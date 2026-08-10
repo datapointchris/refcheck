@@ -43,11 +43,26 @@ class ReferenceChecker:
         # gitignored test-wsl-docker.log reported the pre-rename name of a tool
         # that had just been renamed everywhere it is actually referenced.
         '*.log',
+        # A changelog is that same thing written deliberately: an entry naming
+        # cli/Makefile is correct precisely because that is where the file was
+        # when it shipped, and rewriting history to match the current tree would
+        # be the bug. Seven of the twenty-two hits in the fleet-wide rename
+        # replay were changelog entries, the single largest source of noise.
+        'CHANGELOG.md',
     ]
 
+    # A fixtures directory holds recorded data, not references. ichrisbirch's
+    # tests/stats/fixtures/tool_outputs/tokei_output.json is a captured tokei
+    # run naming every file in the repo when it was taken, and one commit
+    # removing the Flask app made it 219 of the 280 hits across the whole fleet
+    # — enough to bury the four findings that were real. Nobody would hand-edit
+    # it either; the fix is to re-run the tool. `--test-mode` scans them anyway.
     TEST_FIXTURE_PATTERNS = [
         'tests/apps/test-refcheck.sh',
-        'tests/apps/fixtures/refcheck-*/**',
+        'fixtures/**',
+        '**/fixtures/**',
+        'testdata/**',
+        '**/testdata/**',
         'docs/archive/**',
     ]
 
@@ -325,7 +340,18 @@ class ReferenceChecker:
 
     def check_pattern(self, pattern: str, description: str | None = None):
         """Check for old path pattern references."""
-        description = description or f'Old pattern: {pattern}'
+        self.check_patterns({pattern: description or f'Old pattern: {pattern}'})
+
+    def check_patterns(self, patterns: dict[str, str]):
+        """Check for several old paths in one walk of the tree.
+
+        A commit that moves a directory stages a rename per file in it, and
+        --moves turns each into a pattern. Walking once per pattern made the
+        cost of the check scale with the size of the move, which is backwards:
+        the large refactor is exactly the one worth checking.
+        """
+        if not patterns:
+            return
 
         for file_path in self.find_files():
             if self.skip_docs and file_path.suffix == '.md':
@@ -338,16 +364,17 @@ class ReferenceChecker:
                 rel_path = file_path.relative_to(self.root_dir)
                 with file_path.open(encoding='utf-8', errors='ignore') as f:
                     for line_num, line in enumerate(f, 1):
-                        if pattern in line and not self._pattern_hit_still_resolves(pattern, line):
-                            self.issues.append(
-                                Issue(
-                                    file=rel_path,
-                                    line_num=line_num,
-                                    check_type=CheckType.PATTERN,
-                                    message=f'Found: {pattern}',
-                                    suggestion=description,
+                        for pattern, description in patterns.items():
+                            if pattern in line and not self._pattern_hit_still_resolves(pattern, line):
+                                self.issues.append(
+                                    Issue(
+                                        file=rel_path,
+                                        line_num=line_num,
+                                        check_type=CheckType.PATTERN,
+                                        message=f'Found: {pattern}',
+                                        suggestion=description,
+                                    )
                                 )
-                            )
             except (OSError, UnicodeDecodeError):
                 continue
 

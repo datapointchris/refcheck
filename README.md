@@ -88,12 +88,19 @@ notice to stderr; set `NO_AUTO_UPDATE` to silence it.
 ```yaml
 repos:
   - repo: https://github.com/datapointchris/refcheck
-    rev: v0.2.1
+    rev: v0.4.1
     hooks:
       - id: refcheck
+        args: [--moves]
 ```
 
-Add `args: [--strict]` to fail on warnings as well as errors.
+`--moves` is what makes the hook worth having. Without it the hook validates
+`source` and `bash` targets, which on a repo that is already clean finds nothing
+most days. With it, every rename and deletion you have staged is also checked
+for what still points at the old name — in any file type, not just shell. That
+is the check a move actually needs, asked at the moment fixing it is free.
+
+Add `args: [--moves, --strict]` to fail on warnings as well as errors.
 
 The hook scans the whole repository rather than the staged files, and this is
 deliberate: a reference breaks in the file that was *not* edited. Delete or move
@@ -134,10 +141,18 @@ refcheck --strict
 ### After moving files
 
 ```bash
-# Moved tests/install/ to tests/install/
+# Ask git what moved, instead of typing the old path in
+refcheck --moves              # renames and deletions you have staged
+refcheck --moves-since origin/main   # everything the branch moved
+
+# Or name the old path yourself
 refcheck --pattern "tests/install/"
-# Finds all stale references across repo
 ```
+
+`--moves` reads `git diff --diff-filter=RD -M` and runs a pattern check per old
+path, so the answer covers markdown, YAML, Dockerfiles and code alike. Paths
+that came back, and bare filenames with no directory, are skipped — the first is
+not stale and the second is too generic to be evidence.
 
 ### Before running tests
 
@@ -279,6 +294,8 @@ fi
 | `path` | Directory to check (positional) | `refcheck install/` |
 | `--pattern PATTERN` | Find old pattern | `--pattern "old/"` |
 | `--desc DESC` | Description for pattern | `--desc "Now new/"` |
+| `--moves` | Check what staged renames and deletions left behind | `--moves` |
+| `--moves-since REF` | The same, for every move between REF and HEAD | `--moves-since origin/main` |
 | `--type, -t TYPE` | Filter by file type | `--type sh` |
 | `--skip-docs` | Skip markdown files, for both reference and pattern checks | `--skip-docs` |
 | `--strict` | Treat warnings as errors (exit 1) | `--strict` |
@@ -294,7 +311,12 @@ fi
 Automatically excludes:
 
 - **Build artifacts**: `.git`, `node_modules`, `.venv`, `__pycache__`, `site/`
-- **Historical files**: `.planning/`, `.claude/metrics/`
+- **Historical files**: `.planning/`, `.claude/metrics/`, `*.log`, `*.jsonl`,
+  `CHANGELOG.md` — each records what a path *was*, which is what makes a
+  changelog entry naming the old location correct rather than stale
+- **Recorded data**: `fixtures/`, `testdata/` — a captured tool output names
+  every file that existed when it was taken, and is fixed by re-running the
+  tool, never by editing. `--test-mode` scans them anyway
 - **Dynamic paths**: Container paths (`/root/`, `/home/`), temp files (`/tmp/`)
 - **Self-references**: Usage examples in scripts referencing themselves
 
@@ -316,6 +338,7 @@ Modular structure:
 - `cli.py` - argparse CLI entry point
 - `config.py` - Config dataclass, TOML loading
 - `checker.py` - ReferenceChecker class (core logic)
+- `moves.py` - Renames and deletions read from git
 - `rules.py` - Rules loading/learning from git
 - `suggestions.py` - File similarity matching
 - `output.py` - Result formatting

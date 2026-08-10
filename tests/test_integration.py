@@ -240,6 +240,53 @@ class TestDocumentedInvocations:
         assert 'runner.sh' in result.stdout
 
 
+class TestMovesEndToEnd:
+    """The question a move leaves behind, asked without naming the old path."""
+
+    @staticmethod
+    def _repo_with_a_staged_move(repo):
+        (repo / 'lib').mkdir()
+        (repo / 'lib' / 'helpers.sh').write_text('echo hi\n')
+        (repo / 'deploy.yml').write_text('script: lib/helpers.sh\n')
+        subprocess.run(['git', 'add', '-A'], cwd=repo, capture_output=True, check=True)
+        subprocess.run(['git', 'commit', '-m', 'add helpers'], cwd=repo, capture_output=True, check=True)
+
+        (repo / 'shared').mkdir()
+        subprocess.run(['git', 'mv', 'lib/helpers.sh', 'shared/helpers.sh'], cwd=repo, capture_output=True, check=True)
+
+    def test_finds_what_a_staged_rename_left_behind(self, temp_git_repo):
+        self._repo_with_a_staged_move(temp_git_repo)
+
+        result = run_refcheck('--moves', cwd=temp_git_repo)
+        assert result.returncode == 1
+        assert 'deploy.yml' in result.stdout
+        assert 'now shared/helpers.sh' in result.stdout
+
+    def test_says_nothing_when_the_references_were_updated(self, temp_git_repo):
+        self._repo_with_a_staged_move(temp_git_repo)
+        (temp_git_repo / 'deploy.yml').write_text('script: shared/helpers.sh\n')
+        subprocess.run(['git', 'add', '-A'], cwd=temp_git_repo, capture_output=True, check=True)
+
+        result = run_refcheck('--moves', cwd=temp_git_repo)
+        assert result.returncode == 0
+
+    def test_moves_is_off_unless_asked_for(self, temp_git_repo):
+        self._repo_with_a_staged_move(temp_git_repo)
+
+        result = run_refcheck(cwd=temp_git_repo)
+        assert result.returncode == 0
+
+    def test_changelog_entries_are_not_stale_references(self, temp_git_repo):
+        """A changelog names where a file was when it shipped. That is the point of it."""
+        self._repo_with_a_staged_move(temp_git_repo)
+        (temp_git_repo / 'deploy.yml').write_text('script: shared/helpers.sh\n')
+        (temp_git_repo / 'CHANGELOG.md').write_text('# Changelog\n\n- Added `lib/helpers.sh`\n')
+        subprocess.run(['git', 'add', '-A'], cwd=temp_git_repo, capture_output=True, check=True)
+
+        result = run_refcheck('--moves', cwd=temp_git_repo)
+        assert result.returncode == 0
+
+
 class TestSelfReferences:
     """Test 9: Self-references in comments should be ignored."""
 

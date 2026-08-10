@@ -1,5 +1,6 @@
 """Command-line interface for refcheck."""
 
+import sys
 from pathlib import Path
 from typing import Annotated
 
@@ -7,9 +8,11 @@ import typer
 from pyselfupdate import notify
 from pyselfupdate.typercmd import run_update
 
+from . import moves as moves_module
 from .checker import ReferenceChecker
 from .config import load_config
 from .output import print_results
+from .rules import get_repo_root
 from .rules import learn_rules_from_git
 from .selfupdate import CONFIG as UPDATE_CONFIG
 from .selfupdate import print_version
@@ -28,6 +31,8 @@ EPILOG = '\n\n'.join(
         '[b]refcheck apps/ --type sh[/b] — narrow to one directory and one file type',
         '[b]refcheck --strict[/b] — CI mode, where a warning is a failure',
         '[b]refcheck --pattern "old/path/" --desc "now new/path/"[/b] — after a move, what still points at the old name',
+        '[b]refcheck --moves[/b] — ask that of every rename and deletion you have staged, without naming them',
+        '[b]refcheck --moves-since origin/main[/b] — the same over a branch, for CI',
         "[b]refcheck --learn-rules[/b] — derive pattern rules from git's own rename history",
         '[b]What counts as what[/b]',
         (
@@ -78,6 +83,14 @@ def main(
     desc: Annotated[
         str | None,
         typer.Option('--desc', help='What the pattern became, shown alongside each hit.', rich_help_panel='Pattern search'),
+    ] = None,
+    check_moves: Annotated[
+        bool,
+        typer.Option('--moves', help='Also hunt for what the staged renames and deletions left behind.', rich_help_panel='Pattern search'),
+    ] = False,
+    moves_since: Annotated[
+        str | None,
+        typer.Option('--moves-since', help='The same, for every move between REF and HEAD.', rich_help_panel='Pattern search'),
     ] = None,
     strict: Annotated[
         bool,
@@ -143,6 +156,15 @@ def main(
         checker.check_pattern(pattern, desc)
     else:
         checker.run_all_checks()
+
+        if check_moves or moves_since:
+            repo_root = get_repo_root(root_dir)
+            if repo_root is None:
+                print('fatal: not a git repository (or any of the parent directories): .git', file=sys.stderr)
+                raise typer.Exit(128)
+
+            found = moves_module.since(moves_since, repo_root) if moves_since else moves_module.staged(repo_root)
+            checker.check_patterns({move.old: move.description for move in found})
 
     print_results(
         checker.issues,

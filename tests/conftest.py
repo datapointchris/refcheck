@@ -128,6 +128,26 @@ def test_fixtures(temp_dir):
         '#!/usr/bin/env bash\n# Usage:\n#   source valid/lib/helpers.sh\necho "the source above is documentation"\n'
     )
 
+    # The shapes logsift's run-and-summarize.sh reported seven misses for: a
+    # header block illustrating invocations, and a usage function echoing them
+    # back. Neither names anything meant to exist here.
+    (valid / 'documented-invocations.sh').write_text(
+        '#!/usr/bin/env bash\n'
+        '# Examples:\n'
+        '#   bash install.sh\n'
+        '#   ✅ CORRECT: bash management/run-and-summarize.sh "task install"\n'
+        '#   source shell/lib.sh\n'
+        'echo "  bash install.sh"\n'
+        'printf "usage: bash management/run-and-summarize.sh <command>\\n"\n'
+    )
+
+    # The same two contexts naming a directory this repo has. Documentation goes
+    # stale exactly the way code does, so these stay reportable — widening the
+    # guard must not become a blanket skip of comments and echoes.
+    (stale_docs / 'documented-stale.sh').write_text(
+        '#!/usr/bin/env bash\n#   bash valid/gone/runner.sh\necho "then run: bash valid/gone/runner.sh"\n'
+    )
+
     return temp_dir
 
 

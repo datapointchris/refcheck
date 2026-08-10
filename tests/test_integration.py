@@ -216,6 +216,30 @@ class TestMarkdownReferences:
         assert 'runner.sh' in result.stdout
 
 
+class TestDocumentedInvocations:
+    """A shell script explains itself in comments and usage strings."""
+
+    def test_illustrated_invocations_are_not_reported(self, test_fixtures):
+        result = run_refcheck('valid/documented-invocations.sh', cwd=test_fixtures)
+        assert result.returncode == 0
+        for illustrative in ('install.sh', 'run-and-summarize.sh', 'lib.sh'):
+            assert illustrative not in result.stdout
+
+    def test_documented_reference_under_an_existing_directory_is_still_reported(self, test_fixtures):
+        """The signal the widened guard must preserve, in both contexts."""
+        result = run_refcheck('stale-docs/documented-stale.sh', cwd=test_fixtures)
+        assert result.returncode == 1
+        assert result.stdout.count('valid/gone/runner.sh') == 2
+
+    def test_a_real_invocation_is_still_a_real_invocation(self, test_fixtures):
+        """Only the leading command decides; a script run after an echo still resolves."""
+        script = test_fixtures / 'valid' / 'runs-after-echo.sh'
+        script.write_text('#!/usr/bin/env bash\nbash valid/gone/runner.sh && echo done\n')
+        result = run_refcheck('valid/runs-after-echo.sh', cwd=test_fixtures)
+        assert result.returncode == 1
+        assert 'runner.sh' in result.stdout
+
+
 class TestSelfReferences:
     """Test 9: Self-references in comments should be ignored."""
 

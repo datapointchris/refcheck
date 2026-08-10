@@ -74,6 +74,12 @@ class ReferenceChecker:
         r'^/lib/lib\.sh',
     ]
 
+    # A line whose command emits text is showing an invocation, not making one.
+    # Matched at the start of the line rather than anywhere in it, for the same
+    # reason the source and script lookbehinds exist: `bash setup.sh && echo ok`
+    # runs the script, and only the leading command says what the line is for.
+    DOCUMENTING_COMMANDS = re.compile(r'^\s*(?:echo|printf)\b')
+
     # A doc that explains how to add an installer writes
     # `install/common/github-releases/toolname.sh`, and the file is never meant
     # to exist. Reporting a stand-in is the kind of noise that teaches a reader
@@ -143,10 +149,28 @@ class ReferenceChecker:
         """Check if the line hands its command to a remote or container executor."""
         return any(re.search(pattern, line) for pattern in self.REMOTE_EXECUTION_PATTERNS)
 
-    def describes_another_tree(self, path: str, file_path: Path) -> bool:
+    def documents_rather_than_runs(self, line: str, file_path: Path) -> bool:
+        """Whether this occurrence is showing a command rather than issuing one.
+
+        Markdown is documentation throughout. A shell script is documentation in
+        the two places it explains itself: a `#` comment, and a usage string it
+        echoes. logsift's header block writes `bash install.sh` as an
+        illustration and `bash management/run-and-summarize.sh` under a
+        "CORRECT:" heading, then echoes both back from its usage function — and
+        that one file produced seven reported misses, none of them a reference to
+        anything.
+
+        This chooses which guards apply, never whether the line is read. A
+        comment naming a directory the repo has still resolves and is still
+        reported, which is the drift the comment at check_relative_path_fragility
+        was careful to keep scanning for.
+        """
+        return file_path.suffix == '.md' or line.lstrip().startswith('#') or bool(self.DOCUMENTING_COMMANDS.match(line))
+
+    def describes_another_tree(self, path: str) -> bool:
         """Check if a documented path belongs to some project other than this one.
 
-        Prose quotes other people's trees constantly — a guide to a test
+        Documentation quotes other people's trees constantly — a guide to a test
         framework writes `./test/mylib_test.sh`, one explaining `set -e` writes
         `source child.sh`. Neither is a claim about this repo, and reporting
         them buries the references that are.
@@ -156,10 +180,10 @@ class ReferenceChecker:
         case work: `tests/install/utils/verify.sh` is reported because `tests/`
         exists, even though `utils/` has since become `verification/`. A bare
         filename anchors to nothing and is always illustrative.
-        """
-        if file_path.suffix != '.md':
-            return False
 
+        Callers gate this on documents_rather_than_runs: in code the same bare
+        filename is a real invocation that has to resolve.
+        """
         # $DOTFILES_DIR is already resolved to an absolute path by this point,
         # and it is repo-rooted by construction — judge it on the part below the
         # root, not on the leading slash.
@@ -176,18 +200,15 @@ class ReferenceChecker:
 
         return not (self.root_dir / head).is_dir()
 
-    def names_a_placeholder(self, path: str, file_path: Path) -> bool:
+    def names_a_placeholder(self, path: str) -> bool:
         """Check if a documented reference is a stand-in, not a path meant to exist.
 
-        Prose only. `bash script.sh` in a shell script is a real invocation and
-        has to resolve; the identical line in a README is a stand-in for
-        whatever the reader is writing. Applying the stem list to code would
-        stop reporting genuine misses in any repo that happened to ship a
-        `tool.sh`.
+        Documentation only, which callers gate on. `bash script.sh` as a line of
+        code is a real invocation and has to resolve; the identical line in a
+        README, or in the comment above the function, is a stand-in for whatever
+        the reader is writing. Applying the stem list to code would stop
+        reporting genuine misses in any repo that happened to ship a `tool.sh`.
         """
-        if file_path.suffix != '.md':
-            return False
-
         basename = path.rsplit('/', 1)[-1]
         if self.PLACEHOLDER_BRACES.search(basename):
             return True
@@ -425,7 +446,9 @@ class ReferenceChecker:
                         if '$' not in source_path and self.is_dynamic_path(source_path):
                             continue
 
-                        if self.names_a_placeholder(source_path, file_path):
+                        documentation = self.documents_rather_than_runs(line, file_path)
+
+                        if documentation and self.names_a_placeholder(source_path):
                             continue
 
                         original_path = source_path
@@ -435,7 +458,7 @@ class ReferenceChecker:
                             except ValueError:
                                 continue
 
-                        if self.describes_another_tree(source_path, file_path):
+                        if documentation and self.describes_another_tree(source_path):
                             continue
 
                         if source_path.startswith('/'):
@@ -482,19 +505,18 @@ class ReferenceChecker:
                         if self.runs_on_another_host(line):
                             continue
 
+                        documentation = self.documents_rather_than_runs(line, file_path)
+
                         for match in script_pattern.finditer(line):
                             script_path = match.group(1).rstrip('"\'')
 
                             if not script_path or self.is_dynamic_path(script_path):
                                 continue
 
-                            if self.names_a_placeholder(script_path, file_path):
+                            if documentation and self.names_a_placeholder(script_path):
                                 continue
 
-                            if self.describes_another_tree(script_path, file_path):
-                                continue
-
-                            if line.strip().startswith('#') and script_path == file_path.name:
+                            if documentation and self.describes_another_tree(script_path):
                                 continue
 
                             if script_path.startswith('/'):

@@ -2,8 +2,6 @@
 
 import json
 import subprocess
-from datetime import datetime
-from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -412,97 +410,34 @@ class TestLearnRules:
         assert 'file_mappings' in rules
 
 
-class TestConfigToml:
-    """Test 16: config.toml support."""
+class TestLearnedRulesHint:
+    """Rules feed the suggestion line, so the hint belongs where that line is empty."""
 
-    def test_custom_stale_threshold(self, dotfiles_dir, monkeypatch, tmp_path):
-        if dotfiles_dir is None:
-            pytest.skip('Dotfiles directory not found')
-
-        config_dir = tmp_path / '.config' / 'refcheck'
-        config_dir.mkdir(parents=True)
+    def test_silent_on_a_clean_run(self, temp_git_repo, monkeypatch, tmp_path):
         monkeypatch.setenv('HOME', str(tmp_path))
 
-        (config_dir / 'config.toml').write_text('[warnings]\nstale_threshold = "30 days"\n')
+        result = run_refcheck(cwd=temp_git_repo)
+        assert result.returncode == 0
+        assert 'learn-rules' not in result.stdout
 
-        safe_name = str(dotfiles_dir).lstrip('/').replace('/', '--')
-        repos_dir = config_dir / 'repos' / safe_name
-        repos_dir.mkdir(parents=True)
-
-        old_date = (datetime.now() - timedelta(days=15)).isoformat()[:19]
-        rules = {
-            '_metadata': {'generated': old_date},
-            'directory_mappings': {},
-            'file_mappings': {},
-        }
-        (repos_dir / 'rules.json').write_text(json.dumps(rules))
-
-        result = run_refcheck('--no-warn', cwd=dotfiles_dir)
-        assert 'Rules last updated' not in result.stdout
-
-    def test_show_no_rules_hint_disabled(self, dotfiles_dir, monkeypatch, tmp_path):
-        if dotfiles_dir is None:
-            pytest.skip('Dotfiles directory not found')
-
-        config_dir = tmp_path / '.config' / 'refcheck'
-        config_dir.mkdir(parents=True)
+    def test_offered_when_a_broken_reference_has_no_suggestion(self, temp_git_repo, monkeypatch, tmp_path):
         monkeypatch.setenv('HOME', str(tmp_path))
+        (temp_git_repo / 'run.sh').write_text('#!/usr/bin/env bash\nbash lib/vanished.sh\n')
 
-        (config_dir / 'config.toml').write_text('[warnings]\nshow_no_rules_hint = false\n')
+        result = run_refcheck(cwd=temp_git_repo)
+        assert result.returncode == 1
+        assert 'learn-rules' in result.stdout
 
-        result = run_refcheck('--no-warn', cwd=dotfiles_dir)
-        assert 'No learned rules found' not in result.stdout
-
-
-class TestStaleRulesWarning:
-    """Test stale rules warning."""
-
-    def test_shows_stale_warning(self, dotfiles_dir, monkeypatch, tmp_path):
-        if dotfiles_dir is None:
-            pytest.skip('Dotfiles directory not found')
-
-        config_dir = tmp_path / '.config' / 'refcheck'
-        config_dir.mkdir(parents=True)
+    def test_silent_when_a_suggestion_already_landed(self, temp_git_repo, monkeypatch, tmp_path):
         monkeypatch.setenv('HOME', str(tmp_path))
+        (temp_git_repo / 'lib').mkdir()
+        (temp_git_repo / 'lib' / 'helpers.sh').write_text('echo hi\n')
+        (temp_git_repo / 'run.sh').write_text('#!/usr/bin/env bash\nbash shared/helpers.sh\n')
 
-        safe_name = str(dotfiles_dir).lstrip('/').replace('/', '--')
-        repos_dir = config_dir / 'repos' / safe_name
-        repos_dir.mkdir(parents=True)
-
-        old_date = '2020-01-01T00:00:00'
-        rules = {
-            '_metadata': {'generated': old_date},
-            'directory_mappings': {},
-            'file_mappings': {},
-        }
-        (repos_dir / 'rules.json').write_text(json.dumps(rules))
-
-        result = run_refcheck('--no-warn', cwd=dotfiles_dir)
-        assert 'Rules last updated' in result.stdout
-        assert 'days ago' in result.stdout
-
-    def test_no_warning_for_fresh_rules(self, dotfiles_dir, monkeypatch, tmp_path):
-        if dotfiles_dir is None:
-            pytest.skip('Dotfiles directory not found')
-
-        config_dir = tmp_path / '.config' / 'refcheck'
-        config_dir.mkdir(parents=True)
-        monkeypatch.setenv('HOME', str(tmp_path))
-
-        safe_name = str(dotfiles_dir).lstrip('/').replace('/', '--')
-        repos_dir = config_dir / 'repos' / safe_name
-        repos_dir.mkdir(parents=True)
-
-        now = datetime.now().isoformat()[:19]
-        rules = {
-            '_metadata': {'generated': now},
-            'directory_mappings': {},
-            'file_mappings': {},
-        }
-        (repos_dir / 'rules.json').write_text(json.dumps(rules))
-
-        result = run_refcheck('--no-warn', cwd=dotfiles_dir)
-        assert 'Rules last updated' not in result.stdout
+        result = run_refcheck(cwd=temp_git_repo)
+        assert result.returncode == 1
+        assert 'Possible matches' in result.stdout
+        assert 'learn-rules' not in result.stdout
 
 
 def test_pattern_ignores_hit_inside_a_path_that_exists(tmp_path):

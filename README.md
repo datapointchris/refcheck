@@ -202,8 +202,13 @@ refcheck  # Shows warnings for SCRIPT_DIR="$(cd "$DIR/../../.." && pwd)"
 refcheck --learn-rules
 
 # Rules are stored per-repo at ~/.config/refcheck/repos/{repo-name}/rules.json
-# These help suggest correct paths when references are broken
 ```
+
+Rules improve the **Possible matches** line under a broken reference; they
+detect nothing on their own, which is why refcheck only mentions them when a
+finding came up with no suggestion. For catching what a move left behind, reach
+for `--moves` instead — it reads the change you are actually making rather than
+six months of history describing moves already reconciled.
 
 ## Configuration
 
@@ -211,11 +216,7 @@ Create `~/.config/refcheck/config.toml` to customize behavior:
 
 ```toml
 [learn]
-time_window = "6 months"  # How far back to analyze git history
-
-[warnings]
-stale_threshold = "7 days"  # Warn when rules are older than this
-show_no_rules_hint = true   # Show hint to run --learn-rules
+time_window = "6 months"  # How far back --learn-rules analyzes git history
 ```
 
 ## Output

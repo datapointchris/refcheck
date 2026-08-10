@@ -667,10 +667,6 @@ class ReferenceChecker:
             self.check_relative_path_fragility()
             self.check_relative_traversal()
 
-    def get_rules(self) -> dict:
-        """Get loaded rules."""
-        return self._rules or {}
-
     def get_rules_path(self) -> Path | None:
         """Get rules file path."""
         return self._rules_path

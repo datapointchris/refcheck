@@ -169,11 +169,9 @@ def main(
     print_results(
         checker.issues,
         checker.warnings,
-        checker.get_rules(),
         checker.get_rules_path(),
         checker.root_dir,
         checker.search_path,
-        checker.config,
     )
 
     notify(UPDATE_CONFIG)

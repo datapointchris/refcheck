@@ -55,26 +55,6 @@ def load_rules(root_dir: Path) -> tuple[dict, Path | None]:
     return rules, rules_path
 
 
-def get_rules_age_days(rules: dict) -> int | None:
-    """
-    Get the age of the rules in days from metadata.
-
-    Returns None if rules have no timestamp.
-    """
-    generated = rules.get('_metadata', {}).get('generated')
-
-    if not generated:
-        return None
-
-    try:
-        generated_dt = datetime.fromisoformat(generated)
-        now = datetime.now()
-        delta = now - generated_dt
-        return delta.days
-    except (ValueError, TypeError):
-        return None
-
-
 def learn_rules_from_git(time_window: str = '6 months') -> None:
     """
     Scan git history for renames and generate rules.json.

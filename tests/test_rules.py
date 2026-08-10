@@ -1,12 +1,9 @@
 """Tests for rules module."""
 
 import json
-from datetime import datetime
-from datetime import timedelta
 from pathlib import Path
 
 from refcheck.rules import get_repo_root
-from refcheck.rules import get_rules_age_days
 from refcheck.rules import get_rules_path
 from refcheck.rules import load_rules
 
@@ -75,40 +72,3 @@ class TestLoadRules:
         assert rules['directory_mappings'] == {'old/': 'new/'}
         assert rules['file_mappings'] == {'foo.sh': 'bar.sh'}
         assert path == rules_path
-
-
-class TestGetRulesAgeDays:
-    """Tests for get_rules_age_days function."""
-
-    def test_returns_none_for_no_metadata(self):
-        rules = {'directory_mappings': {}, 'file_mappings': {}}
-        assert get_rules_age_days(rules) is None
-
-    def test_returns_none_for_no_generated(self):
-        rules = {'_metadata': {}}
-        assert get_rules_age_days(rules) is None
-
-    def test_returns_age_in_days(self):
-        yesterday = (datetime.now() - timedelta(days=1)).isoformat()[:19]
-        rules = {'_metadata': {'generated': yesterday}}
-
-        age = get_rules_age_days(rules)
-        assert age == 1
-
-    def test_returns_zero_for_today(self):
-        now = datetime.now().isoformat()[:19]
-        rules = {'_metadata': {'generated': now}}
-
-        age = get_rules_age_days(rules)
-        assert age == 0
-
-    def test_handles_old_dates(self):
-        old_date = (datetime.now() - timedelta(days=100)).isoformat()[:19]
-        rules = {'_metadata': {'generated': old_date}}
-
-        age = get_rules_age_days(rules)
-        assert age == 100
-
-    def test_handles_invalid_date(self):
-        rules = {'_metadata': {'generated': 'not-a-date'}}
-        assert get_rules_age_days(rules) is None

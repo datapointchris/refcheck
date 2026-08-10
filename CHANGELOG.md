@@ -1,6 +1,90 @@
 # CHANGELOG
 
 
+## v0.5.0 (2026-08-10)
+
+### Bug Fixes
+
+- Make subtree exclusion patterns reach every depth
+  ([`b1cd398`](https://github.com/datapointchris/refcheck/commit/b1cd3987fbd8c7579ef3d25f674c8e8cfacb2fd4))
+
+Path.match reads `**` as a single component, so every `dir/**` exclusion only covered the files
+  sitting directly in that directory. `.planning/**` skipped `.planning/top.md` and scanned
+  `.planning/design/notes.md` right beside it; `.claude/metrics/**` and `site/**` had the same hole.
+
+Match with both matchers, because the patterns are two kinds. `*.log` and `CHANGELOG.md` name a file
+  wherever it sits, which is Path.match's right-anchored semantics and has to stay. `dir/**` names a
+  subtree, which is fnmatch over the posix string — anchored at the root, with `*` free to cross
+  separators.
+
+full_match would do this alone but arrived in 3.13, and the floor here is 3.11.
+
+- Stop reporting invocations a script only documents
+  ([`f0efdde`](https://github.com/datapointchris/refcheck/commit/f0efddecdd1a7ee3defe1de4ff6652fbb594dd2c))
+
+A shell script explains itself in two places — a `#` comment and a usage string it echoes — and
+  neither is a reference to anything. logsift's run-and-summarize.sh produced seven errors that way,
+  every one of them a line illustrating how to call the script.
+
+The judgment already existed: describes_another_tree treats a bare filename as illustrative and
+  requires a real leading directory, names_a_placeholder skips stand-in stems. Both were gated on
+  the file being markdown. Widen the gate to any documentation context and apply the same two guards
+  there.
+
+Deliberately not a blanket skip of comments: a comment naming a directory the repo has is still a
+  stale reference and is still reported, which is what check_relative_path_fragility's comment
+  handling was careful to preserve. Only the leading command decides, so `bash x.sh && echo done`
+  remains a real invocation.
+
+This also subsumes the narrower self-reference exemption it replaces.
+
+### Features
+
+- Check what staged renames and deletions left behind
+  ([`d40cc51`](https://github.com/datapointchris/refcheck/commit/d40cc51bf3c980f787b53a1e2b3aebce6da5beea))
+
+--moves reads `git diff --cached --diff-filter=RD -M` and runs a pattern check per old path;
+  --moves-since does the same over a range, for CI. The old path no longer has to be typed in, and
+  the check fires at the moment the move is made, when fixing it is free.
+
+This is the half of refcheck worth putting on a pre-commit hook. Measured across the 49 active
+  repos: the source/bash checks found nothing, because the portfolio is already clean, while
+  replaying six months of renames found real breakage — three live `uv run cli/log_viewer.py` call
+  sites in ichrisbirch's ops tool, and a documented build command in shadows naming a cmd/ directory
+  that no longer exists. A pattern is language-agnostic, which is why it sees an invocation
+  `bash`/`source` matching cannot.
+
+Learned rules were the alternative and are strictly worse here: they detect nothing on their own,
+  feeding only the suggestion text under a finding, and six months of history mostly describes moves
+  already reconciled. A diff needs no stored state and cannot go stale.
+
+Three filters, each from a false positive in that replay. Only old paths with a directory, since
+  `main.go` is too generic to be evidence. Skip a path that exists again. And exclude the two file
+  kinds that record what a path *was* rather than what should exist — CHANGELOG.md, and captured
+  tool output under fixtures/ and testdata/, which together were 226 of the 280 hits fleet-wide.
+
+check_patterns walks the tree once for the whole set, so the cost no longer scales with the size of
+  the move.
+
+### Refactoring
+
+- Mention learned rules only where they would have helped
+  ([`6acd93d`](https://github.com/datapointchris/refcheck/commit/6acd93d64c43bb713a7a011ee8fa5713972a4b2a))
+
+The hint printed on every clean run, which across the 49 active repos meant 48 repos told to go do
+  maintenance for a feature with no finding behind it. Learned rules feed exactly one thing — the
+  "Possible matches" line under a broken reference — so that is where the offer belongs: after a run
+  that found references it could not suggest a replacement for. A clean run is now one line.
+
+The staleness warning goes with it. It nagged toward a refresh whose only payoff was better
+  suggestion text, and its threshold was configurable, which made a knob out of a prompt nobody
+  benefits from acting on.
+
+That leaves stale_threshold, show_no_rules_hint, parse_duration_to_days, get_rules_age_days and
+  ReferenceChecker.get_rules with no callers. The config loader reads named keys and ignores the
+  rest, so an existing config.toml carrying the two removed ones still loads.
+
+
 ## v0.4.1 (2026-08-08)
 
 ### Bug Fixes

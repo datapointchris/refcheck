@@ -27,6 +27,34 @@ class TestFileSuggestions:
         assert suggestions.should_skip_file(Path('src/main.pyc'))
         assert not suggestions.should_skip_file(Path('src/main.py'))
 
+    def test_subtree_patterns_reach_every_depth(self, temp_dir):
+        """Path.match reads `**` as one component, so a subtree pattern only
+        excluded the files sitting directly in it: `.planning/top.md` was
+        skipped while `.planning/design/notes.md` beside it was scanned."""
+        suggestions = FileSuggestions(
+            root_dir=temp_dir,
+            exclude_dirs=set(),
+            exclude_patterns=['.planning/**', '**/fixtures/**'],
+        )
+        assert suggestions.should_skip_file(Path('.planning/top.md'))
+        assert suggestions.should_skip_file(Path('.planning/design/notes.md'))
+        assert suggestions.should_skip_file(Path('.planning/design/deep/nested.md'))
+        assert suggestions.should_skip_file(Path('tests/stats/fixtures/tool_outputs/tokei.json'))
+        assert not suggestions.should_skip_file(Path('planning/notes.md'))
+        assert not suggestions.should_skip_file(Path('src/main.py'))
+
+    def test_bare_filename_patterns_still_match_at_any_depth(self, temp_dir):
+        """The other kind of pattern: name a file, wherever it sits."""
+        suggestions = FileSuggestions(
+            root_dir=temp_dir,
+            exclude_dirs=set(),
+            exclude_patterns=['CHANGELOG.md', '*.log'],
+        )
+        assert suggestions.should_skip_file(Path('CHANGELOG.md'))
+        assert suggestions.should_skip_file(Path('docs/CHANGELOG.md'))
+        assert suggestions.should_skip_file(Path('run/deep/output.log'))
+        assert not suggestions.should_skip_file(Path('docs/changes.md'))
+
     def test_should_skip_file_excludes_binary_extensions(self, suggestions):
         assert suggestions.should_skip_file(Path('lib/module.so'))
         assert suggestions.should_skip_file(Path('build/app.o'))

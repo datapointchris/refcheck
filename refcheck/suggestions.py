@@ -1,6 +1,7 @@
 """File similarity and suggestion finding."""
 
 from difflib import get_close_matches
+from fnmatch import fnmatch
 from pathlib import Path
 
 
@@ -21,14 +22,27 @@ class FileSuggestions:
             if part in self.exclude_dirs:
                 return True
 
-        for pattern in self.exclude_patterns:
-            if file_path.match(pattern):
-                return True
+        if self._matches_exclusion(file_path):
+            return True
 
         if file_path.suffix in self.BINARY_SUFFIXES:
             return True
 
         return self._holds_binary_content(file_path)
+
+    def _matches_exclusion(self, rel_path: Path) -> bool:
+        """Match an exclusion pattern against a repo-relative path.
+
+        Two matchers, because the patterns are two kinds. `*.log` and
+        `CHANGELOG.md` name a file wherever it sits, which is Path.match's
+        right-anchored semantics. `dir/**` names a subtree — and Path.match
+        reads `**` as one component, so `.planning/**` excluded
+        `.planning/top.md` while scanning `.planning/design/notes.md` right
+        beside it. fnmatch over the posix string is anchored at the root and
+        lets `*` cross separators, which is what a subtree pattern means.
+        """
+        posix = rel_path.as_posix()
+        return any(rel_path.match(pattern) or fnmatch(posix, pattern) for pattern in self.exclude_patterns)
 
     @staticmethod
     def _holds_binary_content(file_path: Path) -> bool:

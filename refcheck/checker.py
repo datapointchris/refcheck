@@ -85,6 +85,11 @@ class ReferenceChecker:
         r'^/root/',
         r'^/home/',
         r'^/Users/',
+        # Same class as the home directories above: machine state, not repo
+        # content. Whether /etc/os-release resolves says which OS is running the
+        # check, so a Mac would report the `. /etc/os-release` that theme and
+        # font each run behind a Linux guard.
+        r'^/etc/',
         r'/nvm\.sh$',
         r'^/lib/lib\.sh',
     ]
@@ -94,6 +99,29 @@ class ReferenceChecker:
     # reason the source and script lookbehinds exist: `bash setup.sh && echo ok`
     # runs the script, and only the leading command says what the line is for.
     DOCUMENTING_COMMANDS = re.compile(r'^\s*(?:echo|printf)\b')
+
+    # An argument ends on a path character so prose punctuation stays out of the
+    # filename: `source lib/setup.sh, then run it` has to yield lib/setup.sh and
+    # not lib/setup.sh,. check_script_references gets that for free by anchoring
+    # on the `.sh` suffix, which a sourced file need not carry.
+    SOURCE_ARGUMENT = r'(?:["\']([^"\']+)["\']|([^\s"\'`;&|()<>]*[\w/}~]))'
+
+    # Where a `.` can be the source builtin rather than a full stop: opening a
+    # line, following a separator, or following a keyword that opens a command.
+    # Accepting a preceding space instead would read `find . lib/` as sourcing
+    # lib/, and English never puts a space before a full stop.
+    COMMAND_POSITION = r'(?:^|[;&|({]|\b(?:then|else|do)\b)'
+
+    # Both ways a shell reads a file into itself. The `source` lookbehind keeps
+    # the tail of a longer word out: `resource "aws_lambda_function"` in a
+    # Terraform block reported a missing file named after the resource, and
+    # newsboat's `urls-source "freshrss"` did the same.
+    SOURCE_COMMAND = re.compile(rf'(?<![\w-])source\s+{SOURCE_ARGUMENT}|{COMMAND_POSITION}\s*\.\s+{SOURCE_ARGUMENT}')
+
+    # Quotes already say the token is an argument; a bare word may just be the
+    # next word of a sentence, so it has to look like a path before it is
+    # resolved. "the source of truth" and "we do . nothing" both die here.
+    PATH_SHAPED_ARGUMENT = re.compile(r'/|\.(?:sh|bash|zsh)$')
 
     # A doc that explains how to add an installer writes
     # `install/common/github-releases/toolname.sh`, and the file is never meant
@@ -442,13 +470,6 @@ class ReferenceChecker:
 
     def check_source_statements(self):
         """Check that source statements point to existing files."""
-        # The lookbehind keeps the tail of a longer word out: `resource
-        # "aws_lambda_function"` in a Terraform block reported a missing file
-        # named after the resource, and newsboat's `urls-source "freshrss"` did
-        # the same. Shell rarely writes either, so this only surfaced once prose
-        # was scanned.
-        source_pattern = re.compile(r'(?<![\w-])source\s+["\']([^"\']+)["\']|(?<![\w-])source\s+\$[^/]*(/[^\s]+)')
-
         for file_path in self.reference_check_files():
             try:
                 rel_path = file_path.relative_to(self.root_dir)
@@ -456,18 +477,19 @@ class ReferenceChecker:
 
                 with file_path.open(encoding='utf-8') as f:
                     for line_num, line in enumerate(f, 1):
-                        if 'source' not in line:
+                        match = self.SOURCE_COMMAND.search(line)
+                        if not match:
                             continue
 
                         if self.runs_on_another_host(line):
                             continue
 
-                        match = source_pattern.search(line)
-                        if not match:
+                        quoted, bare = match.group(1) or match.group(3), match.group(2) or match.group(4)
+                        source_path = quoted or bare
+                        if not source_path:
                             continue
 
-                        source_path = match.group(1) or match.group(2)
-                        if not source_path:
+                        if bare and not self.PATH_SHAPED_ARGUMENT.search(bare):
                             continue
 
                         if '$' not in source_path and self.is_dynamic_path(source_path):

@@ -440,6 +440,126 @@ class TestLearnedRulesHint:
         assert 'learn-rules' not in result.stdout
 
 
+def test_every_way_of_sourcing_a_file_is_validated(tmp_path):
+    """`bash x.sh` was checked and `source x.sh` was not, so docs went stale unwatched.
+
+    Only two spellings resolved before: a quoted argument, and one led by a
+    variable. Shell writes `source lib/gone.sh` and `. lib/gone.sh` far more
+    often, and a markdown file citing a moved script that way passed clean.
+    """
+    (tmp_path / 'lib').mkdir()
+    (tmp_path / 'docs').mkdir()
+    (tmp_path / 'docs' / 'guide.md').write_text(
+        '# Guide\n\n```bash\nbash lib/gone.sh\nsource lib/gone.sh\n. lib/gone.sh\nsource "lib/gone.sh"\n```\n'
+    )
+
+    checker = ReferenceChecker(tmp_path)
+    checker.run_all_checks()
+
+    assert len(checker.issues) == 4
+
+
+def test_dot_sources_a_file_in_shell_too(tmp_path):
+    """The gap was in the shared check, so scripts were as unwatched as prose."""
+    (tmp_path / 'lib').mkdir()
+    (tmp_path / 'run.sh').write_text('#!/usr/bin/env bash\n. lib/gone.sh\n[ -f x ] && . lib/also-gone.sh\n')
+
+    checker = ReferenceChecker(tmp_path)
+    checker.check_source_statements()
+
+    assert len(checker.issues) == 2
+
+
+def test_prose_full_stops_are_not_source_statements(tmp_path):
+    """A period followed by a space is a sentence, and this repo is mostly sentences.
+
+    The dot form only matches in command position — line start, or after a
+    shell separator — because an English full stop always follows a word.
+    """
+    (tmp_path / 'lib').mkdir()
+    (tmp_path / 'docs').mkdir()
+    (tmp_path / 'docs' / 'prose.md').write_text(
+        '# Notes\n\n'
+        'The installer writes the file. Then it reboots.\n'
+        'Read the source of truth before changing anything.\n'
+        'Everything lands under lib/. Nothing else moves.\n'
+        'Run it once. lib/gone.sh is regenerated each time.\n'
+        'Copy the file, back it up. ./lib/gone.sh stays put.\n'
+        'We do . nothing special here, and neither does it.\n'
+        'Ellipsis... lib/gone.sh trails off mid-thought.\n'
+        '1. Install lib/gone.sh first.\n'
+        '- See lib/gone.sh. Also see docs/.\n'
+        'Nothing here is a reference. bash is not invoked either.\n\n'
+        '```bash\n'
+        'find . lib/gone.sh\n'
+        'tar -C . -xf lib/gone.sh\n'
+        'rsync -a . lib/gone.sh\n'
+        'git add . && git commit -m "lib/gone.sh"\n'
+        '```\n'
+    )
+
+    checker = ReferenceChecker(tmp_path)
+    checker.run_all_checks()
+
+    assert checker.issues == []
+
+
+def test_a_dot_after_a_shell_keyword_still_sources(tmp_path):
+    """`then`, `else` and `do` open a command, so a period following one is not prose."""
+    (tmp_path / 'lib').mkdir()
+    (tmp_path / 'run.sh').write_text('#!/usr/bin/env bash\nif true; then . lib/gone.sh; fi\nwhile read -r f; do . lib/also-gone.sh; done\n')
+
+    checker = ReferenceChecker(tmp_path)
+    checker.check_source_statements()
+
+    assert len(checker.issues) == 2
+
+
+def test_a_dot_argument_is_judged_by_the_same_tree_rule_as_bash(tmp_path):
+    """`. ./gone.sh` in prose anchors to nothing, exactly as `bash ./gone.sh` does."""
+    (tmp_path / 'docs').mkdir()
+    (tmp_path / 'docs' / 'guide.md').write_text('# Guide\n\n```bash\nbash ./gone.sh\n. ./gone.sh\nsource ./gone.sh\n```\n')
+
+    checker = ReferenceChecker(tmp_path)
+    checker.run_all_checks()
+
+    assert checker.issues == []
+
+
+def test_an_unquoted_variable_source_resolves_instead_of_going_absolute(tmp_path):
+    """The old pattern captured from the slash on, so `$DIR/lib/x.sh` became `/lib/x.sh`.
+
+    That reported a path nobody wrote, and would have passed silently on a
+    machine that happened to have one at the root.
+    """
+    (tmp_path / 'lib').mkdir()
+    (tmp_path / 'docs').mkdir()
+    (tmp_path / 'docs' / 'guide.md').write_text('# Guide\n\n```bash\nsource $DOTFILES_DIR/lib/gone.sh\n```\n')
+
+    checker = ReferenceChecker(tmp_path)
+    checker.check_source_statements()
+
+    assert len(checker.issues) == 1
+    assert '$DOTFILES_DIR/lib/gone.sh' in checker.issues[0].message
+    assert str(tmp_path / 'lib' / 'gone.sh') in checker.issues[0].message
+
+
+def test_a_system_file_under_etc_is_not_a_repo_reference(tmp_path):
+    """Whether /etc/os-release exists says which OS is linting, not what went stale.
+
+    theme and font both source it behind a `-f /etc/os-release` guard, and both
+    already carry a comment that it is absent on macOS. The dot form is the
+    usual spelling, so matching it put those two files one platform away from
+    being reported.
+    """
+    (tmp_path / 'run.sh').write_text('#!/usr/bin/env bash\n. /etc/absent-on-every-machine.conf\n')
+
+    checker = ReferenceChecker(tmp_path)
+    checker.check_source_statements()
+
+    assert checker.issues == []
+
+
 def test_pattern_ignores_hit_inside_a_path_that_exists(tmp_path):
     """A moved directory reached by a longer, correct path is not stale.
 

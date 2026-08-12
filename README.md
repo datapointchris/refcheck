@@ -9,8 +9,8 @@ fragile path patterns, and validates variable-based paths.
 
 ### Errors (always exit 1)
 
-1. **Broken source statements** - Missing files in `source` commands
-   (including variable paths like `$SCRIPT_DIR/file.sh`)
+1. **Broken source statements** - Missing files in `source` and `.` commands,
+   quoted or not (including variable paths like `$SCRIPT_DIR/file.sh`)
 2. **Broken script references** - Missing files in `bash` or `sh` commands
 3. **Old path patterns** - Stale references after refactoring
 
@@ -250,7 +250,7 @@ Fragile to Working Directory (1):
 ────────────────────────────────────────────────────────────
   scripts/deploy.sh:3
     Relative path only valid from: repo root
-    source tests/helpers.sh
+    source scripts/helpers.sh
     → Use root directory variable (e.g., $PROJECT_ROOT, $REPO_ROOT)
 
 Fragile to Refactoring (1):

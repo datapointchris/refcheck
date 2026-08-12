@@ -1,6 +1,74 @@
 # CHANGELOG
 
 
+## v0.5.1 (2026-08-12)
+
+### Bug Fixes
+
+- Read every spelling of a source statement
+  ([`4a8da9e`](https://github.com/datapointchris/refcheck/commit/4a8da9e9323d85870458545c915ef4e095522733))
+
+Two spellings resolved before: a quoted argument, and one led by a variable. Shell writes `source
+  lib/x.sh` and `. lib/x.sh` far more often, so a markdown file citing a moved script that way
+  passed clean — which made half of the claim that this hook validates source and bash targets in
+  markdown false.
+
+`.` is the dangerous half, being the commonest character in prose, so it is matched only in command
+  position: opening a line, after a shell separator, or after `then`/`else`/`do`. An English full
+  stop always follows a word, never a separator. Accepting a preceding space instead would read
+  `find . lib/` as sourcing lib/.
+
+A bare argument gets one test a quoted one does not. It has to carry a separator or a shell suffix
+  before it is resolved, which is what stops "the source of truth" and "we do . nothing" from
+  becoming paths, and it ends on a path character so a trailing comma in prose is not part of the
+  filename. check_script_references gets that second half for free from its `.sh` anchor, which a
+  sourced file need not carry.
+
+Unquoted `source $DIR/lib/x.sh` captured from the slash on and reported `/lib/x.sh` — a path nobody
+  wrote, that would pass silently on a machine holding one at the root. It now resolves through the
+  symbol table like the quoted form, and is skipped when the variable is unknown.
+
+/etc joins the machine-state paths that are never repo content. theme and font both run `.
+  /etc/os-release` behind a Linux guard, and each already carries a comment that it is absent on
+  macOS, so matching the dot form put both one platform away from being reported.
+
+The README's sample output borrowed `tests/`, a directory this repo has, to illustrate a fictional
+  `scripts/deploy.sh`. Naming `scripts/` throughout lets the existing leading-directory guard
+  recognise the whole block as illustrative.
+
+Measured across 85 repos: output is byte-identical either way, and the new forms fire on 21 real
+  lines that the existing guards already handle.
+
+- **tests**: Hide the caller's git env from fixtures
+  ([`c7f18bb`](https://github.com/datapointchris/refcheck/commit/c7f18bb1e5955142dcbe5e35da59d55f6ded2278))
+
+Git exports GIT_DIR and GIT_INDEX_FILE to the hooks it runs, and this suite is one of them. Both
+  beat directory discovery, so a fixture's `git init` never created a `.git` in its temp directory —
+  it reinitialized the repository being committed — and the `git add` that followed wrote the
+  fixture's files into that repository's index.
+
+Measured on a clone: 29 tracked files replaced by a single .gitkeep, after which the commit that ran
+  the hook died with `invalid object ... for '.gitkeep'`, because the blob had gone to a directory
+  that was already deleted. Every commit here was doing it, and the damage happened before any
+  assertion ran.
+
+A session fixture strips the whole GIT_ prefix rather than the two known offenders, because
+  GIT_WORK_TREE, GIT_OBJECT_DIRECTORY and GIT_COMMON_DIR redirect the same operations, and the
+  fixtures supply every git setting they need. Doing it once at session scope also covers the call
+  sites in the test files, which shell out to git directly.
+
+The regression test runs the move suite as a subprocess with a hook's environment pointed at a
+  scratch repository, then asserts that repository still tracks its own file.
+
+### Build System
+
+- **precommit**: Resync to forge toolchain 14
+  ([`299eda1`](https://github.com/datapointchris/refcheck/commit/299eda1a9e89e78ea6d5b2b67bbffb2a621af08e))
+
+Picks up the new refcheck block, so the tool now runs on its own commits. Also carries the
+  .editorconfig comment's correction from toolchain 12, which this repo had not resynced since 11.
+
+
 ## v0.5.0 (2026-08-10)
 
 ### Bug Fixes

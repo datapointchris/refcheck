@@ -1,11 +1,36 @@
 """Shared fixtures for refcheck tests."""
 
 import json
+import os
 import subprocess
 import tempfile
 from pathlib import Path
 
 import pytest
+
+
+@pytest.fixture(scope='session', autouse=True)
+def detached_from_the_calling_git():
+    """Hide any inherited git environment from every subprocess a test spawns.
+
+    Git exports GIT_DIR and GIT_INDEX_FILE to the hooks it runs, and this suite
+    is one of them — it runs under pre-commit. Those two beat directory
+    discovery, so `git init` in a fixture's temp directory reinitialized the
+    *real* repository and never created a `.git` in the temp directory at all,
+    and the `git add` that followed wrote the fixture's files into the real
+    index. Measured on a clone: 29 tracked files replaced by a single .gitkeep,
+    and the commit that ran the hook then died with `invalid object ... for
+    '.gitkeep'` because the blob had gone to a directory that no longer existed.
+
+    Stripping the whole GIT_ prefix rather than the two known offenders is
+    deliberate: GIT_WORK_TREE, GIT_OBJECT_DIRECTORY and GIT_COMMON_DIR redirect
+    the same operations, and the fixtures supply every setting they need.
+    """
+    inherited = {name: value for name, value in os.environ.items() if name.startswith('GIT_')}
+    for name in inherited:
+        del os.environ[name]
+    yield
+    os.environ.update(inherited)
 
 
 @pytest.fixture

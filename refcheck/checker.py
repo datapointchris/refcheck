@@ -210,6 +210,31 @@ class ReferenceChecker:
         """
         return file_path.suffix == '.md' or line.lstrip().startswith('#') or bool(self.DOCUMENTING_COMMANDS.match(line))
 
+    def anchor(self, path: str) -> Path:
+        """Where a referenced path actually lives, absolute.
+
+        Three anchors, not two. An absolute path is itself and a bare one hangs
+        off the repo — but a `~/` path hangs off the *home directory*, and joining
+        it to the repo root produces `<repo>/~/…`, which cannot exist for any
+        input. Every tilde reference was therefore reported missing, always.
+
+        Measured on dotfiles: `tests/apps/all-apps.sh` sources three deployed
+        shell libraries by their `~/.local/shell/` paths, and all three were
+        reported on every run while resolving fine. That is the whole of this
+        tool's value spent on noise — a checker is worth its false-positive rate,
+        and three standing errors is what teaches a reader to stop reading the
+        output.
+
+        A `~/` reference is the *deployed* spelling, which is the one a script
+        that runs outside the repo has to use. It is not a variant of a repo-
+        relative path and cannot be rewritten into one.
+        """
+        if path.startswith('~'):
+            return Path(path).expanduser()
+        if path.startswith('/'):
+            return Path(path)
+        return self.root_dir / path
+
     def describes_another_tree(self, path: str) -> bool:
         """Check if a documented path belongs to some project other than this one.
 
@@ -510,10 +535,7 @@ class ReferenceChecker:
                         if documentation and self.describes_another_tree(source_path):
                             continue
 
-                        if source_path.startswith('/'):
-                            resolved = Path(source_path)
-                        else:
-                            resolved = self.root_dir / source_path
+                        resolved = self.anchor(source_path)
 
                         if not resolved.exists():
                             similar = self.find_similar_files(source_path)
@@ -568,10 +590,7 @@ class ReferenceChecker:
                             if documentation and self.describes_another_tree(script_path):
                                 continue
 
-                            if script_path.startswith('/'):
-                                resolved = Path(script_path)
-                            else:
-                                resolved = self.root_dir / script_path
+                            resolved = self.anchor(script_path)
 
                             if not resolved.exists():
                                 similar = self.find_similar_files(script_path)

@@ -1,6 +1,36 @@
 # CHANGELOG
 
 
+## v0.5.2 (2026-08-14)
+
+### Bug Fixes
+
+- Look for a tilde path under home, not under the repo
+  ([`c1f7447`](https://github.com/datapointchris/refcheck/commit/c1f7447dfb323fd8049f0bb6030240a5dae18dd8))
+
+A `~/` reference is neither absolute nor repo-relative, and it was treated as the second — joined
+  onto the repo root to produce `<repo>/~/…`, which cannot exist for any input. So every tilde
+  reference was reported missing on every run, whether or not it resolved.
+
+Measured on dotfiles: tests/apps/all-apps.sh sources three deployed shell libraries by their
+  ~/.local/shell/ paths. All three resolve. All three were reported, on every commit, for as long as
+  the hook has run. That is this tool spending its entire value on noise — it is worth exactly its
+  false-positive rate, and three standing errors is what teaches a reader to skim past the findings
+  that are real.
+
+Three anchors now, in one helper rather than the branch written twice. The tilde spelling is the
+  *deployed* one, which is what a script running outside the repo has to use, so it is not a variant
+  of a repo-relative path and cannot be rewritten into one.
+
+Not skipped as machine state, which is how DYNAMIC_PATH_PATTERNS treats /home/ and /Users/. Those
+  describe a filesystem this process did not create; ~/.local/shell/logging.sh is deployed by the
+  repo being checked, so it is exactly the kind of reference this exists to validate. Skipping would
+  have cleared the noise the same way and caught nothing.
+
+The test that matters is the one on a tilde path that is not there. A false-positive fix and a
+  blindness look identical on paths that resolve.
+
+
 ## v0.5.1 (2026-08-12)
 
 ### Bug Fixes

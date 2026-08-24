@@ -178,6 +178,11 @@ class ReferenceChecker:
         if not test_mode:
             self.exclude_patterns.extend(self.TEST_FIXTURE_PATTERNS)
 
+        # The patterns above are the ones true of any repository. Which of a
+        # repo's own directories hold generated output is a fact only that repo
+        # knows, so it declares them and they arrive here through the config.
+        self.exclude_patterns.extend(self.config.exclude)
+
         self._suggestions = FileSuggestions(self.root_dir, self.exclude_dirs, self.exclude_patterns)
 
     def should_skip_file(self, file_path: Path) -> bool:

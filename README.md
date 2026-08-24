@@ -303,6 +303,8 @@ fi
 | `--no-warn` | Disable fragile path warnings | `--no-warn` |
 | `--learn-rules` | Generate rules from git history | `--learn-rules` |
 | `--test-mode` | Include test fixtures (normally excluded) | `--test-mode` |
+| `--exclude GLOB` | Also skip paths matching this glob (repeatable) | `--exclude "build/reports/**"` |
+| `--show-config` | Print the exclusions in force and where each came from | `--show-config` |
 | `--update` | Install the latest release | `--update --check` |
 | `--version` | Show the installed version | `--version` |
 | `--help, -h` | Show help | `--help` |
@@ -313,13 +315,38 @@ Automatically excludes:
 
 - **Build artifacts**: `.git`, `node_modules`, `.venv`, `__pycache__`, `site/`
 - **Historical files**: `.planning/`, `.claude/metrics/`, `*.log`, `*.jsonl`,
-  `CHANGELOG.md` — each records what a path *was*, which is what makes a
+  `CHANGELOG.md`, and the tool caches (`.pytest_cache`, `.ruff_cache`,
+  `.mypy_cache`) — each records what a path *was*, which is what makes a
   changelog entry naming the old location correct rather than stale
 - **Recorded data**: `fixtures/`, `testdata/` — a captured tool output names
   every file that existed when it was taken, and is fixed by re-running the
   tool, never by editing. `--test-mode` scans them anyway
 - **Dynamic paths**: Container paths (`/root/`, `/home/`), temp files (`/tmp/`)
 - **Self-references**: Usage examples in scripts referencing themselves
+
+## A repo excludes its own generated output
+
+The list above is what holds for any repository. Which of *this* repo's
+directories hold generated output is a fact only the repo knows, so it says so
+in `.refcheck.toml` at its root:
+
+```toml
+[scan]
+exclude = ["build/reports/**", "*.snapshot.json"]
+```
+
+Patterns are globs matched against the repo-relative path, and `**` crosses
+directory separators. They add to the built-in list rather than replacing it.
+
+A file a tool writes names what a path was when the tool ran, so a hit inside
+one is history rather than a stale reference. A test-report directory that
+records a node ID per test is the usual case: deleting a test file then reports
+one miss per report that ever ran it, and the count grows with every run.
+
+Discovery walks up from the repo root and stops there, so a checkout never
+inherits the config of whatever encloses it. `--exclude GLOB` adds a pattern for
+a single run without declaring it, and `--show-config` prints every exclusion in
+force alongside the layer that set it.
 
 ## Development
 

@@ -110,6 +110,26 @@ def print_results(
         sys.stderr.close()
 
 
+def print_config(repo_config: Path | None, layers: list[tuple[str, list[str]]]) -> None:
+    """Print every exclusion in force, grouped by the layer that set it.
+
+    The layer is the half of the answer that says whether a skipped file was
+    asked for. A built-in pattern, a repo declaration and a --exclude flag all
+    produce the same silence, and only the source tells them apart.
+    """
+    print()
+    print(f'Repo config: {repo_config if repo_config else "none found"}')
+
+    for label, patterns in layers:
+        if not patterns:
+            continue
+        print(f'\n{label} ({len(patterns)}):')
+        print('─' * 60)
+        for pattern in patterns:
+            print(f'  {pattern}')
+    print()
+
+
 def print_rules_hint(issues: list[Issue], rules_path: Path | None) -> None:
     """Mention learned rules only where they would have changed this output.
 

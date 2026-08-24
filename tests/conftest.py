@@ -199,6 +199,7 @@ def config_dir(temp_dir, monkeypatch):
     config_path = temp_dir / '.config' / 'refcheck'
     config_path.mkdir(parents=True)
     monkeypatch.setenv('HOME', str(temp_dir))
+    monkeypatch.setenv('XDG_CONFIG_HOME', str(temp_dir / '.config'))
     return config_path
 
 

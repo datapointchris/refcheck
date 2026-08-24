@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from refcheck.checker import ReferenceChecker
+from refcheck.config import Config
 
 
 def run_refcheck(*args, cwd=None):
@@ -624,6 +625,65 @@ def test_pattern_ignores_hits_inside_run_logs(tmp_path):
 
     assert len(checker.issues) == 1
     assert 'docs/guide.md' in str(checker.issues[0])
+
+
+def test_pattern_ignores_hits_inside_a_declared_exclusion(tmp_path):
+    """The built-in patterns cover what is true of any repo; a repo adds its own.
+
+    Which directories hold generated output is a fact only that repository
+    knows, so hardcoding one repo's layout here would put private structure in
+    a public tool and still miss the next repo.
+    """
+    reports = tmp_path / 'build' / 'reports'
+    (reports / 'nested').mkdir(parents=True)
+    (reports / 'run.json').write_text('{"name": "tests/appcore/test_formatting.py::test_clip"}\n')
+    (reports / 'nested' / 'timing.json').write_text('{"name": "tests/appcore/test_formatting.py::test_clip"}\n')
+
+    (tmp_path / 'docs').mkdir()
+    (tmp_path / 'docs' / 'guide.md').write_text('The palette lives in tests/appcore/test_formatting.py.\n')
+
+    checker = ReferenceChecker(tmp_path, config=Config(exclude=['build/reports/**']))
+    checker.check_pattern('tests/appcore', 'moved to the pytermstyle repo')
+
+    assert len(checker.issues) == 1
+    assert 'docs/guide.md' in str(checker.issues[0])
+
+
+def test_repo_config_excludes_a_subtree(temp_git_repo):
+    """The declaration reaches a real run through .refcheck.toml at the repo root."""
+    reports = temp_git_repo / 'build' / 'reports'
+    reports.mkdir(parents=True)
+    (reports / 'run.json').write_text('{"ran": "lib/helpers.sh"}\n')
+
+    assert run_refcheck('--pattern', 'lib/helpers.sh', cwd=temp_git_repo).returncode == 1
+
+    (temp_git_repo / '.refcheck.toml').write_text('[scan]\nexclude = ["build/reports/**"]\n')
+
+    assert run_refcheck('--pattern', 'lib/helpers.sh', cwd=temp_git_repo).returncode == 0
+
+
+def test_exclude_flag_skips_a_subtree_without_declaring_it(temp_git_repo):
+    reports = temp_git_repo / 'build' / 'reports'
+    reports.mkdir(parents=True)
+    (reports / 'run.json').write_text('{"ran": "lib/helpers.sh"}\n')
+
+    assert run_refcheck('--pattern', 'lib/helpers.sh', cwd=temp_git_repo).returncode == 1
+
+    narrowed = run_refcheck('--pattern', 'lib/helpers.sh', '--exclude', 'build/reports/**', cwd=temp_git_repo)
+
+    assert narrowed.returncode == 0
+
+
+def test_show_config_names_the_layer_each_exclusion_came_from(temp_git_repo):
+    (temp_git_repo / '.refcheck.toml').write_text('[scan]\nexclude = ["build/reports/**"]\n')
+
+    result = run_refcheck('--show-config', '--exclude', 'tmp/**', cwd=temp_git_repo)
+
+    assert result.returncode == 0
+    assert '.refcheck.toml' in result.stdout
+    assert 'build/reports/**' in result.stdout
+    assert 'tmp/**' in result.stdout
+    assert 'CHANGELOG.md' in result.stdout
 
 
 def test_pattern_ignores_hits_inside_tool_caches(tmp_path):

@@ -10,7 +10,9 @@ from pyselfupdate.typercmd import run_update
 
 from . import moves as moves_module
 from .checker import ReferenceChecker
+from .config import REPO_CONFIG_NAME
 from .config import load_config
+from .output import print_config
 from .output import print_results
 from .rules import get_repo_root
 from .rules import learn_rules_from_git
@@ -34,6 +36,19 @@ EPILOG = '\n\n'.join(
         '[b]refcheck --moves[/b] — ask that of every rename and deletion you have staged, without naming them',
         '[b]refcheck --moves-since origin/main[/b] — the same over a branch, for CI',
         "[b]refcheck --learn-rules[/b] — derive pattern rules from git's own rename history",
+        '[b]refcheck --show-config[/b] — every exclusion in force, and the layer that set it',
+        '[b]Excluding a repo of its own generated output[/b]',
+        (
+            'refcheck excludes what is true of any repository — logs, changelogs, tool caches. '
+            'Which of [i]this[/i] repo’s directories hold generated output is a fact only the repo '
+            f'knows, so it says so in [b]{REPO_CONFIG_NAME}[/b] at its root:'
+        ),
+        '[b][scan][/b]\n[b]exclude = ["build/reports/**", "*.snapshot.json"][/b]',
+        (
+            'A file written by a tool names what a path was when the tool ran, so a hit inside one is '
+            'history rather than a stale reference. --exclude adds a pattern for one run without '
+            'declaring it.'
+        ),
         '[b]What counts as what[/b]',
         (
             'Errors, always checked, exit 1: a source statement or a bash/sh invocation naming a file '
@@ -76,6 +91,14 @@ def main(
         bool,
         typer.Option('--test-mode', help='Include test fixtures, which are excluded by default.', rich_help_panel='Filters'),
     ] = False,
+    exclude: Annotated[
+        list[str] | None,
+        typer.Option(
+            '--exclude',
+            help=f'Also skip paths matching this glob. Repeatable, and added to {REPO_CONFIG_NAME}.',
+            rich_help_panel='Filters',
+        ),
+    ] = None,
     pattern: Annotated[
         str | None,
         typer.Option('--pattern', help="An old path or name to hunt for, e.g. 'old/path/'.", rich_help_panel='Pattern search'),
@@ -104,6 +127,12 @@ def main(
         bool,
         typer.Option('--learn-rules', help="Write rules.json from git's rename history.", rich_help_panel='Maintenance'),
     ] = False,
+    show_config: Annotated[
+        bool,
+        typer.Option(
+            '--show-config', help='Print the exclusions in force and where each came from, then exit.', rich_help_panel='Maintenance'
+        ),
+    ] = False,
     update: Annotated[
         bool,
         typer.Option('--update', help='Install the latest refcheck release.', rich_help_panel='Maintenance'),
@@ -127,12 +156,6 @@ def main(
         run_update(UPDATE_CONFIG, check_only=check)
         raise typer.Exit(0)
 
-    config = load_config()
-
-    if learn_rules:
-        learn_rules_from_git(config.time_window)
-        raise typer.Exit(0)
-
     root_dir = Path.cwd()
     search_path = path.resolve() if path else root_dir
 
@@ -140,6 +163,30 @@ def main(
         search_path.relative_to(root_dir)
     except ValueError:
         root_dir = search_path
+
+    # Discovery starts at the repo root rather than the cwd, so narrowing the
+    # scan to a subdirectory reads the same declarations as a whole-repo run.
+    config = load_config(root_dir)
+    repo_patterns = list(config.exclude)
+    flag_patterns = list(exclude or [])
+    config.exclude = [*repo_patterns, *flag_patterns]
+
+    if show_config:
+        print_config(
+            config.config_path,
+            [
+                ('Excluded directory names', sorted(ReferenceChecker.DEFAULT_EXCLUDES)),
+                ('Built-in patterns', ReferenceChecker.DEFAULT_EXCLUDE_PATTERNS),
+                ('Test fixtures, scanned under --test-mode', [] if test_mode else ReferenceChecker.TEST_FIXTURE_PATTERNS),
+                (f'{REPO_CONFIG_NAME} [scan] exclude', repo_patterns),
+                ('--exclude', flag_patterns),
+            ],
+        )
+        raise typer.Exit(0)
+
+    if learn_rules:
+        learn_rules_from_git(config.time_window)
+        raise typer.Exit(0)
 
     checker = ReferenceChecker(
         root_dir=root_dir,

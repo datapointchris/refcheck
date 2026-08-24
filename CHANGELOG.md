@@ -1,6 +1,56 @@
 # CHANGELOG
 
 
+## v0.6.0 (2026-08-24)
+
+### Chores
+
+- **pyproject**: Raise assertion verbosity instead of test verbosity
+  ([`04cbed1`](https://github.com/datapointchris/refcheck/commit/04cbed15d626a758abbe756f724a387087dcd5c3))
+
+A failing assertion truncated its diff and printed "use -vv to show", so the reader re-ran the whole
+  suite to see it. addopts = "-vv" answered that by raising test-list verbosity as well, which is a
+  different question: a green run printed a line per test and said nothing. verbosity_assertions
+  raises only the half that was wanted.
+
+Written by the forge pyproject die.
+
+### Continuous Integration
+
+- Regenerate validate.yml at toolchain 16
+  ([`744c13c`](https://github.com/datapointchris/refcheck/commit/744c13c2f7357092b8c5df75679546c90bb66cdc))
+
+Catches this repo up with the version manifest: StyLua pinned to a release rather than latest, a
+  reworded bats discovery note, and double quotes in the node block. Only the blocks this repo
+  declares are affected.
+
+Triggers and job structure are unchanged.
+
+### Features
+
+- Let a repo declare which of its paths hold generated output
+  ([`2813b79`](https://github.com/datapointchris/refcheck/commit/2813b798285a5b27ac67f6ab3dcbd505dad6597b))
+
+The built-in exclusions cover what holds for any repository: logs, changelogs, tool caches. Which of
+  a given repo's directories hold generated output is a fact only that repo knows, and a file a tool
+  wrote names what a path was when it ran, so a hit inside one is history rather than a stale
+  reference. Hardcoding one repo's layout would put private structure in the tool and still miss the
+  next repo.
+
+A repo declares its own in .refcheck.toml at the root:
+
+[scan] exclude = ["build/reports/**"]
+
+Patterns add to the built-in list rather than replacing it. Discovery walks up from the repo root
+  and stops there, so a checkout does not inherit the config of whatever encloses it.
+
+--exclude adds a pattern for a single run without declaring it. --show-config prints every exclusion
+  in force with the layer that set it.
+
+The per-user config path now resolves through XDG_CONFIG_HOME instead of a hardcoded ~/.config, and
+  the filtering section of the README names the tool caches it was already excluding.
+
+
 ## v0.5.2 (2026-08-14)
 
 ### Bug Fixes

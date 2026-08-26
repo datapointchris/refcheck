@@ -49,6 +49,30 @@ class TestStagedMoves:
 
         assert moves.staged(temp_git_repo) == []
 
+    def test_keeps_a_bare_filename_when_the_caller_asks(self, temp_git_repo):
+        """A sweep across other repos settles a bare name by absolute path instead.
+
+        A registry file renamed at a repo root has no directory in front of
+        it, so filtering bare names leaves such a sweep nothing to look for.
+        """
+        (temp_git_repo / 'versions.json').write_text('{}\n')
+        commit(temp_git_repo, 'add versions')
+
+        git(temp_git_repo, 'mv', 'versions.json', 'pinned-versions.json')
+
+        found = moves.staged(temp_git_repo, include_bare_names=True)
+        assert [(m.old, m.new) for m in found] == [('versions.json', 'pinned-versions.json')]
+        assert found[0].is_bare
+
+    def test_a_path_with_a_directory_is_not_bare(self, temp_git_repo):
+        (temp_git_repo / 'lib').mkdir()
+        (temp_git_repo / 'lib' / 'helpers.sh').write_text('echo hi\n')
+        commit(temp_git_repo, 'add helpers')
+
+        git(temp_git_repo, 'rm', 'lib/helpers.sh')
+
+        assert not moves.staged(temp_git_repo)[0].is_bare
+
     def test_skips_a_path_that_is_back(self, temp_git_repo):
         """Moved away and replaced within one change: nothing points at a live name."""
         (temp_git_repo / 'lib').mkdir()

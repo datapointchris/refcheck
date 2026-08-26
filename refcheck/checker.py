@@ -1,6 +1,8 @@
 """Core reference checking logic."""
 
+import os
 import re
+from collections.abc import Iterator
 from pathlib import Path
 
 from .config import Config
@@ -364,6 +366,53 @@ class ReferenceChecker:
     # cannot be resolved from here. What follows it is an ordinary relative path.
     VARIABLE_ROOT = re.compile(r'^\$\{?\w+\}?/')
 
+    def _path_tokens_around(self, pattern: str, line: str) -> Iterator[tuple[str, bool]]:
+        """Each hit on this line, widened to the whole path token holding it.
+
+        Yields the token and whether the pattern begins it. A hit that begins
+        its own token has no path in front of it, which the two callers read in
+        opposite directions: in this repo that is a bare mention worth
+        reporting, and in another repo it is a name that cannot reach here.
+
+        `:` is not a path character, so widening stops right after a URL
+        scheme's `//`. A hit inside a URL is never a file reference —
+        `docs/claude-code` in docs.anthropic.com/en/docs/claude-code/hooks was
+        reported as a moved path — so those hits are dropped rather than
+        yielded.
+        """
+        start = 0
+        while (index := line.find(pattern, start)) != -1:
+            start = index + len(pattern)
+
+            left = index
+            while left > 0 and self.PATH_TOKEN_CHARS.match(line[left - 1]):
+                left -= 1
+            right = index + len(pattern)
+            while right < len(line) and self.PATH_TOKEN_CHARS.match(line[right]):
+                right += 1
+
+            if left > 0 and line[left - 1] == ':':
+                continue
+
+            # Trailing only. A leading dot is part of the path — stripping both
+            # ends turns `../a.json` into the absolute `/a.json` and `.github`
+            # into a `github` that is not there, so both resolve to nothing.
+            yield line[left:right].rstrip('.'), left == index
+
+    @staticmethod
+    def _on_this_filesystem(token: str) -> Path | None:
+        """A path token as somewhere on this machine, or None when it is not one.
+
+        `~` and the environment are expanded, and anything left holding a `$`
+        named a variable this process does not carry. Only an absolute result
+        is a real location: a relative token belongs to whichever repo the line
+        sits in, and that is resolved against a root instead.
+        """
+        expanded = os.path.expandvars(os.path.expanduser(token))
+        if '$' in expanded or not expanded.startswith('/'):
+            return None
+        return Path(expanded)
+
     def _pattern_hit_still_resolves(self, pattern: str, line: str, from_file: Path | None = None) -> bool:
         """True when every hit on this line sits inside a path that exists.
 
@@ -384,29 +433,25 @@ class ReferenceChecker:
         against that file's directory as well as the root. A markdown link
         spells its target relative to itself, so `../pinned-versions.json` in
         standards/ resolves from there and nowhere else.
+
+        A token naming somewhere absolute is tested against the filesystem
+        rather than against a root. `~/.local/share/<repo>/pinned-versions.json`
+        is a corrected reference and hangs off no root in this repo, so joining
+        it to one reported the file that had just been fixed.
         """
-        start = 0
-        while (index := line.find(pattern, start)) != -1:
-            left = index
-            while left > 0 and self.PATH_TOKEN_CHARS.match(line[left - 1]):
-                left -= 1
-            right = index + len(pattern)
-            while right < len(line) and self.PATH_TOKEN_CHARS.match(line[right]):
-                right += 1
-
-            # `:` is not a path character, so expansion stops right after a URL scheme's
-            # `//`. A hit inside a URL is never a file reference — `docs/claude-code` in
-            # docs.anthropic.com/en/docs/claude-code/hooks was reported as a moved path.
-            if left > 0 and line[left - 1] == ':':
-                start = index + len(pattern)
-                continue
-
-            # Trailing only. A leading dot is part of the path — stripping both
-            # ends turns `../a.json` into the absolute `/a.json` and `.github`
-            # into a `github` that is not there, so both resolve to nothing.
-            token = line[left:right].rstrip('.')
-            if left == index or not token:
+        for token, begins_the_token in self._path_tokens_around(pattern, line):
+            if begins_the_token or not token:
                 return False
+
+            # Tried first and never on its own. An absolute token needs nothing
+            # here — joining it to a root discards the root — but `~` and a set
+            # variable are literal text until expanded, so joining those to a
+            # root builds a path that cannot exist and reports the file that was
+            # just repaired. Falling through on a miss keeps the root-relative
+            # candidates below, which answer for a variable pointing elsewhere.
+            target = self._on_this_filesystem(token)
+            if target is not None and target.exists():
+                continue
 
             bases = [self.root_dir]
             if from_file is not None:
@@ -420,9 +465,38 @@ class ReferenceChecker:
             candidates = [token, self.VARIABLE_ROOT.sub('', token, count=1)]
             if not any((base / candidate).exists() for base in bases for candidate in candidates if candidate):
                 return False
-            start = index + len(pattern)
 
         return True
+
+    def _reaches_a_gone_path_in(self, pattern: str, line: str, repo_homes: dict[Path, str]) -> str | None:
+        """The repo a hit on this line names a missing file in, if it names one.
+
+        A reference from one repo to another cannot be relative — the file is
+        not in this tree, so the only way to reach it is an absolute path, `~`,
+        or a variable holding one. That makes the existence test exact instead
+        of textual: expand the token, and report it only when the path it names
+        is inside a repo the caller listed and is not there.
+
+        This is the whole defence against a basename sweeping 90 repos for
+        `versions.json`. Every mention that is a filename literal, a fixture
+        name or a sentence in prose fails the first half, and every corrected
+        reference fails the second.
+        """
+        for token, begins_the_token in self._path_tokens_around(pattern, line):
+            if begins_the_token or not token:
+                continue
+
+            target = self._on_this_filesystem(token)
+            if target is None or target.exists():
+                continue
+
+            # Longest match wins, so a repo checked out inside another is
+            # credited to the inner one rather than to whatever encloses it.
+            for home in sorted(repo_homes, key=lambda home: len(home.parts), reverse=True):
+                if home != self.root_dir and target.is_relative_to(home):
+                    return repo_homes[home]
+
+        return None
 
     def check_pattern(self, pattern: str, description: str | None = None):
         """Check for old path pattern references."""
@@ -436,6 +510,37 @@ class ReferenceChecker:
         cost of the check scale with the size of the move, which is backwards:
         the large refactor is exactly the one worth checking.
         """
+
+        def stale(pattern: str, line: str, from_file: Path) -> str | None:
+            if self._pattern_hit_still_resolves(pattern, line, from_file):
+                return None
+            return f'Found: {pattern}'
+
+        self._scan_for_patterns(patterns, stale)
+
+    def check_patterns_across_repos(self, patterns: dict[str, str], repo_homes: dict[Path, str]):
+        """Check this tree for paths that moved in one of the other repos.
+
+        The renaming repo cannot see its consumers. Run with this repo as the
+        root and the moved paths as patterns, and the consumer side of a rename
+        is answerable — the file that names the old path is right here, and the
+        old path is gone from the repo that holds it.
+
+        The reporting rule is tighter than check_patterns, and it has to be. In
+        the repo that did the moving, any surviving mention of the old name is
+        suspect, because its own files are the ones that moved. In another repo
+        the same string is usually that repo's own business, so only a path
+        reaching into a listed repo counts.
+        """
+
+        def stale(pattern: str, line: str, from_file: Path) -> str | None:
+            owner = self._reaches_a_gone_path_in(pattern, line, repo_homes)
+            return f'Gone from {owner}: {pattern}' if owner else None
+
+        self._scan_for_patterns(patterns, stale)
+
+    def _scan_for_patterns(self, patterns: dict[str, str], stale) -> None:
+        """One walk of the tree, asking `stale` of every hit it finds."""
         if not patterns:
             return
 
@@ -451,13 +556,16 @@ class ReferenceChecker:
                 with file_path.open(encoding='utf-8', errors='ignore') as f:
                     for line_num, line in enumerate(f, 1):
                         for pattern, description in patterns.items():
-                            if pattern in line and not self._pattern_hit_still_resolves(pattern, line, file_path):
+                            if pattern not in line:
+                                continue
+                            message = stale(pattern, line, file_path)
+                            if message:
                                 self.issues.append(
                                     Issue(
                                         file=rel_path,
                                         line_num=line_num,
                                         check_type=CheckType.PATTERN,
-                                        message=f'Found: {pattern}',
+                                        message=message,
                                         suggestion=description,
                                     )
                                 )

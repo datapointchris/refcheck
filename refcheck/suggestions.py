@@ -28,7 +28,11 @@ class FileSuggestions:
         if file_path.suffix in self.BINARY_SUFFIXES:
             return True
 
-        return self._holds_binary_content(file_path)
+        # Callers pass a repo-relative path, so the read is anchored at the root
+        # rather than at the working directory. Scanning a repo that is not the
+        # one you are standing in opened the wrong path, got OSError, and read
+        # "not binary" — which let a 30 MB Go executable through as text.
+        return self._holds_binary_content(self.root_dir / file_path)
 
     def _matches_exclusion(self, rel_path: Path) -> bool:
         """Match an exclusion pattern against a repo-relative path.

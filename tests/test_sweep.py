@@ -161,7 +161,7 @@ class TestWhoCanOwnAGonePath:
         assert names(sweep.across_repos(listed, {'versions.json': 'now pinned-versions.json'})) == []
 
     def test_a_traversal_still_lands_inside_the_repo_it_names(self, two_repos):
-        """`exists` walks `..` and `is_relative_to` reads it, so both sides flatten."""
+        """`is_relative_to` is a string comparison, so it gets the walked-out path."""
         upstream, consumer = two_repos
         (consumer / 'config.yml').write_text(f'versions_file: {consumer}/../upstream/versions.json\n')
 
@@ -169,6 +169,86 @@ class TestWhoCanOwnAGonePath:
 
         assert names(result) == ['consumer:config.yml']
         assert result.issues[0].message == 'Gone from upstream: versions.json'
+
+    def test_a_traversal_through_a_symlink_is_not_reported_when_the_file_is_there(self, temp_dir):
+        """The path a program opens is the one as written, so that is what existence asks about.
+
+        `repo/link/../versions.json` where `link` points away resolves to a real
+        file. Flattening it first asks about `repo/versions.json`, which is a
+        different file and is not there.
+        """
+        repo, elsewhere, consumer = temp_dir / 'repo', temp_dir / 'elsewhere', temp_dir / 'consumer'
+        for directory in (repo, elsewhere, consumer):
+            directory.mkdir()
+        (temp_dir / 'versions.json').write_text('{}\n')
+        (repo / 'link').symlink_to(elsewhere)
+        (consumer / 'config.yml').write_text(f'versions_file: {repo}/link/../versions.json\n')
+
+        listed = repos_for(repo, consumer)
+        assert names(sweep.across_repos(listed, {'versions.json': 'now pinned-versions.json'})) == []
+
+    def test_a_traversal_through_a_symlink_is_credited_to_the_repo_holding_the_file(self, temp_dir):
+        """Containment follows the link, so the owner is where the file actually was."""
+        repo, elsewhere, consumer = temp_dir / 'repo', temp_dir / 'elsewhere', temp_dir / 'consumer'
+        for directory in (repo, elsewhere, consumer):
+            directory.mkdir()
+        (repo / 'link').symlink_to(elsewhere)
+        (consumer / 'config.yml').write_text(f'versions_file: {repo}/link/../versions.json\n')
+
+        listed = listing(
+            Repo(name='outer', path=temp_dir, status='active'),
+            Repo(name='repo', path=repo, status='active'),
+            Repo(name='consumer', path=consumer, status='active'),
+        )
+        result = sweep.across_repos(listed, {'versions.json': 'now pinned-versions.json'})
+
+        assert names(result) == ['consumer:config.yml']
+        assert result.issues[0].message == 'Gone from outer: versions.json'
+
+    def test_a_repo_reached_through_a_symlinked_parent_is_credited(self, temp_dir):
+        """`~/link/versions.json` where link points into a listed repo names a file in it."""
+        upstream, consumer = temp_dir / 'upstream', temp_dir / 'consumer'
+        upstream.mkdir()
+        consumer.mkdir()
+        (temp_dir / 'link').symlink_to(upstream)
+        (consumer / 'config.yml').write_text(f'versions_file: {temp_dir}/link/versions.json\n')
+
+        result = sweep.across_repos(repos_for(upstream, consumer), {'versions.json': 'now pinned-versions.json'})
+
+        assert names(result) == ['consumer:config.yml']
+        assert result.issues[0].message == 'Gone from upstream: versions.json'
+
+    def test_a_repo_whose_declared_path_is_a_symlink_still_owns_its_files(self, temp_dir):
+        """A registry may name a repo at a link, so homes are keyed physically too."""
+        real, consumer = temp_dir / 'real-upstream', temp_dir / 'consumer'
+        real.mkdir()
+        consumer.mkdir()
+        (temp_dir / 'declared').symlink_to(real)
+        (consumer / 'config.yml').write_text(f'versions_file: {temp_dir}/declared/versions.json\n')
+
+        listed = listing(
+            Repo(name='upstream', path=temp_dir / 'declared', status='active'),
+            Repo(name='consumer', path=consumer, status='active'),
+        )
+        result = sweep.across_repos(listed, {'versions.json': 'now pinned-versions.json'})
+
+        assert names(result) == ['consumer:config.yml']
+        assert result.issues[0].message == 'Gone from upstream: versions.json'
+
+    def test_a_repo_does_not_report_its_own_missing_path_through_a_symlink(self, temp_dir):
+        """The self-exclusion compares physical roots, so a symlinked checkout still excludes itself."""
+        real, consumer = temp_dir / 'real-upstream', temp_dir / 'consumer'
+        real.mkdir()
+        consumer.mkdir()
+        (temp_dir / 'upstream').symlink_to(real)
+        (real / 'notes.md').write_text(f'Pins were at {temp_dir}/upstream/versions.json\n')
+
+        listed = listing(
+            Repo(name='upstream', path=temp_dir / 'upstream', status='active'),
+            Repo(name='consumer', path=consumer, status='active'),
+        )
+
+        assert names(sweep.across_repos(listed, {'versions.json': 'now pinned-versions.json'})) == []
 
 
 class TestTheRepoThePathsMovedIn:

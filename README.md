@@ -210,6 +210,10 @@ while it was quiet is exactly what nobody would otherwise find. Whatever is
 skipped is printed alongside the result, so a sweep that covered fewer repos
 than you expected says so rather than reporting a clean machine it never read.
 
+Every filter narrows the sweep as well as the local run — `--type`, `--skip-docs`,
+`--test-mode` and `--exclude` all reach all of it. Each repo still reads its own
+`.refcheck.toml`, with `--exclude` added on top.
+
 `--registry` also takes `--pattern` and `--moves`, and needs one of the three:
 validating another repo's `source` statements is that repo's own run, so a
 registry with no moved path to look for exits 2 rather than walking 90 repos to

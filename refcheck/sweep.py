@@ -11,6 +11,7 @@ moment it is worth running. The patterns are not typed in; they are what the
 commit already recorded.
 """
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from dataclasses import field
 
@@ -49,13 +50,27 @@ class SweepResult:
         return [result for result in self.results if result.issues]
 
 
-def across_repos(repos: list[Repo], patterns: dict[str, str], skip_docs: bool = False) -> SweepResult:
+def across_repos(
+    repos: list[Repo],
+    patterns: dict[str, str],
+    skip_docs: bool = False,
+    file_type: str | None = None,
+    test_mode: bool = False,
+    flag_excludes: Sequence[str] = (),
+) -> SweepResult:
     """Ask every listed repo what it still points at, in one walk each.
 
     A repo whose directory is not there is reported rather than skipped in
     silence: a registry naming a path this machine does not hold is drift of its
     own, and a sweep that quietly covered fewer repos than the caller believes
     is the false clean this tool exists to avoid.
+
+    Every filter narrowing the local run narrows this one too. A flag reaching
+    part of the work and silently not the rest is the failure mode a narrowing
+    flag has, because it is designed against the case it was invented for. Each
+    repo still reads its own declared exclusions, with the flag's added on top —
+    which of a repo's directories hold generated output is a fact only that repo
+    knows, and it stays that way across ninety of them.
     """
     sweep = SweepResult()
 
@@ -79,12 +94,16 @@ def across_repos(repos: list[Repo], patterns: dict[str, str], skip_docs: bool = 
     homes = {repo.path: repo.name for repo in live}
 
     for repo in live:
+        config = load_config(repo.path)
+        config.exclude = [*config.exclude, *flag_excludes]
         checker = ReferenceChecker(
             root_dir=repo.path,
             search_path=repo.path,
             skip_docs=skip_docs,
+            file_type=file_type,
+            test_mode=test_mode,
             warn_fragile=False,
-            config=load_config(repo.path),
+            config=config,
         )
         checker.check_patterns_across_repos(patterns, homes)
         sweep.results.append(RepoResult(repo=repo, issues=checker.issues))

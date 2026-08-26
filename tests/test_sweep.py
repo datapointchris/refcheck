@@ -129,6 +129,44 @@ class TestWhatStaysSilent:
         assert names(sweep.across_repos(repos_for(upstream, consumer), {'versions.json': 'now pinned-versions.json'})) == []
 
 
+class TestNarrowingReachesEveryRepo:
+    """A filter that narrows the local run and silently not the sweep is the defect."""
+
+    def test_skip_docs_reaches_the_sweep(self, two_repos):
+        upstream, consumer = two_repos
+        (consumer / 'notes.md').write_text(f'The pins are at {upstream}/versions.json\n')
+
+        pattern = {'versions.json': 'now pinned-versions.json'}
+        assert names(sweep.across_repos(repos_for(upstream, consumer), pattern)) == ['consumer:notes.md']
+        assert names(sweep.across_repos(repos_for(upstream, consumer), pattern, skip_docs=True)) == []
+
+    def test_file_type_reaches_the_sweep(self, two_repos):
+        upstream, consumer = two_repos
+        (consumer / 'config.yml').write_text(f'versions_file: {upstream}/versions.json\n')
+        (consumer / 'load.py').write_text(f'PINS = "{upstream}/versions.json"\n')
+
+        pattern = {'versions.json': 'now pinned-versions.json'}
+        assert names(sweep.across_repos(repos_for(upstream, consumer), pattern, file_type='py')) == ['consumer:load.py']
+
+    def test_an_exclude_glob_reaches_the_sweep(self, two_repos):
+        upstream, consumer = two_repos
+        (consumer / 'build').mkdir()
+        (consumer / 'build' / 'report.txt').write_text(f'ran against {upstream}/versions.json\n')
+
+        pattern = {'versions.json': 'now pinned-versions.json'}
+        assert names(sweep.across_repos(repos_for(upstream, consumer), pattern)) == ['consumer:build/report.txt']
+        assert names(sweep.across_repos(repos_for(upstream, consumer), pattern, flag_excludes=['build/**'])) == []
+
+    def test_a_repos_own_exclusions_still_apply(self, two_repos):
+        """Which directories hold generated output is a fact only each repo knows."""
+        upstream, consumer = two_repos
+        (consumer / '.refcheck.toml').write_text('[scan]\nexclude = ["reports/**"]\n')
+        (consumer / 'reports').mkdir()
+        (consumer / 'reports' / 'run.txt').write_text(f'ran against {upstream}/versions.json\n')
+
+        assert names(sweep.across_repos(repos_for(upstream, consumer), {'versions.json': 'now pinned-versions.json'})) == []
+
+
 class TestWhatWasNotSwept:
     """A sweep covering fewer repos than the caller believes is a false clean."""
 

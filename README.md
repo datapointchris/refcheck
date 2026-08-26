@@ -38,6 +38,7 @@ pass `--skip-docs`.
 
 - After moving files, verify all references updated
 - Find stale patterns across entire codebase
+- Sweep the *other* repos on the machine, which the renaming repo cannot see
 - Custom pattern checking for any refactoring
 
 **Better than grep:**
@@ -153,6 +154,83 @@ refcheck --pattern "tests/install/"
 path, so the answer covers markdown, YAML, Dockerfiles and code alike. Paths
 that came back, and bare filenames with no directory, are skipped — the first is
 not stale and the second is too generic to be evidence.
+
+### After moving files, in the repos that name them
+
+A rename is answerable in the repo that made it and unanswerable everywhere
+else. That is the gap `--registry` closes: it asks the same question of every
+repo on the machine, driven by the same renames git already recorded.
+
+```bash
+refcheck --moves-since origin/main --registry ~/.config/repos.json
+```
+
+The registry is named at the call site and refcheck never goes looking for one.
+A check that resolved its own subject would sweep whatever the environment
+answered at that moment, and one machine's registry lists a different set of
+repos from another's. Any JSON naming repo paths works — a bare array of entries,
+or an object holding them under `repos` beside an `exclude_paths` list, which is
+honoured:
+
+```json
+{
+  "exclude_paths": ["~/code/third-party"],
+  "repos": [
+    {"name": "dotfiles", "path": "~/dotfiles", "status": "active"},
+    {"name": "old-thing", "path": "~/code/old-thing", "status": "retired"}
+  ]
+}
+```
+
+**A reference from one repo into another cannot be relative.** The file is not
+in that tree, so the only way to reach it is an absolute path, a `~`, or a
+variable holding one. That is what makes the sweep safe on a pattern as loose as
+`versions.json`: the token is expanded and the answer is the filesystem's, not
+the string's. A hit is reported only when the path it names sits inside a repo
+the registry lists and is not there.
+
+Everything else stays quiet, and it has to — three of refcheck's first five
+findings were its own bugs, which is why it went unused. Six registry files
+renamed at a repo root hit roughly 150 lines across 90 repos on the bare
+basename, effectively all of it noise. The rule above reports none of them, and
+reports the one reference that had genuinely broken.
+
+| What the line holds | Swept |
+| --- | --- |
+| `versions_file: ~/…/store/versions.json`, gone from a listed repo | reported |
+| `versions_file: ~/…/store/pinned-versions.json`, the corrected path | silent |
+| `PINS = "versions.json"`, a filename literal | silent |
+| `The pins live in versions.json`, prose | silent |
+| `/srv/versions.json`, inside no listed repo | silent |
+| `$UNSET_VAR/versions.json`, nothing to expand | silent |
+
+Retired repos are not walked, because a finding in one is not going to be fixed.
+Dormant ones are swept — dormant work gets picked up, and a reference that broke
+while it was quiet is exactly what nobody would otherwise find. A retired repo
+can still *own* a gone path, though: a live repo holding a path into one still
+holds a path that does not resolve, and the edit that fixes it is in the live
+repo.
+
+Four things stop a repo owning a gone path, and each gets its own row rather
+than folding into the clean total — never listed, listed but unreadable, listed
+and retired, listed and not on disk. Without that a tick cannot be told from
+"the repo the file left was not in the map", which is the false clean this whole
+tool exists to avoid. Where the repo you are standing in is itself unlisted, the
+sweep says so, because nothing it finds can be credited to the renames you just
+made.
+
+Every filter narrows the sweep as well as the local run — `--type`, `--skip-docs`,
+`--test-mode` and `--exclude` all reach all of it. Each repo still reads its own
+`.refcheck.toml`, with `--exclude` added on top.
+
+`--registry` also takes `--pattern` and `--moves`, and needs one of the three:
+validating another repo's `source` statements is that repo's own run, so a
+registry with no moved path to look for exits 2 rather than walking 90 repos to
+ask them nothing.
+
+One sweep of 90 repos costs about 14 seconds for six moved paths — roughly 12
+for the walk and a quarter-second per extra pattern. A run with nothing to look
+for reads no files at all.
 
 ### Before running tests
 
@@ -297,6 +375,7 @@ fi
 | `--desc DESC` | Description for pattern | `--desc "Now new/"` |
 | `--moves` | Check what staged renames and deletions left behind | `--moves` |
 | `--moves-since REF` | The same, for every move between REF and HEAD | `--moves-since origin/main` |
+| `--registry PATH` | Ask the same of every repo the registry lists | `--registry ~/.config/repos.json` |
 | `--type, -t TYPE` | Filter by file type | `--type sh` |
 | `--skip-docs` | Skip markdown files, for both reference and pattern checks | `--skip-docs` |
 | `--strict` | Treat warnings as errors (exit 1) | `--strict` |
@@ -367,6 +446,8 @@ Modular structure:
 - `config.py` - Config dataclass, TOML loading
 - `checker.py` - ReferenceChecker class (core logic)
 - `moves.py` - Renames and deletions read from git
+- `registry.py` - The repos on this machine, read from a registry the caller names
+- `sweep.py` - The move sweep, run across those repos rather than one
 - `rules.py` - Rules loading/learning from git
 - `suggestions.py` - File similarity matching
 - `output.py` - Result formatting

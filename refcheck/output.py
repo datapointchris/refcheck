@@ -5,6 +5,10 @@ from dataclasses import dataclass
 from dataclasses import field
 from enum import Enum
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .sweep import SweepResult
 
 
 class CheckType(Enum):
@@ -108,6 +112,78 @@ def print_results(
         print()
     except BrokenPipeError:
         sys.stderr.close()
+
+
+def print_sweep(sweep: 'SweepResult', patterns: dict[str, str]) -> None:
+    """Print a cross-repo sweep, grouped by the repo each finding sits in.
+
+    Paths are printed absolute rather than repo-relative. Every other refcheck
+    run prints relative to the tree you are standing in, and this one is the
+    exception because it is standing in none of them: 90 repo-relative paths
+    with no repo in front of them are not something a reader can open.
+
+    What was not swept is printed too. A registry naming a path this machine
+    does not hold is drift of its own, and a sweep reporting a clean 60 repos
+    when the caller expected 90 is the false clean this tool exists to avoid.
+    """
+    try:
+        print()
+        if not patterns:
+            print('✅ Nothing moved, so no repo was swept\n')
+            return
+
+        skipped = _describe_skipped(sweep)
+
+        if not sweep.issues:
+            print(f'✅ No repo names a path that moved — {_count(sweep.scanned, "repo")}, {len(patterns)} moved path(s){skipped}')
+            _print_unlisted_source(sweep)
+            print()
+            return
+
+        print(f'❌ Found {len(sweep.issues)} stale reference(s) in {len(sweep.with_issues)} of {_count(sweep.scanned, "repo")}{skipped}')
+        _print_unlisted_source(sweep)
+        print()
+
+        for result in sweep.with_issues:
+            print(f'{result.repo.name}  ({result.repo.path})')
+            print('─' * 60)
+            for issue in result.issues:
+                print(f'  {result.repo.path / issue.file}:{issue.line_num}')
+                print(f'    {issue.message}')
+                if issue.suggestion:
+                    print(f'    → {issue.suggestion}')
+            print()
+    except BrokenPipeError:
+        sys.stderr.close()
+
+
+def _count(number: int, noun: str) -> str:
+    return f'{number} {noun}' if number == 1 else f'{number} {noun}s'
+
+
+def _describe_skipped(sweep: 'SweepResult') -> str:
+    parts = []
+    if sweep.retired:
+        parts.append(f'{len(sweep.retired)} retired')
+    if sweep.absent:
+        parts.append(f'{len(sweep.absent)} with no directory: {", ".join(repo.name for repo in sweep.absent)}')
+    if sweep.unusable:
+        parts.append(f'{len(sweep.unusable)} unreadable: {"; ".join(sweep.unusable)}')
+    return f' (skipped {"; ".join(parts)})' if parts else ''
+
+
+def _print_unlisted_source(sweep: 'SweepResult') -> None:
+    """Say when the repo the paths moved in is not one the sweep can credit.
+
+    A hit is credited to the repo holding the path that went away, so a repo the
+    registry never listed can own nothing and its renames are unanswerable. Left
+    unsaid that prints the same tick as a machine with no stale references, and
+    a registry omitting one repo silently answers a different question.
+    """
+    if sweep.source_is_listed or sweep.source_root is None:
+        return
+
+    print(f'⚠️  {sweep.source_root} is not in the registry, so a path that moved here can be credited to no repo.')
 
 
 def print_config(repo_config: Path | None, layers: list[tuple[str, list[str]]]) -> None:

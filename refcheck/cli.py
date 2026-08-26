@@ -9,11 +9,14 @@ from pyselfupdate import notify
 from pyselfupdate.typercmd import run_update
 
 from . import moves as moves_module
+from . import registry as registry_module
+from . import sweep as sweep_module
 from .checker import ReferenceChecker
 from .config import REPO_CONFIG_NAME
 from .config import load_config
 from .output import print_config
 from .output import print_results
+from .output import print_sweep
 from .rules import get_repo_root
 from .rules import learn_rules_from_git
 from .selfupdate import CONFIG as UPDATE_CONFIG
@@ -35,6 +38,10 @@ EPILOG = '\n\n'.join(
         '[b]refcheck --pattern "old/path/" --desc "now new/path/"[/b] — after a move, what still points at the old name',
         '[b]refcheck --moves[/b] — ask that of every rename and deletion you have staged, without naming them',
         '[b]refcheck --moves-since origin/main[/b] — the same over a branch, for CI',
+        (
+            '[b]refcheck --moves-since origin/main --registry <repos.json>[/b] — and of every other '
+            'repo the registry lists, which is where a rename breaks something you cannot see'
+        ),
         "[b]refcheck --learn-rules[/b] — derive pattern rules from git's own rename history",
         '[b]refcheck --show-config[/b] — every exclusion in force, and the layer that set it',
         '[b]Excluding a repo of its own generated output[/b]',
@@ -115,6 +122,14 @@ def main(
         str | None,
         typer.Option('--moves-since', help='The same, for every move between REF and HEAD.', rich_help_panel='Pattern search'),
     ] = None,
+    registry: Annotated[
+        Path | None,
+        typer.Option(
+            '--registry',
+            help='Ask the same of every repo this registry lists, not just this one.',
+            rich_help_panel='Pattern search',
+        ),
+    ] = None,
     strict: Annotated[
         bool,
         typer.Option('--strict', help='Treat warnings as errors, so CI fails on them.', rich_help_panel='Severity'),
@@ -188,6 +203,16 @@ def main(
         learn_rules_from_git(config.time_window)
         raise typer.Exit(0)
 
+    # The sweep needs old paths to look for, and the source/bash checks are not
+    # one: validating another repo's references is that repo's own run. Saying
+    # so beats parsing into a walk of 90 repos that asks them nothing.
+    if registry is not None and not (pattern or check_moves or moves_since):
+        print(
+            '--registry sweeps other repos for paths that moved, so it needs --moves, --moves-since or --pattern to say which.',
+            file=sys.stderr,
+        )
+        raise typer.Exit(2)
+
     checker = ReferenceChecker(
         root_dir=root_dir,
         search_path=search_path,
@@ -199,8 +224,11 @@ def main(
         config=config,
     )
 
+    sweep_patterns: dict[str, str] = {}
+
     if pattern:
         checker.check_pattern(pattern, desc)
+        sweep_patterns = {pattern: desc or f'Old pattern: {pattern}'}
     else:
         checker.run_all_checks()
 
@@ -210,8 +238,15 @@ def main(
                 print('fatal: not a git repository (or any of the parent directories): .git', file=sys.stderr)
                 raise typer.Exit(128)
 
-            found = moves_module.since(moves_since, repo_root) if moves_since else moves_module.staged(repo_root)
-            checker.check_patterns({move.old: move.description for move in found})
+            # A bare name is asked for only when there are other repos to ask,
+            # where an absolute path settles it. In this repo it stays out.
+            found = (
+                moves_module.since(moves_since, repo_root, include_bare_names=True)
+                if moves_since
+                else moves_module.staged(repo_root, include_bare_names=True)
+            )
+            checker.check_patterns({move.old: move.description for move in found if not move.is_bare})
+            sweep_patterns = {move.old: move.description for move in found}
 
     print_results(
         checker.issues,
@@ -221,11 +256,46 @@ def main(
         checker.search_path,
     )
 
+    swept = (
+        _sweep_other_repos(registry, sweep_patterns, skip_docs, file_type, test_mode, flag_patterns, root_dir)
+        if registry is not None
+        else None
+    )
+
     notify(UPDATE_CONFIG)
 
-    if checker.issues or checker.strict and checker.warnings:
+    if checker.issues or (swept and swept.issues) or (checker.strict and checker.warnings):
         raise typer.Exit(1)
     raise typer.Exit(0)
+
+
+def _sweep_other_repos(
+    registry: Path,
+    patterns: dict[str, str],
+    skip_docs: bool,
+    file_type: str | None,
+    test_mode: bool,
+    flag_excludes: list[str],
+    source_root: Path,
+) -> sweep_module.SweepResult:
+    """Ask every repo the registry lists what still points at a path that moved."""
+    try:
+        listed = registry_module.load(registry)
+    except registry_module.RegistryError as error:
+        print(f'refcheck: {error}', file=sys.stderr)
+        raise typer.Exit(2) from error
+
+    swept = sweep_module.across_repos(
+        listed,
+        patterns,
+        skip_docs=skip_docs,
+        file_type=file_type,
+        test_mode=test_mode,
+        flag_excludes=flag_excludes,
+        source_root=source_root,
+    )
+    print_sweep(swept, patterns)
+    return swept
 
 
 if __name__ == '__main__':

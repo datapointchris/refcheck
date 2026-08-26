@@ -23,18 +23,23 @@ class Move:
     def description(self) -> str:
         return f'now {self.new}' if self.new else 'deleted in this change'
 
+    @property
+    def is_bare(self) -> bool:
+        """No directory in front of the name, so the name is all there is."""
+        return '/' not in self.old
 
-def staged(repo_root: Path) -> list[Move]:
+
+def staged(repo_root: Path, include_bare_names: bool = False) -> list[Move]:
     """Renames and deletions in the git index — what a pre-commit hook sees."""
-    return _read(['git', 'diff', '--cached', '--diff-filter=RD', '-M', '--name-status'], repo_root)
+    return _read(['git', 'diff', '--cached', '--diff-filter=RD', '-M', '--name-status'], repo_root, include_bare_names)
 
 
-def since(ref: str, repo_root: Path) -> list[Move]:
+def since(ref: str, repo_root: Path, include_bare_names: bool = False) -> list[Move]:
     """Renames and deletions between a ref and HEAD, for CI and manual runs."""
-    return _read(['git', 'diff', '--diff-filter=RD', '-M', '--name-status', ref, 'HEAD'], repo_root)
+    return _read(['git', 'diff', '--diff-filter=RD', '-M', '--name-status', ref, 'HEAD'], repo_root, include_bare_names)
 
 
-def _read(command: list[str], repo_root: Path) -> list[Move]:
+def _read(command: list[str], repo_root: Path, include_bare_names: bool = False) -> list[Move]:
     try:
         result = subprocess.run(  # nosec B603
             command,
@@ -58,10 +63,18 @@ def _read(command: list[str], repo_root: Path) -> list[Move]:
         else:
             continue
 
-        # A bare filename is too generic to match on: `main.go` appears in every
-        # Go repo's prose, and a substring check cannot tell which one is meant.
-        # The directory is what makes a pattern specific enough to be evidence.
-        if '/' not in old:
+        # A bare filename is too generic to match on within this repo: `main.go`
+        # appears in every Go repo's prose, and a substring check cannot tell
+        # which one is meant. The directory is what makes a pattern specific
+        # enough to be evidence.
+        #
+        # A sweep across other repos asks for them anyway, because there the
+        # evidence is not the pattern. A consumer in another repo reaches this
+        # file through an absolute path, and that path either exists or does
+        # not — which settles it without the pattern carrying any weight. A
+        # registry file renamed at a repo root has no directory in front of it,
+        # so filtering bare names leaves such a sweep nothing to look for.
+        if '/' not in old and not include_bare_names:
             continue
 
         # Moved away and back within one changeset, or replaced by a directory

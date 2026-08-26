@@ -789,3 +789,164 @@ def test_pattern_ignores_hits_inside_tool_caches(tmp_path):
 
     assert len(checker.issues) == 1
     assert 'docs/guide.md' in str(checker.issues[0])
+
+
+def test_pattern_expands_a_home_rooted_token_before_resolving_it(tmp_path, monkeypatch):
+    """A corrected reference to another repo hangs off no root in this one.
+
+    `~/.local/share/<repo>/pinned-versions.json` is literal text until `~` is
+    expanded, so joining it to the repo root built a path that cannot exist and
+    reported the file that had just been repaired.
+    """
+    monkeypatch.setenv('HOME', str(tmp_path))
+    (tmp_path / 'elsewhere').mkdir()
+    (tmp_path / 'elsewhere' / 'pinned-versions.json').write_text('{}\n')
+    repo = tmp_path / 'repo'
+    repo.mkdir()
+    (repo / 'config.yml').write_text('versions_file: ~/elsewhere/pinned-versions.json\n')
+
+    checker = ReferenceChecker(repo)
+    checker.check_pattern('versions.json', 'now pinned-versions.json')
+
+    assert checker.issues == []
+
+
+def test_pattern_still_reports_a_home_rooted_token_that_is_not_there(tmp_path, monkeypatch):
+    """Expanding `~` does not launder a path that is genuinely gone."""
+    monkeypatch.setenv('HOME', str(tmp_path))
+    (tmp_path / 'elsewhere').mkdir()
+    repo = tmp_path / 'repo'
+    repo.mkdir()
+    (repo / 'config.yml').write_text('versions_file: ~/elsewhere/versions.json\n')
+
+    checker = ReferenceChecker(repo)
+    checker.check_pattern('versions.json', 'now pinned-versions.json')
+
+    assert len(checker.issues) == 1
+
+
+def test_pattern_falls_back_when_a_variable_points_somewhere_else(tmp_path, monkeypatch):
+    """Expansion is tried first and is never the only answer.
+
+    `$REPO_ROOT` set to another checkout expands to a path with no
+    homelab-hosts.json in it, and the corrected reference is still corrected.
+    """
+    monkeypatch.setenv('REPO_ROOT', str(tmp_path / 'somewhere-else'))
+    (tmp_path / 'somewhere-else').mkdir()
+    repo = tmp_path / 'repo'
+    repo.mkdir()
+    (repo / 'homelab-hosts.json').write_text('{}\n')
+    (repo / 'registry.bats').write_text('  HOMELAB_HOSTS="$REPO_ROOT/homelab-hosts.json"\n')
+
+    checker = ReferenceChecker(repo)
+    checker.check_pattern('hosts.json', 'now homelab-hosts.json')
+
+    assert checker.issues == []
+
+
+def test_pattern_skips_a_binary_in_a_repo_that_is_not_the_working_directory(tmp_path, monkeypatch):
+    """The binary sniff opens a repo-relative path, so it needs the root in front of it.
+
+    Scanning a repo you are not standing in opened the wrong path, read
+    "not binary" off the OSError, and pattern-matched a 30 MB Go executable as
+    text.
+    """
+    repo = tmp_path / 'repo'
+    repo.mkdir()
+    (repo / 'compiled').write_bytes(b'\x7fELF\x00\x00 versions.json \x00 padding')
+    monkeypatch.chdir(tmp_path)
+
+    checker = ReferenceChecker(repo)
+    checker.check_pattern('versions.json', 'now pinned-versions.json')
+
+    assert checker.issues == []
+
+
+class TestSweepAcrossRepos:
+    """--registry asks the same question of every repo the caller lists."""
+
+    def registry_at(self, path, *repos):
+        path.write_text(json.dumps({'repos': [{'name': repo.name, 'path': str(repo), 'status': 'active'} for repo in repos]}))
+        return path
+
+    def test_reports_a_consumer_left_holding_the_old_path(self, tmp_path, temp_git_repo):
+        consumer = tmp_path / 'consumer'
+        consumer.mkdir()
+        (temp_git_repo / 'pinned-versions.json').write_text('{}\n')
+        subprocess.run(['git', 'add', '-A'], cwd=temp_git_repo, capture_output=True, check=True)
+        subprocess.run(['git', 'commit', '-m', 'add pins'], cwd=temp_git_repo, capture_output=True, check=True)
+        subprocess.run(['git', 'mv', 'pinned-versions.json', 'versions.json'], cwd=temp_git_repo, capture_output=True, check=True)
+        subprocess.run(['git', 'commit', '-m', 'rename back'], cwd=temp_git_repo, capture_output=True, check=True)
+        subprocess.run(['git', 'mv', 'versions.json', 'pinned-versions.json'], cwd=temp_git_repo, capture_output=True, check=True)
+        subprocess.run(['git', 'commit', '-m', 'rename'], cwd=temp_git_repo, capture_output=True, check=True)
+        (consumer / 'config.yml').write_text(f'versions_file: {temp_git_repo}/versions.json\n')
+        registry = self.registry_at(tmp_path / 'reg.json', temp_git_repo, consumer)
+
+        result = run_refcheck('--moves-since', 'HEAD~1', '--registry', str(registry), cwd=temp_git_repo)
+
+        assert result.returncode == 1
+        assert 'Gone from' in result.stdout
+        assert 'config.yml:1' in result.stdout
+
+    def test_says_nothing_when_the_consumer_names_the_new_path(self, tmp_path, temp_git_repo):
+        consumer = tmp_path / 'consumer'
+        consumer.mkdir()
+        (temp_git_repo / 'versions.json').write_text('{}\n')
+        subprocess.run(['git', 'add', '-A'], cwd=temp_git_repo, capture_output=True, check=True)
+        subprocess.run(['git', 'commit', '-m', 'add pins'], cwd=temp_git_repo, capture_output=True, check=True)
+        subprocess.run(['git', 'mv', 'versions.json', 'pinned-versions.json'], cwd=temp_git_repo, capture_output=True, check=True)
+        subprocess.run(['git', 'commit', '-m', 'rename'], cwd=temp_git_repo, capture_output=True, check=True)
+        (consumer / 'config.yml').write_text(f'versions_file: {temp_git_repo}/pinned-versions.json\n')
+        registry = self.registry_at(tmp_path / 'reg.json', temp_git_repo, consumer)
+
+        result = run_refcheck('--moves-since', 'HEAD~1', '--registry', str(registry), cwd=temp_git_repo)
+
+        assert result.returncode == 0
+        assert 'No repo names a path that moved' in result.stdout
+
+    def test_sweeps_a_pattern_named_by_hand(self, tmp_path, temp_git_repo):
+        consumer = tmp_path / 'consumer'
+        consumer.mkdir()
+        (consumer / 'config.yml').write_text(f'versions_file: {temp_git_repo}/versions.json\n')
+        registry = self.registry_at(tmp_path / 'reg.json', temp_git_repo, consumer)
+
+        result = run_refcheck('--pattern', 'versions.json', '--registry', str(registry), cwd=temp_git_repo)
+
+        assert result.returncode == 1
+        assert 'Gone from' in result.stdout
+
+    def test_refuses_a_registry_with_nothing_to_sweep_for(self, tmp_path, temp_git_repo):
+        """A sweep with no moved path asks ninety repos nothing and exits clean."""
+        registry = self.registry_at(tmp_path / 'reg.json', temp_git_repo)
+
+        result = run_refcheck('--registry', str(registry), cwd=temp_git_repo)
+
+        assert result.returncode == 2
+        assert '--moves' in result.stderr
+
+    def test_says_when_the_repo_the_paths_moved_in_is_not_listed(self, tmp_path, temp_git_repo):
+        """A repo the registry never listed can own nothing, and that prints as clean."""
+        consumer = tmp_path / 'consumer'
+        consumer.mkdir()
+        (consumer / 'config.yml').write_text(f'versions_file: {temp_git_repo}/versions.json\n')
+        registry = self.registry_at(tmp_path / 'reg.json', consumer)
+
+        result = run_refcheck('--pattern', 'versions.json', '--registry', str(registry), cwd=temp_git_repo)
+
+        assert 'is not in the registry' in result.stdout
+
+    def test_counts_a_registry_entry_it_could_not_read(self, tmp_path, temp_git_repo):
+        """An entry it could not read gets its own row, not silence inside the clean total."""
+        (tmp_path / 'reg.json').write_text(json.dumps({'repos': [{'name': 'good', 'path': str(temp_git_repo)}, {'name': 'nameless'}]}))
+
+        result = run_refcheck('--pattern', 'versions.json', '--registry', str(tmp_path / 'reg.json'), cwd=temp_git_repo)
+
+        assert '1 unreadable: nameless names no path' in result.stdout
+
+    def test_refuses_a_registry_that_is_not_one(self, tmp_path, temp_git_repo):
+        (tmp_path / 'reg.json').write_text('{not json')
+
+        result = run_refcheck('--pattern', 'x', '--registry', str(tmp_path / 'reg.json'), cwd=temp_git_repo)
+
+        assert result.returncode == 2
+        assert 'not valid JSON' in result.stderr

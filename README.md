@@ -189,6 +189,15 @@ variable holding one. That is what makes the sweep safe on a pattern as loose as
 the string's. A hit is reported only when the path it names sits inside a repo
 the registry lists and is not there.
 
+Those two halves ask about different forms of the same path, because different
+things answer them. **Is it there** is the kernel's answer, so it gets the path
+as written — the one a program reading that line would open. **Whose is it** is
+a string comparison, so it gets the path with its symlinks and `..` walked out,
+and so do the repo paths it is compared against. Handing either the other's form
+is a bug in whichever direction it is done: flatten before asking the kernel and
+a file that is on disk is reported gone, compare an unwalked path and a real
+file lands outside every repo that holds it.
+
 Everything else stays quiet, and it has to — three of refcheck's first five
 findings were its own bugs, which is why it went unused. Six registry files
 renamed at a repo root hit roughly 150 lines across 90 repos on the bare

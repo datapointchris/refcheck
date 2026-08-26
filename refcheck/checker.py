@@ -360,7 +360,7 @@ class ReferenceChecker:
     # so a markdown `path/like/this` yields the path and not the fence.
     PATH_TOKEN_CHARS = re.compile(r'[\w./~${}-]')
 
-    def _pattern_hit_still_resolves(self, pattern: str, line: str) -> bool:
+    def _pattern_hit_still_resolves(self, pattern: str, line: str, from_file: Path | None = None) -> bool:
         """True when every hit on this line sits inside a path that exists.
 
         `--pattern boards/arm` matched `config/boards/arm/...` after the
@@ -369,10 +369,18 @@ class ReferenceChecker:
         longer path that happens to end the same way, so resolve the whole
         token: if it is on disk it is not stale, and a genuinely moved path
         still fails to resolve and is still reported.
-        """
-        if '/' not in pattern:
-            return False
 
+        A bare filename is resolved the same way, because a rename whose new
+        name ends in the old one is the common case rather than the exotic one
+        — `tools.json` to `fleet-built-tools.json` puts the pattern inside
+        every site that was just repaired. A hit standing alone as its own
+        token is still reported, so `--pattern backmeup` finds `Run backmeup`.
+
+        `from_file` is the file the line came from, and a token is resolved
+        against that file's directory as well as the root. A markdown link
+        spells its target relative to itself, so `../pinned-versions.json` in
+        standards/ resolves from there and nowhere else.
+        """
         start = 0
         while (index := line.find(pattern, start)) != -1:
             left = index
@@ -389,8 +397,17 @@ class ReferenceChecker:
                 start = index + len(pattern)
                 continue
 
-            token = line[left:right].strip('.')
-            if left == index or not token or not (self.root_dir / token).exists():
+            # Trailing only. A leading dot is part of the path — stripping both
+            # ends turns `../a.json` into the absolute `/a.json` and `.github`
+            # into a `github` that is not there, so both resolve to nothing.
+            token = line[left:right].rstrip('.')
+            if left == index or not token:
+                return False
+
+            bases = [self.root_dir]
+            if from_file is not None:
+                bases.append(from_file.parent)
+            if not any((base / token).exists() for base in bases):
                 return False
             start = index + len(pattern)
 
@@ -423,7 +440,7 @@ class ReferenceChecker:
                 with file_path.open(encoding='utf-8', errors='ignore') as f:
                     for line_num, line in enumerate(f, 1):
                         for pattern, description in patterns.items():
-                            if pattern in line and not self._pattern_hit_still_resolves(pattern, line):
+                            if pattern in line and not self._pattern_hit_still_resolves(pattern, line, file_path):
                                 self.issues.append(
                                     Issue(
                                         file=rel_path,

@@ -588,6 +588,62 @@ def test_pattern_still_reports_a_path_that_does_not_resolve(tmp_path):
     assert len(checker.issues) == 1
 
 
+def test_pattern_ignores_a_bare_name_inside_the_name_that_replaced_it(tmp_path):
+    """A rename whose new name ends in the old one repairs every site into a hit.
+
+    `tools.json` became `fleet-built-tools.json`, so the pattern sits inside
+    every reference that was just corrected. Reporting those is a clean tree
+    coming back red, which is how a checker stops being run.
+    """
+    (tmp_path / 'fleet-built-tools.json').write_text('{}\n')
+    (tmp_path / 'README.md').write_text('The list is `fleet-built-tools.json` now.\n')
+
+    checker = ReferenceChecker(tmp_path)
+    checker.check_pattern('tools.json', 'fleet-built-tools.json')
+
+    assert checker.issues == []
+
+
+def test_pattern_still_reports_a_bare_name_standing_on_its_own(tmp_path):
+    """The old name alone is the reference the rename left behind."""
+    (tmp_path / 'fleet-built-tools.json').write_text('{}\n')
+    (tmp_path / 'README.md').write_text('The list is `tools.json` at the root.\n')
+
+    checker = ReferenceChecker(tmp_path)
+    checker.check_pattern('tools.json', 'fleet-built-tools.json')
+
+    assert len(checker.issues) == 1
+
+
+def test_pattern_resolves_a_relative_link_against_the_file_holding_it(tmp_path):
+    """A markdown link spells its target relative to itself, not to the root.
+
+    `[pinned-versions.json](../pinned-versions.json)` in standards/ resolves
+    from standards/ and from nowhere else, so resolving only against the root
+    reports a working link.
+    """
+    (tmp_path / 'pinned-versions.json').write_text('{}\n')
+    (tmp_path / 'standards').mkdir()
+    (tmp_path / 'standards' / 'go.md').write_text('The numbers are [pinned-versions.json](../pinned-versions.json).\n')
+
+    checker = ReferenceChecker(tmp_path)
+    checker.check_pattern('versions.json', 'pinned-versions.json')
+
+    assert checker.issues == []
+
+
+def test_pattern_still_reports_a_relative_link_to_something_gone(tmp_path):
+    """Resolving against the file's own directory does not launder a dead link."""
+    (tmp_path / 'pinned-versions.json').write_text('{}\n')
+    (tmp_path / 'standards').mkdir()
+    (tmp_path / 'standards' / 'go.md').write_text('The numbers are [versions.json](../versions.json).\n')
+
+    checker = ReferenceChecker(tmp_path)
+    checker.check_pattern('versions.json', 'pinned-versions.json')
+
+    assert len(checker.issues) == 1
+
+
 def test_pattern_ignores_a_hit_inside_a_url(tmp_path):
     """A URL is never a file reference, however much of the pattern it contains."""
     (tmp_path / 'docs').mkdir()

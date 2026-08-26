@@ -191,9 +191,9 @@ the registry lists and is not there.
 
 Everything else stays quiet, and it has to — three of refcheck's first five
 findings were its own bugs, which is why it went unused. Six registry files
-renamed at a repo root hit 152 lines across 90 repos on the bare basename. The
-rule above reports none of them, and reports the one reference that had
-genuinely broken.
+renamed at a repo root hit roughly 150 lines across 90 repos on the bare
+basename, effectively all of it noise. The rule above reports none of them, and
+reports the one reference that had genuinely broken.
 
 | What the line holds | Swept |
 | --- | --- |
@@ -204,11 +204,20 @@ genuinely broken.
 | `/srv/versions.json`, inside no listed repo | silent |
 | `$UNSET_VAR/versions.json`, nothing to expand | silent |
 
-Retired repos are left out, because a finding in one is not going to be fixed.
+Retired repos are not walked, because a finding in one is not going to be fixed.
 Dormant ones are swept — dormant work gets picked up, and a reference that broke
-while it was quiet is exactly what nobody would otherwise find. Whatever is
-skipped is printed alongside the result, so a sweep that covered fewer repos
-than you expected says so rather than reporting a clean machine it never read.
+while it was quiet is exactly what nobody would otherwise find. A retired repo
+can still *own* a gone path, though: a live repo holding a path into one still
+holds a path that does not resolve, and the edit that fixes it is in the live
+repo.
+
+Four things stop a repo owning a gone path, and each gets its own row rather
+than folding into the clean total — never listed, listed but unreadable, listed
+and retired, listed and not on disk. Without that a tick cannot be told from
+"the repo the file left was not in the map", which is the false clean this whole
+tool exists to avoid. Where the repo you are standing in is itself unlisted, the
+sweep says so, because nothing it finds can be credited to the renames you just
+made.
 
 Every filter narrows the sweep as well as the local run — `--type`, `--skip-docs`,
 `--test-mode` and `--exclude` all reach all of it. Each repo still reads its own

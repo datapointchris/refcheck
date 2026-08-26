@@ -14,10 +14,12 @@ commit already recorded.
 from collections.abc import Sequence
 from dataclasses import dataclass
 from dataclasses import field
+from pathlib import Path
 
 from .checker import ReferenceChecker
 from .config import load_config
 from .output import Issue
+from .registry import Registry
 from .registry import Repo
 
 
@@ -31,11 +33,21 @@ class RepoResult:
 
 @dataclass
 class SweepResult:
-    """The sweep's findings, and what it did not look at."""
+    """The sweep's findings, and what it did not look at.
+
+    Four things stop a repo owning a gone path and they arrive from three
+    places: never listed, listed but unreadable, listed and retired, listed and
+    not on disk. All four end in the same tick unless each is counted, and a
+    reader cannot then tell "no stale references" from "the repo the file left
+    was not in the map".
+    """
 
     results: list[RepoResult] = field(default_factory=list)
     retired: list[Repo] = field(default_factory=list)
     absent: list[Repo] = field(default_factory=list)
+    unusable: list[str] = field(default_factory=list)
+    source_root: Path | None = None
+    source_is_listed: bool = True
 
     @property
     def scanned(self) -> int:
@@ -51,12 +63,13 @@ class SweepResult:
 
 
 def across_repos(
-    repos: list[Repo],
+    registry: Registry,
     patterns: dict[str, str],
     skip_docs: bool = False,
     file_type: str | None = None,
     test_mode: bool = False,
     flag_excludes: Sequence[str] = (),
+    source_root: Path | None = None,
 ) -> SweepResult:
     """Ask every listed repo what it still points at, in one walk each.
 
@@ -72,7 +85,7 @@ def across_repos(
     which of a repo's directories hold generated output is a fact only that repo
     knows, and it stays that way across ninety of them.
     """
-    sweep = SweepResult()
+    sweep = SweepResult(unusable=list(registry.unusable), source_root=source_root)
 
     # Nothing moved, so no repo is asked anything. Walking them to report a
     # clean 90 would be a sweep that read no files claiming it read them all.
@@ -80,7 +93,7 @@ def across_repos(
         return sweep
 
     live = []
-    for repo in repos:
+    for repo in registry.repos:
         if not repo.is_swept:
             sweep.retired.append(repo)
         elif not repo.is_on_disk:
@@ -88,10 +101,16 @@ def across_repos(
         else:
             live.append(repo)
 
-    # Every repo's home, so a hit can be credited to the repo whose file went
-    # away. A path reaching none of them names something outside the registry
-    # and is nobody's stale reference.
-    homes = {repo.path: repo.name for repo in live}
+    # Which repos are walked and which can own a gone path are different
+    # questions, and only the first one is about where a fix would land. A live
+    # repo holding a path into a retired one still holds a path that does not
+    # resolve, and the edit that fixes it is in the live repo. So the map is
+    # every listed repo on disk; only the walk list drops the retired.
+    #
+    # Absent repos stay out of both. Without that, every reference into a repo
+    # this machine does not hold becomes a hit, because nothing there exists.
+    homes = {repo.path: repo.name for repo in registry.repos if repo.is_on_disk}
+    sweep.source_is_listed = source_root is None or source_root in homes
 
     for repo in live:
         config = load_config(repo.path)

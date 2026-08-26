@@ -135,10 +135,14 @@ def print_sweep(sweep: 'SweepResult', patterns: dict[str, str]) -> None:
         skipped = _describe_skipped(sweep)
 
         if not sweep.issues:
-            print(f'✅ No repo names a path that moved — {sweep.scanned} repos, {len(patterns)} moved path(s){skipped}\n')
+            print(f'✅ No repo names a path that moved — {_count(sweep.scanned, "repo")}, {len(patterns)} moved path(s){skipped}')
+            _print_unlisted_source(sweep)
+            print()
             return
 
-        print(f'❌ Found {len(sweep.issues)} stale reference(s) in {len(sweep.with_issues)} of {sweep.scanned} repos{skipped}\n')
+        print(f'❌ Found {len(sweep.issues)} stale reference(s) in {len(sweep.with_issues)} of {_count(sweep.scanned, "repo")}{skipped}')
+        _print_unlisted_source(sweep)
+        print()
 
         for result in sweep.with_issues:
             print(f'{result.repo.name}  ({result.repo.path})')
@@ -153,13 +157,33 @@ def print_sweep(sweep: 'SweepResult', patterns: dict[str, str]) -> None:
         sys.stderr.close()
 
 
+def _count(number: int, noun: str) -> str:
+    return f'{number} {noun}' if number == 1 else f'{number} {noun}s'
+
+
 def _describe_skipped(sweep: 'SweepResult') -> str:
     parts = []
     if sweep.retired:
         parts.append(f'{len(sweep.retired)} retired')
     if sweep.absent:
         parts.append(f'{len(sweep.absent)} with no directory: {", ".join(repo.name for repo in sweep.absent)}')
+    if sweep.unusable:
+        parts.append(f'{len(sweep.unusable)} unreadable: {"; ".join(sweep.unusable)}')
     return f' (skipped {"; ".join(parts)})' if parts else ''
+
+
+def _print_unlisted_source(sweep: 'SweepResult') -> None:
+    """Say when the repo the paths moved in is not one the sweep can credit.
+
+    A hit is credited to the repo holding the path that went away, so a repo the
+    registry never listed can own nothing and its renames are unanswerable. Left
+    unsaid that prints the same tick as a machine with no stale references, and
+    a registry omitting one repo silently answers a different question.
+    """
+    if sweep.source_is_listed or sweep.source_root is None:
+        return
+
+    print(f'⚠️  {sweep.source_root} is not in the registry, so a path that moved here can be credited to no repo.')
 
 
 def print_config(repo_config: Path | None, layers: list[tuple[str, list[str]]]) -> None:

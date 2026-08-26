@@ -407,11 +407,16 @@ class ReferenceChecker:
         named a variable this process does not carry. Only an absolute result
         is a real location: a relative token belongs to whichever repo the line
         sits in, and that is resolved against a root instead.
+
+        `..` is collapsed because the two tests applied to the result do not
+        agree about it. `exists` walks the traversal and `is_relative_to` reads
+        the text, so `<repo>/../other/gone.json` was a real file inside a listed
+        repo that the containment check placed outside every one of them.
         """
         expanded = os.path.expandvars(os.path.expanduser(token))
         if '$' in expanded or not expanded.startswith('/'):
             return None
-        return Path(expanded)
+        return Path(os.path.normpath(expanded))
 
     def _pattern_hit_still_resolves(self, pattern: str, line: str, from_file: Path | None = None) -> bool:
         """True when every hit on this line sits inside a path that exists.

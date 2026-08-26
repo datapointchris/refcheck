@@ -256,7 +256,11 @@ def main(
         checker.search_path,
     )
 
-    swept = _sweep_other_repos(registry, sweep_patterns, skip_docs, file_type, test_mode, flag_patterns) if registry is not None else None
+    swept = (
+        _sweep_other_repos(registry, sweep_patterns, skip_docs, file_type, test_mode, flag_patterns, root_dir)
+        if registry is not None
+        else None
+    )
 
     notify(UPDATE_CONFIG)
 
@@ -272,21 +276,23 @@ def _sweep_other_repos(
     file_type: str | None,
     test_mode: bool,
     flag_excludes: list[str],
+    source_root: Path,
 ) -> sweep_module.SweepResult:
     """Ask every repo the registry lists what still points at a path that moved."""
     try:
-        repos = registry_module.load(registry)
+        listed = registry_module.load(registry)
     except registry_module.RegistryError as error:
         print(f'refcheck: {error}', file=sys.stderr)
         raise typer.Exit(2) from error
 
     swept = sweep_module.across_repos(
-        repos,
+        listed,
         patterns,
         skip_docs=skip_docs,
         file_type=file_type,
         test_mode=test_mode,
         flag_excludes=flag_excludes,
+        source_root=source_root,
     )
     print_sweep(swept, patterns)
     return swept

@@ -42,7 +42,22 @@ class Repo:
         return self.path.is_dir()
 
 
-def load(registry_path: Path) -> list[Repo]:
+@dataclass(frozen=True)
+class Registry:
+    """What a registry file listed, and what in it could not be read.
+
+    An entry naming no path is a third outcome beside the repos that were fine
+    and the ones that were not, so it travels rather than being dropped where
+    nothing can count it. Six entries of which four are unusable would otherwise
+    sweep two repos and print a tick, and the caller has no way to tell that
+    from a machine holding two.
+    """
+
+    repos: list[Repo]
+    unusable: list[str]
+
+
+def load(registry_path: Path) -> Registry:
     """Every repo the registry lists, minus the paths it excludes itself.
 
     Two shapes are accepted because two are in use: a bare array of entries, and
@@ -69,8 +84,13 @@ def load(registry_path: Path) -> list[Repo]:
         raise RegistryError(f'{registry_path} holds no list of repos')
 
     repos = []
-    for entry in entries:
-        if not isinstance(entry, dict) or not entry.get('path'):
+    unusable = []
+    for position, entry in enumerate(entries):
+        if not isinstance(entry, dict):
+            unusable.append(f'entry {position} is a {type(entry).__name__}, not an object')
+            continue
+        if not entry.get('path'):
+            unusable.append(f'{entry.get("name") or f"entry {position}"} names no path')
             continue
         path = _expand(entry['path'])
         if any(path == home or path.is_relative_to(home) for home in excluded):
@@ -80,8 +100,15 @@ def load(registry_path: Path) -> list[Repo]:
     if not repos:
         raise RegistryError(f'{registry_path} names no repos')
 
-    return repos
+    return Registry(repos=repos, unusable=unusable)
 
 
 def _expand(path: str) -> Path:
-    return Path(os.path.expandvars(os.path.expanduser(path)))
+    """A declared path, made absolute and lexically flattened.
+
+    `..` is collapsed here because the sweep asks whether a token sits inside a
+    repo, and that test is lexical while the existence test beside it is not.
+    Both sides of the rule have to flatten or they disagree about where a path
+    with a traversal in it lives.
+    """
+    return Path(os.path.normpath(os.path.expandvars(os.path.expanduser(path))))

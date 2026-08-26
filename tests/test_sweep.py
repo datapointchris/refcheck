@@ -9,6 +9,7 @@ silent gets its own test, beside the ones that must fire.
 import pytest
 
 from refcheck import sweep
+from refcheck.registry import Registry
 from refcheck.registry import Repo
 
 
@@ -24,7 +25,11 @@ def two_repos(temp_dir):
 
 
 def repos_for(*paths):
-    return [Repo(name=path.name, path=path, status='active') for path in paths]
+    return Registry(repos=[Repo(name=path.name, path=path, status='active') for path in paths], unusable=[])
+
+
+def listing(*repos, unusable=()):
+    return Registry(repos=list(repos), unusable=list(unusable))
 
 
 def names(sweep_result):
@@ -129,6 +134,78 @@ class TestWhatStaysSilent:
         assert names(sweep.across_repos(repos_for(upstream, consumer), {'versions.json': 'now pinned-versions.json'})) == []
 
 
+class TestWhoCanOwnAGonePath:
+    """Which repos are walked and which can own a gone path are different questions."""
+
+    def test_a_reference_into_a_retired_repo_is_still_reported(self, two_repos):
+        """The finding is in a live repo and so is its fix, whatever the owner's status."""
+        upstream, consumer = two_repos
+        (consumer / 'config.yml').write_text(f'versions_file: {upstream}/versions.json\n')
+        listed = listing(Repo(name='upstream', path=upstream, status='retired'), Repo(name='consumer', path=consumer, status='active'))
+
+        result = sweep.across_repos(listed, {'versions.json': 'now pinned-versions.json'})
+
+        assert names(result) == ['consumer:config.yml']
+        assert result.issues[0].message == 'Gone from upstream: versions.json'
+        assert [repo.name for repo in result.retired] == ['upstream']
+
+    def test_a_reference_into_a_repo_this_machine_lacks_is_not_reported(self, two_repos):
+        """Nothing in an absent repo exists, so every reference into one would hit."""
+        upstream, consumer = two_repos
+        (consumer / 'config.yml').write_text(f'versions_file: {upstream.parent}/never-cloned/versions.json\n')
+        listed = listing(
+            Repo(name='never-cloned', path=upstream.parent / 'never-cloned', status='active'),
+            Repo(name='consumer', path=consumer, status='active'),
+        )
+
+        assert names(sweep.across_repos(listed, {'versions.json': 'now pinned-versions.json'})) == []
+
+    def test_a_traversal_still_lands_inside_the_repo_it_names(self, two_repos):
+        """`exists` walks `..` and `is_relative_to` reads it, so both sides flatten."""
+        upstream, consumer = two_repos
+        (consumer / 'config.yml').write_text(f'versions_file: {consumer}/../upstream/versions.json\n')
+
+        result = sweep.across_repos(repos_for(upstream, consumer), {'versions.json': 'now pinned-versions.json'})
+
+        assert names(result) == ['consumer:config.yml']
+        assert result.issues[0].message == 'Gone from upstream: versions.json'
+
+
+class TestTheRepoThePathsMovedIn:
+    """A repo the registry never listed can own nothing, and that prints as clean."""
+
+    def test_says_so_when_the_source_repo_is_not_listed(self, two_repos):
+        upstream, consumer = two_repos
+
+        result = sweep.across_repos(
+            listing(Repo(name='consumer', path=consumer, status='active')),
+            {'versions.json': 'now pinned-versions.json'},
+            source_root=upstream,
+        )
+
+        assert not result.source_is_listed
+        assert result.source_root == upstream
+
+    def test_stays_quiet_when_it_is_listed(self, two_repos):
+        upstream, consumer = two_repos
+
+        result = sweep.across_repos(
+            repos_for(upstream, consumer),
+            {'versions.json': 'now pinned-versions.json'},
+            source_root=upstream,
+        )
+
+        assert result.source_is_listed
+
+    def test_an_unusable_entry_is_carried_into_the_result(self, two_repos):
+        upstream, consumer = two_repos
+        listed = listing(*repos_for(upstream, consumer).repos, unusable=['nameless names no path'])
+
+        result = sweep.across_repos(listed, {'versions.json': 'now pinned-versions.json'})
+
+        assert result.unusable == ['nameless names no path']
+
+
 class TestNarrowingReachesEveryRepo:
     """A filter that narrows the local run and silently not the sweep is the defect."""
 
@@ -172,18 +249,20 @@ class TestWhatWasNotSwept:
 
     def test_a_retired_repo_is_reported_as_skipped(self, two_repos):
         upstream, consumer = two_repos
-        repos = [Repo(name='upstream', path=upstream, status='active'), Repo(name='old', path=consumer, status='retired')]
+        listed = listing(Repo(name='upstream', path=upstream, status='active'), Repo(name='old', path=consumer, status='retired'))
 
-        result = sweep.across_repos(repos, {'versions.json': 'now pinned-versions.json'})
+        result = sweep.across_repos(listed, {'versions.json': 'now pinned-versions.json'})
 
         assert [repo.name for repo in result.retired] == ['old']
         assert result.scanned == 1
 
     def test_a_path_that_is_not_there_is_reported_as_skipped(self, two_repos):
         upstream, _ = two_repos
-        repos = [Repo(name='upstream', path=upstream, status='active'), Repo(name='gone', path=upstream / 'nowhere', status='active')]
+        listed = listing(
+            Repo(name='upstream', path=upstream, status='active'), Repo(name='gone', path=upstream / 'nowhere', status='active')
+        )
 
-        result = sweep.across_repos(repos, {'versions.json': 'now pinned-versions.json'})
+        result = sweep.across_repos(listed, {'versions.json': 'now pinned-versions.json'})
 
         assert [repo.name for repo in result.absent] == ['gone']
         assert result.scanned == 1

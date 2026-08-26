@@ -924,6 +924,25 @@ class TestSweepAcrossRepos:
         assert result.returncode == 2
         assert '--moves' in result.stderr
 
+    def test_says_when_the_repo_the_paths_moved_in_is_not_listed(self, tmp_path, temp_git_repo):
+        """A repo the registry never listed can own nothing, and that prints as clean."""
+        consumer = tmp_path / 'consumer'
+        consumer.mkdir()
+        (consumer / 'config.yml').write_text(f'versions_file: {temp_git_repo}/versions.json\n')
+        registry = self.registry_at(tmp_path / 'reg.json', consumer)
+
+        result = run_refcheck('--pattern', 'versions.json', '--registry', str(registry), cwd=temp_git_repo)
+
+        assert 'is not in the registry' in result.stdout
+
+    def test_counts_a_registry_entry_it_could_not_read(self, tmp_path, temp_git_repo):
+        """An entry it could not read gets its own row, not silence inside the clean total."""
+        (tmp_path / 'reg.json').write_text(json.dumps({'repos': [{'name': 'good', 'path': str(temp_git_repo)}, {'name': 'nameless'}]}))
+
+        result = run_refcheck('--pattern', 'versions.json', '--registry', str(tmp_path / 'reg.json'), cwd=temp_git_repo)
+
+        assert '1 unreadable: nameless names no path' in result.stdout
+
     def test_refuses_a_registry_that_is_not_one(self, tmp_path, temp_git_repo):
         (tmp_path / 'reg.json').write_text('{not json')
 

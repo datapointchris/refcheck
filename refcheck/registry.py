@@ -104,11 +104,4 @@ def load(registry_path: Path) -> Registry:
 
 
 def _expand(path: str) -> Path:
-    """A declared path, made absolute and lexically flattened.
-
-    `..` is collapsed here because the sweep asks whether a token sits inside a
-    repo, and that test is lexical while the existence test beside it is not.
-    Both sides of the rule have to flatten or they disagree about where a path
-    with a traversal in it lives.
-    """
-    return Path(os.path.normpath(os.path.expandvars(os.path.expanduser(path))))
+    return Path(os.path.expandvars(os.path.expanduser(path)))

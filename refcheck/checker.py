@@ -163,6 +163,13 @@ class ReferenceChecker:
         config: Config | None = None,
     ):
         self.root_dir = root_dir or Path.cwd()
+
+        # The same root with its symlinks walked out, for comparing against
+        # other repos' homes. root_dir itself stays as given, because every
+        # file this walk yields is built from it and relative_to would stop
+        # matching. Only the cross-repo containment check uses this one.
+        self.physical_root = Path(os.path.realpath(self.root_dir))
+
         self.search_path = search_path or self.root_dir
         self.skip_docs = skip_docs
         self.file_type = file_type
@@ -408,15 +415,14 @@ class ReferenceChecker:
         is a real location: a relative token belongs to whichever repo the line
         sits in, and that is resolved against a root instead.
 
-        `..` is collapsed because the two tests applied to the result do not
-        agree about it. `exists` walks the traversal and `is_relative_to` reads
-        the text, so `<repo>/../other/gone.json` was a real file inside a listed
-        repo that the containment check placed outside every one of them.
+        The path comes back as written. It is what a program reading that line
+        will open, so it is what the existence test has to be asked about —
+        rewriting it first answers about a different file.
         """
         expanded = os.path.expandvars(os.path.expanduser(token))
         if '$' in expanded or not expanded.startswith('/'):
             return None
-        return Path(os.path.normpath(expanded))
+        return Path(expanded)
 
     def _pattern_hit_still_resolves(self, pattern: str, line: str, from_file: Path | None = None) -> bool:
         """True when every hit on this line sits inside a path that exists.
@@ -486,6 +492,15 @@ class ReferenceChecker:
         `versions.json`. Every mention that is a filename literal, a fixture
         name or a sentence in prose fails the first half, and every corrected
         reference fails the second.
+
+        The two halves ask about different forms of the same path, because they
+        are answered by different authorities. Existence is the kernel's, so it
+        gets the path as written — the one a program on that line would open.
+        Containment is a string comparison, so it gets the path with its
+        symlinks and `..` walked out. Handing either the other's form is a bug
+        in whichever direction it is done: flattening before the existence test
+        reports a file that is on disk, and comparing an unwalked path places a
+        real file outside every repo that holds it.
         """
         for token, begins_the_token in self._path_tokens_around(pattern, line):
             if begins_the_token or not token:
@@ -495,10 +510,12 @@ class ReferenceChecker:
             if target is None or target.exists():
                 continue
 
+            physical = Path(os.path.realpath(target))
+
             # Longest match wins, so a repo checked out inside another is
             # credited to the inner one rather than to whatever encloses it.
             for home in sorted(repo_homes, key=lambda home: len(home.parts), reverse=True):
-                if home != self.root_dir and target.is_relative_to(home):
+                if home != self.physical_root and physical.is_relative_to(home):
                     return repo_homes[home]
 
         return None

@@ -11,6 +11,7 @@ moment it is worth running. The patterns are not typed in; they are what the
 commit already recorded.
 """
 
+import os
 from collections.abc import Sequence
 from dataclasses import dataclass
 from dataclasses import field
@@ -109,8 +110,11 @@ def across_repos(
     #
     # Absent repos stay out of both. Without that, every reference into a repo
     # this machine does not hold becomes a hit, because nothing there exists.
-    homes = {repo.path: repo.name for repo in registry.repos if repo.is_on_disk}
-    sweep.source_is_listed = source_root is None or source_root in homes
+    # Keyed by the physical path, since that is the form a token is compared
+    # against. A repo reached through a symlink is then credited to the repo
+    # that holds the file rather than to nothing.
+    homes = {Path(os.path.realpath(repo.path)): repo.name for repo in registry.repos if repo.is_on_disk}
+    sweep.source_is_listed = source_root is None or Path(os.path.realpath(source_root)) in homes
 
     for repo in live:
         config = load_config(repo.path)

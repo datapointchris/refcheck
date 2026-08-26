@@ -644,6 +644,34 @@ def test_pattern_still_reports_a_relative_link_to_something_gone(tmp_path):
     assert len(checker.issues) == 1
 
 
+def test_pattern_resolves_a_token_rooted_at_a_shell_variable(tmp_path):
+    """`$REPO_ROOT/homelab-hosts.json` is the corrected reference, not a stale one.
+
+    The variable has no literal path to test, so the token resolves to
+    nothing and every repaired assignment in a test file comes back as a hit.
+    """
+    (tmp_path / 'homelab-hosts.json').write_text('{}\n')
+    (tmp_path / 'tests').mkdir()
+    (tmp_path / 'tests' / 'registry.bats').write_text('  HOMELAB_HOSTS="$REPO_ROOT/homelab-hosts.json"\n')
+
+    checker = ReferenceChecker(tmp_path)
+    checker.check_pattern('hosts.json', 'homelab-hosts.json')
+
+    assert checker.issues == []
+
+
+def test_pattern_still_reports_a_stale_name_under_a_shell_variable(tmp_path):
+    """Dropping the variable resolves the name; it does not excuse a dead one."""
+    (tmp_path / 'homelab-hosts.json').write_text('{}\n')
+    (tmp_path / 'tests').mkdir()
+    (tmp_path / 'tests' / 'registry.bats').write_text('  HOSTS="$REPO_ROOT/hosts.json"\n')
+
+    checker = ReferenceChecker(tmp_path)
+    checker.check_pattern('hosts.json', 'homelab-hosts.json')
+
+    assert len(checker.issues) == 1
+
+
 def test_pattern_ignores_a_hit_inside_a_url(tmp_path):
     """A URL is never a file reference, however much of the pattern it contains."""
     (tmp_path / 'docs').mkdir()

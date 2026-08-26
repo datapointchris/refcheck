@@ -360,6 +360,10 @@ class ReferenceChecker:
     # so a markdown `path/like/this` yields the path and not the fence.
     PATH_TOKEN_CHARS = re.compile(r'[\w./~${}-]')
 
+    # A leading `$VAR/` or `${VAR}/`, which is the only part of a path token that
+    # cannot be resolved from here. What follows it is an ordinary relative path.
+    VARIABLE_ROOT = re.compile(r'^\$\{?\w+\}?/')
+
     def _pattern_hit_still_resolves(self, pattern: str, line: str, from_file: Path | None = None) -> bool:
         """True when every hit on this line sits inside a path that exists.
 
@@ -407,7 +411,14 @@ class ReferenceChecker:
             bases = [self.root_dir]
             if from_file is not None:
                 bases.append(from_file.parent)
-            if not any((base / token).exists() for base in bases):
+
+            # A token rooted at a shell variable has no literal path to test, and
+            # `$REPO_ROOT/homelab-hosts.json` is the corrected reference rather
+            # than a stale one. The variable is dropped and the remainder is
+            # resolved, so a live name is found and `$REPO_ROOT/hosts.json` still
+            # resolves to nothing and is still reported.
+            candidates = [token, self.VARIABLE_ROOT.sub('', token, count=1)]
+            if not any((base / candidate).exists() for base in bases for candidate in candidates if candidate):
                 return False
             start = index + len(pattern)
 

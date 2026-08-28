@@ -191,16 +191,6 @@ repos:
         always_run: false
         stages: [pre-commit]
 
-  # Strip AI branding from commits
-  - repo: local
-    hooks:
-      - id: prepare-commit-msg
-        name: Strip AI branding from commits
-        entry: bash -c 'exec "$HOME/.claude/hooks/prepare-commit-msg" "$@"' --
-        language: system
-        always_run: true
-        stages: [prepare-commit-msg]
-
 # generated:github-actions - GitHub Actions
   - repo: https://github.com/rhysd/actionlint
     rev: v1.7.7

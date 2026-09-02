@@ -1,6 +1,6 @@
 [project]
 name = "refcheck"
-version = "0.6.0"
+version = "0.7.0"
 description = "Find broken file references and fragile path patterns in codebases"
 authors = [{ name = "Chris Birch", email = "datapointchris@gmail.com" }]
 license = { text = "MIT" }

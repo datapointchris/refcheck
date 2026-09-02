@@ -1,6 +1,490 @@
 # CHANGELOG
 
 
+## v0.7.0 (2026-09-02)
+
+### Bug Fixes
+
+- **checker**: Read a fenced block as shell only where its tag says so
+  ([`a4fa8c1`](https://github.com/datapointchris/refcheck/commit/a4fa8c186786cace668554324413a4e36540390f))
+
+A doc that prints refcheck's own output inside a fence had that output read back as source code. A
+  ```yaml block showing `bash tests/helpers.sh` as a finding resolves against a tests/ directory the
+  repo really has, so every guard downstream passes it through and refcheck reports itself.
+
+An explicit tag naming another language is now the only thing that puts a block out of scope. A bare
+  fence stays scanned, because an untagged block is very commonly shell and prose is where a stale
+  reference survives longest. Measured across the 94 repos the registry lists: no finding gained,
+  none lost.
+
+- **pattern**: Resolve a path token rooted at a shell variable
+  ([`54cc4f3`](https://github.com/datapointchris/refcheck/commit/54cc4f31a0b136027c27af062f0967d60bfc9326))
+
+A token like $REPO_ROOT/homelab-hosts.json has no literal path to test, so it resolved to nothing
+  and every repaired assignment in a test file came back as a surviving reference to the old name.
+
+The variable segment is dropped and the remainder resolved. A stale $REPO_ROOT/hosts.json still
+  resolves to nothing and is still reported, which is the half a rename sweep exists for.
+
+- **pattern**: Resolve bare-name hits and relative links before reporting them
+  ([`ac0d58e`](https://github.com/datapointchris/refcheck/commit/ac0d58e21679f7ea08e5cfbf93d6dba8233a8cd8))
+
+A rename whose new name ends in the old one puts the pattern inside every site that was just
+  repaired. tools.json became fleet-built-tools.json and --pattern tools.json reported eighteen hits
+  on a clean tree, fourteen of them the corrected references.
+
+The token resolution written for path patterns already answers this and returned early on any
+  pattern with no slash, which is every bare filename. A hit standing alone as its own token is
+  still reported, so --pattern backmeup still finds 'Run backmeup'.
+
+A markdown link spells its target relative to the file holding it, so a token is now resolved
+  against that file's directory as well as the root. Trailing dots are stripped and leading ones are
+  not: strip('.') turned ../a.json into the absolute /a.json and .github into a github that is not
+  there, so both resolved to nothing and were reported.
+
+- **sweep**: Ask the kernel about the path as written, not a rewritten one
+  ([`1b7a727`](https://github.com/datapointchris/refcheck/commit/1b7a7273727f0c4f63995469746392d1f3360efa))
+
+Flattening a token before testing whether it exists answers about a different file. A traversal
+  passing through a symlink resolves to a real file, and rewriting it lexically first asked about a
+  path beside the link that is not there — so a reference the consumer can open came back reported.
+  That trades a miss in the safe direction for a false positive in the direction this check cannot
+  afford, and it is the one thing that decides whether the sweep is worth running at all.
+
+The two halves are answered by different authorities and now get different forms of the path.
+  Existence is the kernel's, so it asks about the path as written, which is the one a program
+  reading that line would open. Containment is a string comparison, so it asks about the path with
+  its symlinks and '..' walked out, and the repo paths it is compared against are walked out too.
+
+Resolving both sides also closes a gap that was documented rather than fixed: a repo reached through
+  a symlinked parent, or declared in the registry at a link, is now credited to the repo that holds
+  the file instead of to nobody. The self-exclusion compares physical roots for the same reason.
+
+Five cases pin it, one per half, each failing when its half is reversed.
+
+- **sweep**: Ask the kernel about the path as written, not a rewritten one
+  ([#2](https://github.com/datapointchris/refcheck/pull/2),
+  [`89e0e39`](https://github.com/datapointchris/refcheck/commit/89e0e3985436344b64e30a6114aeb7d06eb7321c))
+
+refcheck reports a file that is on disk as gone. `_on_this_filesystem` flattens a path token with
+  `os.path.normpath` before testing whether it exists, and a path reaching through a symlink
+  resolves somewhere the flattened form does not name. The check then asks about a different file,
+  finds nothing there, and reports a reference the consumer can open.
+
+## What to look at
+
+`refcheck/checker.py` — `_on_this_filesystem` returns the token as written. Nothing may rewrite it
+  before `.exists()` sees it, because that is the path a program reading the line would open.
+
+`refcheck/checker.py` — `_reaches_a_gone_path_in` computes `os.path.realpath` separately, for
+  containment only. The two tests deliberately receive different forms of the same path. Check that
+  the existence test never sees the resolved one and the containment test never sees the raw one.
+
+`refcheck/checker.py` — `physical_root` is a second attribute beside `root_dir`, not a replacement.
+  `root_dir` stays as given because every file the walk yields is built from it and `relative_to`
+  would stop matching; only the cross-repo self-exclusion uses the resolved form.
+
+`refcheck/sweep.py` — the ownership map is keyed by `os.path.realpath` of each repo path, so both
+  sides of the containment comparison are walked out on the same basis. A registry may name a repo
+  at a symlink.
+
+`refcheck/registry.py` — `_expand` no longer flattens. It was flattening to make containment
+  lexically safe, and containment no longer works lexically.
+
+## How it was verified
+
+`uv run pytest` — 178 passed.
+
+The reproduction runs as pasted and ends in refcheck's own output. It is carried in full rather than
+  described because a description of it already failed a reader: built from prose, the shape came
+  out with the link pointing at a subdirectory of the listed repo, where `link/..` agrees with the
+  flattened form and nothing fires.
+
+```bash T=$(mktemp -d) mkdir -p "$T"/{repo,elsewhere,consumer}
+
+# The renaming repo. versions.json moves, so --moves-since yields it as a pattern. git -C "$T/repo"
+  init -q . git -C "$T/repo" config user.email t@t git -C "$T/repo" config user.name t printf '{}\n'
+  > "$T/repo/versions.json" git -C "$T/repo" add -A && git -C "$T/repo" commit -qm 'add versions'
+  git -C "$T/repo" mv versions.json pinned-versions.json git -C "$T/repo" commit -qm 'rename
+  versions.json'
+
+# A file one level ABOVE repo/, and a link pointing OUT of repo/ so that # link/.. lands on $T
+  rather than back on repo/. printf '{}\n' > "$T/versions.json" ln -s "$T/elsewhere" "$T/repo/link"
+
+# The consumer names a path that opens. printf "versions_file: $T/repo/link/../versions.json\n" >
+  "$T/consumer/config.yml"
+
+cat > "$T/registry.json" <<JSON {"repos": [{"name": "repo", "path": "$T/repo", "status": "active"},
+  {"name": "consumer", "path": "$T/consumer", "status": "active"}]} JSON
+
+cd "$T/repo" && refcheck --moves-since HEAD~1 --registry "$T/registry.json" ```
+
+Before this change, against a token `os.path.exists` reports present:
+
+```text ❌ Found 1 stale reference(s) in 1 of 2 repos
+
+consumer (/tmp/tmp.Fg6oUfwgWe/consumer) ────────────────────────────────────────────────────────────
+  /tmp/tmp.Fg6oUfwgWe/consumer/config.yml:1 Gone from repo: versions.json → now pinned-versions.json
+
+exit 1 ```
+
+After it:
+
+```text ✅ No repo names a path that moved — 2 repos, 1 moved path(s)
+
+exit 0 ```
+
+Two things about the shape, both necessary. The token has to contain a `..`, because that is the
+  only rewrite `normpath` performs that can change which file a path names — dropping a `.` or
+  collapsing a `//` resolves to the same file either way. And the link has to point out of the
+  directory holding it, so that `link/..` lands somewhere other than `repo/` and the two forms name
+  different files: `$T/versions.json`, which exists, against `$T/repo/versions.json`, which does
+  not. A link into a subdirectory of `repo/` cannot reproduce it, because `repo/link/../sub/x`
+  flattens to `repo/sub/x`, which is where the file already is.
+
+Five halves, each proved able to fail by reversing it alone:
+
+- flattening the token before the existence test fails
+  `test_a_traversal_through_a_symlink_is_not_reported_when_the_file_is_there` and one other -
+  containment on the unwalked path fails four cases, including
+  `test_a_traversal_still_lands_inside_the_repo_it_names` - keying the ownership map by the declared
+  path fails `test_a_repo_whose_declared_path_is_a_symlink_still_owns_its_files` - comparing the
+  self-exclusion against the declared root fails
+  `test_a_repo_does_not_report_its_own_missing_path_through_a_symlink`
+
+Before that last case existed, keying the map by the declared path passed every symlink test in the
+  suite. Four tests about symlinks, none of which established the thing they were about.
+
+Measured against a real 93-repo registry sweeping six moved paths: 0 hits across 90 repos, 14.0s as
+  the median of three runs. Unchanged, so walking symlinks out costs nothing measurable.
+
+## What changes
+
+A path reaching through a symlink no longer reports a file that is on disk. That is the whole point.
+
+A repo reached through a symlinked parent is now credited rather than missed, and so is a repo the
+  registry declares at a symlink. Both were documented as known gaps and are closed.
+
+Some findings move and two classes go quiet, and the second is the surprise. A finding through a
+  symlink is credited to the repo that physically holds the file rather than to the one the
+  flattened path lexically lands in, so a report can change which repo it names.
+
+Two classes stop being reported at all: a token whose path runs through a **broken symlink**, and a
+  token through a link into a directory **no listed repo holds**. Both were charged to whichever
+  repo the flattened path lexically landed in, which never held the file, so the new silence is
+  correct — it is the misattribution this change exists to end. It is still a sweep that used to say
+  something and now says nothing. A reader diffing two runs would otherwise read it as a reference
+  somebody fixed.
+
+Those two need no `..`. Their paths do not open either way, so the existence test agrees before and
+  after and what moved is containment — `realpath` walks the path out of every listed repo, and
+  nothing is left to charge. Only the false positive needs a `..`, because that is the only rewrite
+  `normpath` performs that can make the existence test itself disagree. All three arrive in the same
+  column of a sweep's output, which is why they are worth telling apart here.
+
+## Decisions, and what they rejected
+
+- **The existence test and the containment test get different forms of the path** — different things
+  answer them. Existence is the kernel's answer, so it asks about the path as written. Containment
+  is a string comparison, so it asks about the path with its symlinks and `..` walked out, as do the
+  repo paths it is compared against. *Rejected*: flattening lexically before the existence test,
+  which is the defect being fixed. *Rejected*: comparing the unwalked path, which places a real file
+  outside every repo that holds it.
+
+- **`realpath` for containment rather than `normpath`** — both silence the false positive.
+  `normpath` additionally credits the finding to a repo that never held the file, and leaves a
+  symlinked parent uncredited. *Rejected*: resolving only the token while the repo paths stayed
+  lexical, which is the same drift in a third direction.
+
+## What this does not do
+
+Nothing in the registry on the machine this was measured against declares a repo at a symlink, so
+  that half of the change is exercised only by the suite.
+
+Completes the reporting rule introduced in https://github.com/datapointchris/refcheck/pull/1.
+
+## The review
+
+https://github.com/datapointchris/refcheck/pull/2#pullrequestreview-5026786734 — 0 correctness, 1
+  breaks a rule, 1 rule proposed, 1 design.
+
+Breaks a written rule: 1. fixed — both strings are gone. The results are labelled by what changed
+  rather than by where the change sits, and the closing reference is bare.
+
+Should be a rule: 1. the instance is fixed — the block now sets `$T`, initialises the repo, renames
+  through `git mv` so `--moves-since` yields the pattern, writes the registry, and ends in
+  refcheck's own output on both sides. The rule itself is not mine to write.
+
+Design: 1. fixed — **What changes** now names both classes that go quiet, the broken symlink and the
+  link into a directory no listed repo holds. I measured both rather than taking them: reported
+  against `repoA` before, silent after.
+
+- **sweep**: Let a retired repo own a gone path, and count what it could not read
+  ([`34870af`](https://github.com/datapointchris/refcheck/commit/34870afb121666e541a70346b39f0d99c8abd4d9))
+
+Four defects a review found, three of them one question asked in the wrong place.
+
+The ownership map was built from the walk list, so a live repo's reference into a retired repo was
+  dropped. Which repos are walked is a policy question about where a fix would land; which repos can
+  own a gone path is a factual question about where files live. The recorded decision was about the
+  first and this line applied it to the second. A live repo holding a path into a retired one still
+  holds a path that does not resolve, and the edit that fixes it is in the live repo. The map is now
+  every listed repo on disk, while the walk list still drops the retired. Absent repos stay out of
+  both, because nothing in one exists and every reference into it would hit.
+
+Nothing in 164 tests separated those two behaviours, so nothing established the decision. Three
+  cases now do, one per way a repo can leave the map.
+
+A path token carrying '..' reached a listed repo through a traversal and was credited to nobody:
+  exists walks the traversal and is_relative_to reads the text, so the two halves of the rule
+  disagreed about where the path was. Both sides now flatten lexically.
+
+A registry entry naming no path was dropped where nothing could count it. Six entries of which four
+  are unusable swept two repos and printed a tick. They now travel to the result and get a row
+  beside the retired and the absent.
+
+Four things stop a repo owning a gone path and only two of them printed, so a tick could not be told
+  from 'the repo the file left was not in the map'. All four get a row, and where the repo the run
+  is standing in is itself unlisted the sweep says so — nothing it finds could be credited to those
+  renames.
+
+- **sweep**: Narrow every repo by the same filters as the local run
+  ([`637ac9a`](https://github.com/datapointchris/refcheck/commit/637ac9af1b504105e181c569886e5b8dc7bdea8f))
+
+--type, --test-mode and --exclude reached the tree refcheck was standing in and stopped there, so
+  --type py --registry read every file in ninety repos. A flag reaching part of the work and
+  silently not the rest is the failure a narrowing flag has, because it is designed against the case
+  it was invented for and the case it cannot answer is the one nobody looks at.
+
+Each repo still reads its own declared exclusions, with the flag's added on top. Which of a repo's
+  directories hold generated output is a fact only that repo knows, and it stays that way across
+  ninety of them.
+
+### Chores
+
+- Sync the generated configs to toolchain 18
+  ([`a5fd8eb`](https://github.com/datapointchris/refcheck/commit/a5fd8eb7c3db88a03aa0156943b1a5ecd5c6326b))
+
+Both stamped files come from the fleet's version declaration: the pre-commit config and the
+  generated workflow. Nothing here is a repo decision.
+
+Stamp 18 carries the refcheck hook at v0.6.0, a codespell exclude widened to go.mod, and — on a
+  private repo — runs-on naming the self-hosted pool with the actionlint config that declares the
+  label.
+
+- Sync the generated configs to toolchain 19
+  ([`cf7a48b`](https://github.com/datapointchris/refcheck/commit/cf7a48bad76ca35af63e479843a26af2e6b98dd0))
+
+Both stamped files come from the fleet's version declaration: the pre-commit config and the
+  generated workflow. Nothing here is a repo decision.
+
+Stamp 19 passes --allow-parallel-runners to golangci-lint. A repo with two Go components runs two
+  Lint jobs at once, and on a single self-hosted box the second one dies on the shared cache lock
+  before linting anything.
+
+- **precommit**: Drop the commit-branding hook
+  ([`9df2718`](https://github.com/datapointchris/refcheck/commit/9df2718ac41346259af01af9e6a2eec7e7a01d84))
+
+Claude Code suppresses its own commit and PR attribution through its attribution setting, which
+  resolves an empty string to no trailer at all. A hook that strips the trailer afterwards has
+  nothing left to remove.
+
+### Features
+
+- **sweep**: Check every repo a registry lists for a path that moved
+  ([`e9beb97`](https://github.com/datapointchris/refcheck/commit/e9beb978c2fbea1ac55b0c49921cf0b07e4ba618))
+
+A rename is answerable in the repo that made it and unanswerable everywhere else. --moves reads
+  git's own rename history and can only ask the tree it is standing in, so a consumer in another
+  repo keeps a path that no longer resolves and nothing ever looks at it.
+
+--registry names the repos to ask. The caller hands the path over and refcheck never goes looking
+  for one, because a check resolving its own subject measures whatever the environment answers at
+  that moment.
+
+The reporting rule is what makes a pattern as loose as a basename safe. A reference from one repo
+  into another cannot be relative, so the token is expanded and the answer comes from the
+  filesystem: a hit counts only when the path it names sits inside a listed repo and is not there.
+  Six registry files renamed at a repo root hit 152 lines across 90 repos on the bare basename; the
+  rule reports none of them and reports the one reference that had broken. A sweep of 90 repos costs
+  about 14 seconds for six moved paths.
+
+Two defects blocked it and are fixed here.
+
+A '~'-rooted token was joined to the repo root, which builds a path that cannot exist, so every
+  corrected cross-repo reference came back as a hit. Expansion is tried first and never on its own,
+  leaving the root-relative candidates to answer for a variable pointing elsewhere.
+
+The binary sniff opened a repo-relative path from the working directory, so scanning a repo you are
+  not standing in read 'not binary' off the OSError and pattern-matched a 30 MB executable as text.
+  Anchoring it at the root cut the sweep from 54 seconds to 14.
+
+Bare filenames stay out of the in-repo check and are asked for by the sweep, where an absolute path
+  settles them without the pattern carrying any weight.
+
+- **sweep**: Check every repo a registry lists for a path that moved
+  ([#1](https://github.com/datapointchris/refcheck/pull/1),
+  [`8f2f956`](https://github.com/datapointchris/refcheck/commit/8f2f956bf85f25b7c8e40c28d95fb9fc922cefee))
+
+A rename is answerable in the repo that made it and unanswerable everywhere else. `--moves` reads
+  git's own rename history and can only ask the tree it is standing in, so a consumer in another
+  repo keeps a path that no longer resolves and nothing ever looks at it. `--registry` names the
+  repos to ask, and the same rename history drives the sweep.
+
+## What to look at
+
+`refcheck/checker.py` — `_reaches_a_gone_path_in` is the reporting rule and the reason this is
+  shippable at all. A basename swept over 90 repos is far too loose as a string match, so the rule
+  is not a string match: the token is expanded through `~` and the environment, and a hit counts
+  only when the absolute path it names sits inside a listed repo and is not on disk. Check that a
+  token which cannot be expanded, or which reaches no listed repo, falls out.
+
+`refcheck/checker.py` — `_path_tokens_around` is extracted from `_pattern_hit_still_resolves`, which
+  it now shares with the rule above. The URL guard and the begins-the-token case moved with it;
+  check they still read the same in the old caller.
+
+`refcheck/checker.py` — the `_on_this_filesystem` branch inside `_pattern_hit_still_resolves` is
+  tried first and deliberately falls through on a miss. A short-circuiting version passes every test
+  in this diff except `test_pattern_falls_back_when_a_variable_points_somewhere_else`, and
+  introduces a false positive on a corrected reference behind a variable pointing elsewhere.
+
+`refcheck/suggestions.py` — one line, and it is the performance and correctness fix. Check the
+  argument really is repo-relative at every call site.
+
+`refcheck/registry.py` — two document shapes are accepted. Check the refusals distinguish an
+  unreadable file, malformed JSON, no `repos` list, and an empty one.
+
+`refcheck/sweep.py` — check that an empty pattern set returns before any repo is walked, and that a
+  repo is counted as scanned only if it was.
+
+`refcheck/moves.py` — `include_bare_names` defaults to false, so the in-repo check is unchanged.
+  `cli.py` reads git once with it true and filters for the local pass.
+
+`637ac9a` — `--type`, `--test-mode` and `--exclude` reached the local run and stopped there. Check
+  that a repo's own `.refcheck.toml` still applies underneath the flag's excludes rather than being
+  replaced by them.
+
+`34870af` — `sweep.py` now builds the ownership map from every listed repo on disk and the walk list
+  from the swept ones. Check the two are genuinely different sets and that absent repos stay out of
+  both.
+
+## How it was verified
+
+`uv run pytest` — 173 passed, up from 120.
+
+Each new behaviour was proved able to fail, by reverting its fix and re-running:
+
+- reverting the `~` expansion fails `test_pattern_expands_a_home_rooted_token_before_resolving_it` -
+  short-circuiting it instead of falling through fails
+  `test_pattern_falls_back_when_a_variable_points_somewhere_else` - reverting the binary-check
+  anchor fails `test_pattern_skips_a_binary_in_a_repo_that_is_not_the_working_directory` - restoring
+  the bare-name filter makes `test_reports_a_consumer_left_holding_the_old_path` report `0 moved
+  path(s)`, which is exactly the failure this feature exists to fix - dropping the filters from the
+  sweep's checkers fails `test_file_type_reaches_the_sweep` and
+  `test_an_exclude_glob_reaches_the_sweep` - building the ownership map from the walk list fails
+  `test_a_reference_into_a_retired_repo_is_still_reported` - building it from every listed repo
+  regardless of disk fails `test_a_reference_into_a_repo_this_machine_lacks_is_not_reported` -
+  removing the lexical flattening fails `test_a_traversal_still_lands_inside_the_repo_it_names`
+
+Measured against a real 93-repo registry, sweeping six registry files renamed at a repo root —
+  `tools.json`, `versions.json`, `stores.json`, `hosts.json`, `machines.json`, `schedule.json`.
+  Through `main`'s checker those six return 149 hits across 7 of 90 repos, none of them a stale
+  cross-repo reference. The rule in this diff returns 0. Reconstructing one consumer holding
+  `~/<store>/versions.json` against the real store, where only `pinned-versions.json` is present,
+  returns exactly that one hit and credits it to the repo the file left.
+
+Cost of one sweep of 90 repos: 12.5s for one moved path, 14.0s for six as the median of three runs,
+  19.3s for thirty. `main`'s checker takes 54.6s over the same six. A run with no moved path reads
+  no files and returns in under 0.01s.
+
+## What changes
+
+`--registry PATH` is new and composes with `--moves`, `--moves-since` and `--pattern`. Without one
+  of those three it exits 2 rather than walking every listed repo to ask it nothing.
+
+A stale reference found in any swept repo exits 1, the same as a local finding.
+
+Retired repos are not walked, on the grounds that a finding in one will not be fixed. Dormant ones
+  are. A retired repo can still own a gone path, though — a live repo holding a path into one still
+  holds a path that does not resolve, and the fix is in the live repo.
+
+Four things stop a repo owning a gone path and each gets its own row: never listed, listed but
+  unreadable, listed and retired, listed and not on disk. Where the repo the run is standing in is
+  itself unlisted, the sweep says so on its own line, because nothing it finds can be credited to
+  the renames just made.
+
+`--type`, `--skip-docs`, `--test-mode` and `--exclude` narrow the sweep as well as the local run.
+  Each swept repo still reads its own `.refcheck.toml`, with `--exclude` added on top.
+
+Sweep findings print absolute paths. Every other refcheck run prints relative to the tree you are
+  standing in, and this one stands in none of them.
+
+Two existing behaviours change outside the sweep. A `~`-rooted or variable-rooted path token in any
+  `--pattern` run is now expanded and tested against the filesystem before the root-relative
+  fallback, so a corrected reference into another repo stops being reported. And the binary-content
+  check is anchored at the root being scanned, so `refcheck <other-dir>` no longer reads binaries in
+  that directory as text — which is where the 54s to 14s came from.
+
+## Decisions, and what they rejected
+
+- **The reporting rule is filesystem existence, not pattern shape** — a reference from one repo into
+  another cannot be relative, because the file is not in that tree. That makes a basename safe to
+  sweep on. *Rejected*: requiring the pattern to carry a directory, which is the in-repo rule and
+  yields nothing for a file renamed at a repo root. *Rejected*: substituting the new name into the
+  token and requiring the result to exist, which proves a rename but says nothing about a deletion.
+
+- **Bare names are filtered in-repo and asked for by the sweep** — the two runs have different
+  evidence available, so they get different filters. In the renaming repo a bare name is a substring
+  with nothing behind it; across repos an absolute path settles it.
+
+- **The registry is a parameter, never resolved** — a check that resolves its own subject measures
+  whatever the environment answers, and one machine's registry lists a different set of repos from
+  another's.
+
+- **Retired repos are skipped and visibility is ignored** — a private repo's broken reference is as
+  broken as a public one's, while a retired repo's will not be fixed. Measured on the real registry,
+  retired repos produced no hits either way, so this is a rule about what a finding is worth rather
+  than a measured noise reduction.
+
+- **`--registry` with no moved path is exit 2** — validating another repo's `source` statements is
+  that repo's own run, so there is nothing for the flag to mean on its own.
+
+- **The walk list and the ownership map are different sets** — one answers where a fix would land
+  and the other where files live, and conflating them dropped every reference into a retired repo.
+  *Rejected*: sweeping retired repos too, which would report findings nobody will act on.
+
+- **Traversals are flattened lexically, not resolved** — `os.path.normpath` makes the containment
+  test agree with the existence test beside it. *Rejected*: `Path.resolve`, which follows symlinks
+  and would move a repo out of the home the registry declared for it.
+
+## What this does not do
+
+Deletions are swept on the same rule as renames, so a deleted file is found only where a consumer
+  names it by a path inside a listed repo. A consumer naming it through a deployed path outside
+  every listed repo is not reached.
+
+A reference behind a variable this process does not carry is not expanded and so is not swept. It is
+  silently not-found rather than reported, which is the safe direction but is a real gap.
+
+Containment is lexical, so a repo reached through a symlinked parent is not credited.
+  `~/link/versions.json` where `link` points into a listed repo names a real file in that repo and
+  the sweep places it outside every one of them. Same safe direction, same real gap.
+
+Nothing validates that a *deployed* config path still resolves. A registry entry's path is the
+  checkout, and a file deployed elsewhere from it is out of scope here.
+
+## The review
+
+https://github.com/datapointchris/refcheck/pull/1#pullrequestreview-5026620675 — 2 correctness, 1
+  breaks a rule, 0 rules proposed, 1 design.
+
+Correctness: 1. fixed — `34870af` 2. fixed — `34870af`
+
+Breaks a written rule: 1. fixed — `34870af`
+
+Design: 1. fixed — `34870af`
+
+
 ## v0.6.0 (2026-08-24)
 
 ### Chores

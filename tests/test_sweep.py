@@ -6,6 +6,8 @@ findings being its own bugs is why it went unused. So every shape that must stay
 silent gets its own test, beside the ones that must fire.
 """
 
+import os
+
 import pytest
 
 from refcheck import sweep
@@ -356,3 +358,156 @@ class TestWhatWasNotSwept:
 
         assert result.issues == []
         assert result.scanned == 0
+
+
+class TestACitationThatNamesTheRepoItReaches:
+    """Prose reaches another repo by naming it, and that form was invisible.
+
+    `documentation.md` § "A citation names a repo by its registry name" makes
+    `dotfiles/apps/common/pr-list` the fleet's declared way to point at another
+    repo, and § "A moved file is swept from above every repo that names it" makes
+    --registry the prescribed sweep. The sweep resolved only an absolute path, a
+    `~` path or a set variable, so every citation written the declared way passed
+    through it silently and the prescribed command reported clean over a real
+    stale reference.
+    """
+
+    def test_reports_a_citation_naming_the_repo_and_the_gone_path(self, two_repos):
+        upstream, consumer = two_repos
+        (consumer / 'standards.md').write_text('The live reader is `upstream/versions.json`, which builds the pins.\n')
+
+        result = sweep.across_repos(repos_for(upstream, consumer), {'versions.json': 'now pinned-versions.json'})
+
+        assert names(result) == ['consumer:standards.md']
+        assert result.issues[0].message == 'Gone from upstream: versions.json'
+
+    def test_the_corrected_citation_stays_silent(self, two_repos):
+        upstream, consumer = two_repos
+        (consumer / 'standards.md').write_text('The live reader is `upstream/pinned-versions.json`.\n')
+
+        assert names(sweep.across_repos(repos_for(upstream, consumer), {'versions.json': 'now pinned-versions.json'})) == []
+
+    def test_a_bare_repo_name_stays_silent(self, two_repos):
+        """`upstream` alone names a repo, not a file in one, and its root always exists."""
+        upstream, consumer = two_repos
+        (consumer / 'notes.md').write_text('The pins moved when upstream renamed versions.json last week.\n')
+
+        assert names(sweep.across_repos(repos_for(upstream, consumer), {'versions.json': 'now pinned-versions.json'})) == []
+
+    def test_a_directory_this_repo_holds_stays_silent(self, two_repos):
+        """`docs`, `theme`, `font` and `work` are registry names and ordinary directories.
+
+        A repo naming its own `upstream/versions.json` is answering for a file it
+        holds, so the first segment matching a repo name decides nothing until
+        this repo has been asked.
+        """
+        upstream, consumer = two_repos
+        (consumer / 'upstream').mkdir()
+        (consumer / 'upstream' / 'versions.json').write_text('{}\n')
+        (consumer / 'load.py').write_text('PINS = "upstream/versions.json"\n')
+
+        assert names(sweep.across_repos(repos_for(upstream, consumer), {'versions.json': 'now pinned-versions.json'})) == []
+
+    def test_a_first_segment_naming_no_listed_repo_stays_silent(self, two_repos):
+        upstream, consumer = two_repos
+        (consumer / 'notes.md').write_text('See `vendor/versions.json` for the third-party pins.\n')
+
+        assert names(sweep.across_repos(repos_for(upstream, consumer), {'versions.json': 'now pinned-versions.json'})) == []
+
+    def test_a_citation_into_a_repo_this_machine_lacks_stays_silent(self, two_repos):
+        """Nothing in an absent repo exists, so every citation into one would hit."""
+        upstream, consumer = two_repos
+        (consumer / 'notes.md').write_text('See `never-cloned/versions.json` for the pins.\n')
+        listed = listing(
+            Repo(name='never-cloned', path=upstream.parent / 'never-cloned', status='active'),
+            Repo(name='consumer', path=consumer, status='active'),
+        )
+
+        assert names(sweep.across_repos(listed, {'versions.json': 'now pinned-versions.json'})) == []
+
+    def test_a_repo_does_not_report_its_own_gone_path(self, two_repos):
+        """The repo that moved the file answers for itself through --moves, not the sweep."""
+        upstream, consumer = two_repos
+        (upstream / 'notes.md').write_text('The pins were at `upstream/versions.json` before the rename.\n')
+
+        assert names(sweep.across_repos(repos_for(upstream, consumer), {'versions.json': 'now pinned-versions.json'})) == []
+
+
+class TestWhatTheSweepCouldNotRead:
+    """A repo, directory or file it cannot open is a failure, not a deliberate skip."""
+
+    def test_an_absent_repo_leaves_the_sweep_unreached(self, two_repos):
+        upstream, _ = two_repos
+        listed = listing(
+            Repo(name='upstream', path=upstream, status='active'), Repo(name='gone', path=upstream / 'nowhere', status='active')
+        )
+
+        assert sweep.across_repos(listed, {'versions.json': 'x'}).unreached
+
+    def test_an_unusable_entry_leaves_the_sweep_unreached(self, two_repos):
+        upstream, consumer = two_repos
+        listed = listing(*repos_for(upstream, consumer).repos, unusable=['nameless names no path'])
+
+        assert sweep.across_repos(listed, {'versions.json': 'x'}).unreached
+
+    def test_a_retired_repo_does_not(self, two_repos):
+        """Retired is the one deliberate skip, so it leaves a clean run clean."""
+        upstream, consumer = two_repos
+        listed = listing(Repo(name='upstream', path=upstream, status='active'), Repo(name='old', path=consumer, status='retired'))
+
+        assert not sweep.across_repos(listed, {'versions.json': 'x'}).unreached
+
+    def test_a_clean_reachable_sweep_does_not(self, two_repos):
+        upstream, consumer = two_repos
+
+        assert not sweep.across_repos(repos_for(upstream, consumer), {'versions.json': 'x'}).unreached
+
+    def test_a_directory_that_will_not_list_is_carried_into_the_result(self, two_repos):
+        """glob swallowed the kernel's refusal and the sweep called the repo clean."""
+        if os.geteuid() == 0:
+            pytest.skip('root reads a 0o000 directory, so there is no refusal to observe')
+
+        upstream, consumer = two_repos
+        locked = consumer / 'locked'
+        locked.mkdir()
+        (locked / 'config.yml').write_text(f'versions_file: {upstream}/versions.json\n')
+        os.chmod(locked, 0o000)
+        try:
+            result = sweep.across_repos(repos_for(upstream, consumer), {'versions.json': 'now pinned-versions.json'})
+        finally:
+            os.chmod(locked, 0o755)
+
+        assert result.unreached
+        assert [entry.path for result_ in result.with_unreadable for entry in result_.unreadable] == [locked]
+
+    def test_a_file_that_will_not_open_is_carried_into_the_result(self, two_repos):
+        if os.geteuid() == 0:
+            pytest.skip('root reads a 0o000 file, so there is no refusal to observe')
+
+        upstream, consumer = two_repos
+        locked = consumer / 'config.yml'
+        locked.write_text(f'versions_file: {upstream}/versions.json\n')
+        os.chmod(locked, 0o000)
+        try:
+            result = sweep.across_repos(repos_for(upstream, consumer), {'versions.json': 'now pinned-versions.json'})
+        finally:
+            os.chmod(locked, 0o644)
+
+        assert result.unreached
+        assert [entry.path for result_ in result.with_unreadable for entry in result_.unreadable] == [locked]
+
+    def test_one_refused_directory_is_recorded_once(self, two_repos):
+        """A run walks the tree four times, so a bare append prints one refusal as four."""
+        if os.geteuid() == 0:
+            pytest.skip('root reads a 0o000 directory, so there is no refusal to observe')
+
+        upstream, consumer = two_repos
+        locked = consumer / 'locked'
+        locked.mkdir()
+        os.chmod(locked, 0o000)
+        try:
+            result = sweep.across_repos(repos_for(upstream, consumer), {'versions.json': 'x'})
+        finally:
+            os.chmod(locked, 0o755)
+
+        assert len([entry for result_ in result.with_unreadable for entry in result_.unreadable]) == 1

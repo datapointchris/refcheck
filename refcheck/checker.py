@@ -9,6 +9,7 @@ from pathlib import Path
 from .config import Config
 from .output import CheckType
 from .output import Issue
+from .output import Unreadable
 from .output import Warning
 from .rules import load_rules
 from .suggestions import FileSuggestions
@@ -202,6 +203,7 @@ class ReferenceChecker:
         self.config = config or Config()
         self.issues: list[Issue] = []
         self.warnings: list[Warning] = []
+        self.unreadable: list[Unreadable] = []
         self.exclude_dirs = self.DEFAULT_EXCLUDES.copy()
         self.exclude_patterns = self.DEFAULT_EXCLUDE_PATTERNS.copy()
         self._rules: dict | None = None
@@ -406,8 +408,34 @@ class ReferenceChecker:
         suffixes = {'.sh'} if self.skip_docs else {'.sh', '.md'}
         return [f for f in self.find_files() if f.suffix in suffixes]
 
-    def find_files(self, pattern: str = '**/*') -> list[Path]:
-        """Find all files matching pattern, respecting exclusions."""
+    def note_unreadable(self, path: Path, error: OSError) -> None:
+        """Record a path the walk was handed and could not read.
+
+        Every caller here sat behind a bare `continue`. A file that will not
+        open is a file nobody scanned, and the run still printed a tick, so the
+        one output the tool exists to produce was a claim about files it had
+        never seen.
+
+        Recorded once per path. A single run walks the tree four times — once
+        for patterns, once for source and script statements, twice for the
+        fragile-path warnings — so one refused directory arrives here four
+        times and would print as four findings.
+        """
+        entry = Unreadable(path=path, reason=error.strerror or str(error))
+        if entry not in self.unreadable:
+            self.unreadable.append(entry)
+
+    def find_files(self, suffix: str | None = None) -> list[Path]:
+        """Every file under the search path, minus the exclusions.
+
+        Walked rather than globbed because a glob has nowhere to report a
+        directory it could not enter. `Path.glob` swallows the kernel's refusal
+        and yields the entries it did reach, so an unreadable directory removed
+        part of a repo from the scan and nothing said so. `os.walk` hands the
+        error to `onerror`, which is the only reason the walk is written out.
+
+        Sorted so two runs over the same tree report in the same order.
+        """
         files: list[Path] = []
         search_root = self.search_path
 
@@ -423,24 +451,35 @@ class ReferenceChecker:
                 files.append(search_root)
             return files
 
-        for file_path in search_root.glob(pattern):
-            if not file_path.is_file():
-                continue
+        def refused(error: OSError) -> None:
+            self.note_unreadable(Path(error.filename or search_root), error)
 
-            try:
-                rel_path = file_path.relative_to(self.root_dir)
-            except ValueError:
-                continue
+        for dirpath, _, filenames in os.walk(search_root, onerror=refused):
+            for name in filenames:
+                file_path = Path(dirpath) / name
 
-            if self.should_skip_file(rel_path):
-                continue
+                # A broken symlink lists as a file and is not one. glob dropped
+                # it on the same question, so the walk has to ask it too.
+                if not file_path.is_file():
+                    continue
 
-            if self.file_type and file_path.suffix != f'.{self.file_type}':
-                continue
+                try:
+                    rel_path = file_path.relative_to(self.root_dir)
+                except ValueError:
+                    continue
 
-            files.append(file_path)
+                if self.should_skip_file(rel_path):
+                    continue
 
-        return files
+                if suffix and file_path.suffix != suffix:
+                    continue
+
+                if self.file_type and file_path.suffix != f'.{self.file_type}':
+                    continue
+
+                files.append(file_path)
+
+        return sorted(files)
 
     # Characters that can sit inside a path token in prose, a Dockerfile or a
     # CI file. Backticks, quotes and sentence punctuation are deliberately out,
@@ -557,14 +596,57 @@ class ReferenceChecker:
 
         return True
 
-    def _reaches_a_gone_path_in(self, pattern: str, line: str, repo_homes: dict[Path, str]) -> str | None:
+    @staticmethod
+    def _in_a_named_repo(token: str, repo_paths: dict[str, Path]) -> Path | None:
+        """A `<repo-name>/path/inside/it` token as a location, or None.
+
+        Prose reaches another repo by naming it. `documentation.md` § "A
+        citation names a repo by its registry name" makes that the fleet's
+        declared form, so `dotfiles/apps/common/pr-list` is what a standards
+        file writes and a `~`-rooted path is what it does not. The registry
+        supplies the mapping, which is what turns the first segment into a
+        directory.
+
+        A token carrying no `/` is a bare name and stays None. `dotfiles` alone
+        in a sentence names a repo rather than a file in one, and resolving it
+        to the repo root would answer about a directory that always exists.
+        """
+        head, slash, tail = token.partition('/')
+        if not slash or not tail:
+            return None
+        home = repo_paths.get(head)
+        return home / tail if home else None
+
+    def _resolves_in_this_repo(self, token: str, from_file: Path | None) -> bool:
+        """True when the token names something this repo actually holds.
+
+        A registry name and an ordinary directory name collide — `docs`,
+        `theme`, `font` and `work` are all repos and all common top-level
+        directories. So a repo's own `docs/index.md` is asked about here first,
+        and only a token this repo cannot answer for is handed to the repo its
+        first segment names.
+        """
+        bases = [self.root_dir]
+        if from_file is not None:
+            bases.append(from_file.parent)
+        return any((base / token).exists() for base in bases)
+
+    def _reaches_a_gone_path_in(
+        self,
+        pattern: str,
+        line: str,
+        repo_homes: dict[Path, str],
+        repo_paths: dict[str, Path],
+        from_file: Path | None = None,
+    ) -> str | None:
         """The repo a hit on this line names a missing file in, if it names one.
 
-        A reference from one repo to another cannot be relative — the file is
-        not in this tree, so the only way to reach it is an absolute path, `~`,
-        or a variable holding one. That makes the existence test exact instead
-        of textual: expand the token, and report it only when the path it names
-        is inside a repo the caller listed and is not there.
+        A reference from one repo to another reaches it in one of two ways. It
+        spells a location on this machine — an absolute path, `~`, or a variable
+        holding one — or it names the repo and the path inside it, which is what
+        prose does. Either way the existence test is exact instead of textual:
+        resolve the token, and report it only when the path it names is inside a
+        repo the caller listed and is not there.
 
         This is the whole defence against a basename sweeping 90 repos for
         `versions.json`. Every mention that is a filename literal, a fixture
@@ -585,6 +667,10 @@ class ReferenceChecker:
                 continue
 
             target = self._on_this_filesystem(token)
+            if target is None:
+                if self._resolves_in_this_repo(token, from_file):
+                    continue
+                target = self._in_a_named_repo(token, repo_paths)
             if target is None or target.exists():
                 continue
 
@@ -618,7 +704,7 @@ class ReferenceChecker:
 
         self._scan_for_patterns(patterns, stale)
 
-    def check_patterns_across_repos(self, patterns: dict[str, str], repo_homes: dict[Path, str]):
+    def check_patterns_across_repos(self, patterns: dict[str, str], repo_homes: dict[Path, str], repo_paths: dict[str, Path]):
         """Check this tree for paths that moved in one of the other repos.
 
         The renaming repo cannot see its consumers. Run with this repo as the
@@ -631,10 +717,16 @@ class ReferenceChecker:
         suspect, because its own files are the ones that moved. In another repo
         the same string is usually that repo's own business, so only a path
         reaching into a listed repo counts.
+
+        `repo_homes` answers which repo holds a resolved path and `repo_paths`
+        answers where a named repo sits. Both are needed and neither is the
+        other's inverse: a registry may declare one repo at a symlink and
+        another at the directory it points to, so the physical key is not a name
+        and the name is not a physical key.
         """
 
         def stale(pattern: str, line: str, from_file: Path) -> str | None:
-            owner = self._reaches_a_gone_path_in(pattern, line, repo_homes)
+            owner = self._reaches_a_gone_path_in(pattern, line, repo_homes, repo_paths, from_file)
             return f'Gone from {owner}: {pattern}' if owner else None
 
         self._scan_for_patterns(patterns, stale)
@@ -669,7 +761,13 @@ class ReferenceChecker:
                                         suggestion=description,
                                     )
                                 )
-            except (OSError, UnicodeDecodeError):
+            except OSError as error:
+                self.note_unreadable(file_path, error)
+                continue
+            except UnicodeDecodeError:
+                # Not a failure to read. The bytes arrived and are not text, so
+                # there is no reference in them to miss, and reporting every
+                # binary file is the noise that stops the real findings landing.
                 continue
 
     def go_up_n_levels(self, file_path: Path, n: int) -> Path:
@@ -704,7 +802,10 @@ class ReferenceChecker:
 
         try:
             content = file_path.read_text(encoding='utf-8')
-        except (OSError, UnicodeDecodeError):
+        except OSError as error:
+            self.note_unreadable(file_path, error)
+            return symbol_table
+        except UnicodeDecodeError:
             return symbol_table
 
         if re.search(r'SCRIPT_DIR="\$\(cd.*BASH_SOURCE', content):
@@ -790,7 +891,13 @@ class ReferenceChecker:
                                     similar_files=similar,
                                 )
                             )
-            except (OSError, UnicodeDecodeError):
+            except OSError as error:
+                self.note_unreadable(file_path, error)
+                continue
+            except UnicodeDecodeError:
+                # Not a failure to read. The bytes arrived and are not text, so
+                # there is no reference in them to miss, and reporting every
+                # binary file is the noise that stops the real findings landing.
                 continue
 
     def check_script_references(self):
@@ -839,14 +946,20 @@ class ReferenceChecker:
                                         similar_files=similar,
                                     )
                                 )
-            except (OSError, UnicodeDecodeError):
+            except OSError as error:
+                self.note_unreadable(file_path, error)
+                continue
+            except UnicodeDecodeError:
+                # Not a failure to read. The bytes arrived and are not text, so
+                # there is no reference in them to miss, and reporting every
+                # binary file is the noise that stops the real findings landing.
                 continue
 
     def check_relative_path_fragility(self):
         """Check if relative paths are fragile to working directory changes."""
         source_pattern = re.compile(r'source\s+(?:["\']([^"\']+)["\']|([^\s]+))')
 
-        for file_path in self.find_files('**/*.sh'):
+        for file_path in self.find_files('.sh'):
             try:
                 rel_path = file_path.relative_to(self.root_dir)
 
@@ -902,14 +1015,20 @@ class ReferenceChecker:
                                     suggestion='Use absolute path or root directory variable',
                                 )
                             )
-            except (OSError, UnicodeDecodeError):
+            except OSError as error:
+                self.note_unreadable(file_path, error)
+                continue
+            except UnicodeDecodeError:
+                # Not a failure to read. The bytes arrived and are not text, so
+                # there is no reference in them to miss, and reporting every
+                # binary file is the noise that stops the real findings landing.
                 continue
 
     def check_relative_traversal(self):
         """Detect relative directory traversal patterns fragile to file moves."""
         traversal_pattern = re.compile(r'([A-Z_]+_DIR)=.*\$\(cd.*\.\./.*pwd\)')
 
-        for file_path in self.find_files('**/*.sh'):
+        for file_path in self.find_files('.sh'):
             try:
                 rel_path = file_path.relative_to(self.root_dir)
 
@@ -930,7 +1049,13 @@ class ReferenceChecker:
                                 suggestion=('Consider dynamic root detection: git rev-parse --show-toplevel'),
                             )
                         )
-            except (OSError, UnicodeDecodeError):
+            except OSError as error:
+                self.note_unreadable(file_path, error)
+                continue
+            except UnicodeDecodeError:
+                # Not a failure to read. The bytes arrived and are not text, so
+                # there is no reference in them to miss, and reporting every
+                # binary file is the noise that stops the real findings landing.
                 continue
 
     def run_all_checks(self):

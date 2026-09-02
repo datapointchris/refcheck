@@ -1,6 +1,7 @@
 """Integration tests ported from bash test suite."""
 
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -325,8 +326,17 @@ class TestRealWorldDotfiles:
     """Test 12: Real-world usage on dotfiles."""
 
     def test_validates_management_directory(self, dotfiles_dir):
+        """Skipped where the directory is absent, so a pass means a tree was read.
+
+        This asserted a clean exit on `management/` long after dotfiles removed
+        it. The walk found no files, every check passed over nothing, and the
+        assertion held — a green test standing on the false clean refcheck
+        exists to catch.
+        """
         if dotfiles_dir is None:
             pytest.skip('Dotfiles directory not found')
+        if not (dotfiles_dir / 'management').is_dir():
+            pytest.skip('management/ not found')
 
         result = run_check('management/', cwd=dotfiles_dir)
         assert result.returncode == 0
@@ -941,12 +951,14 @@ class TestSweepAcrossRepos:
         assert 'is not in the registry' in result.stdout
 
     def test_counts_a_registry_entry_it_could_not_read(self, tmp_path, temp_git_repo):
-        """An entry it could not read gets its own row, not silence inside the clean total."""
+        """An entry it could not read fails the run, rather than sitting inside the clean total."""
         (tmp_path / 'reg.json').write_text(json.dumps({'repos': [{'name': 'good', 'path': str(temp_git_repo)}, {'name': 'nameless'}]}))
 
         result = run_check('--pattern', 'versions.json', '--registry', str(tmp_path / 'reg.json'), cwd=temp_git_repo)
 
-        assert '1 unreadable: nameless names no path' in result.stdout
+        assert result.returncode == 1
+        assert 'nameless names no path' in result.stdout
+        assert 'covered less than it claims' in result.stdout
 
     def test_refuses_a_registry_that_is_not_one(self, tmp_path, temp_git_repo):
         (tmp_path / 'reg.json').write_text('{not json')
@@ -955,3 +967,138 @@ class TestSweepAcrossRepos:
 
         assert result.returncode == 2
         assert 'not valid JSON' in result.stderr
+
+    def test_reports_a_citation_that_names_the_repo_it_reaches(self, tmp_path, temp_git_repo):
+        """The reported false negative, through the registry file and the CLI.
+
+        `dotfiles/apps/common/pr-list` in the standards corpus survived a rename
+        that deleted it. The in-repo run found it and the --registry run, which
+        `documentation.md` § "A moved file is swept from above every repo that
+        names it, not from inside one" prescribes as the sweep, reported clean
+        across 93 repos.
+        """
+        consumer = tmp_path / 'consumer'
+        consumer.mkdir()
+        (consumer / 'standards.md').write_text(f'The live reader is `{temp_git_repo.name}/versions.json`, which builds the pins.\n')
+        registry = self.registry_at(tmp_path / 'reg.json', temp_git_repo, consumer)
+
+        result = run_check('--pattern', 'versions.json', '--desc', 'now pinned', '--registry', str(registry), cwd=temp_git_repo)
+
+        assert result.returncode == 1
+        assert f'{consumer}/standards.md:1' in result.stdout
+        assert f'Gone from {temp_git_repo.name}: versions.json' in result.stdout
+
+    def test_the_registry_form_finds_what_the_in_repo_form_finds(self, tmp_path, temp_git_repo):
+        """Two ways of extracting the same fact, required to agree.
+
+        The bug was one form reporting a hit and the other a tick over the same
+        line, and neither result carried anything saying the two disagreed. A
+        single-form assertion cannot see that, so both run here and the lines are
+        compared.
+        """
+        consumer = tmp_path / 'consumer'
+        consumer.mkdir()
+        (consumer / 'standards.md').write_text(
+            f'The live reader is `{temp_git_repo.name}/versions.json`.\nAlso at {temp_git_repo}/versions.json today.\n'
+        )
+        registry = self.registry_at(tmp_path / 'reg.json', temp_git_repo, consumer)
+
+        in_repo = run_check('--pattern', 'versions.json', cwd=consumer)
+        through_registry = run_check('--pattern', 'versions.json', '--registry', str(registry), cwd=temp_git_repo)
+
+        found_locally = {line for line in in_repo.stdout.splitlines() if 'standards.md:' in line}
+        found_by_sweep = {line.split('/')[-1] for line in through_registry.stdout.splitlines() if 'standards.md:' in line}
+
+        assert {line.strip() for line in found_locally} == {'standards.md:1', 'standards.md:2'}
+        assert found_by_sweep == {'standards.md:1', 'standards.md:2'}
+
+    def test_expands_a_home_relative_registry_path(self, tmp_path, temp_git_repo, monkeypatch):
+        """The registry spells its paths with `~`, so an unexpanded one would sweep nothing."""
+        monkeypatch.setenv('HOME', str(tmp_path))
+        consumer = tmp_path / 'consumer'
+        consumer.mkdir()
+        (consumer / 'config.yml').write_text(f'versions_file: {temp_git_repo}/versions.json\n')
+        registry = tmp_path / 'reg.json'
+        registry.write_text(
+            json.dumps(
+                {
+                    'repos': [
+                        {'name': temp_git_repo.name, 'path': str(temp_git_repo), 'status': 'active'},
+                        {'name': 'consumer', 'path': '~/consumer', 'status': 'active'},
+                    ]
+                }
+            )
+        )
+
+        result = run_check('--pattern', 'versions.json', '--registry', str(registry), cwd=temp_git_repo)
+
+        assert result.returncode == 1
+        assert f'{consumer}/config.yml:1' in result.stdout
+
+    def test_a_listed_repo_with_no_directory_fails_the_sweep(self, tmp_path, temp_git_repo):
+        """A sweep that could not reach a repo has to say so, or its tick means nothing."""
+        registry = tmp_path / 'reg.json'
+        registry.write_text(
+            json.dumps(
+                {
+                    'repos': [
+                        {'name': temp_git_repo.name, 'path': str(temp_git_repo), 'status': 'active'},
+                        {'name': 'never-cloned', 'path': str(tmp_path / 'never-cloned'), 'status': 'active'},
+                    ]
+                }
+            )
+        )
+
+        result = run_check('--pattern', 'versions.json', '--registry', str(registry), cwd=temp_git_repo)
+
+        assert result.returncode == 1
+        assert 'never-cloned' in result.stdout
+        assert 'covered less than it claims' in result.stdout
+
+    def test_a_retired_repo_still_leaves_the_sweep_clean(self, tmp_path, temp_git_repo):
+        """Retired is the deliberate skip the tool already had a vocabulary for."""
+        registry = tmp_path / 'reg.json'
+        retired = tmp_path / 'retired'
+        retired.mkdir()
+        registry.write_text(
+            json.dumps(
+                {
+                    'repos': [
+                        {'name': temp_git_repo.name, 'path': str(temp_git_repo), 'status': 'active'},
+                        {'name': 'old', 'path': str(retired), 'status': 'retired'},
+                    ]
+                }
+            )
+        )
+
+        result = run_check('--pattern', 'versions.json', '--registry', str(registry), cwd=temp_git_repo)
+
+        assert result.returncode == 0
+        assert 'skipped 1 retired' in result.stdout
+
+
+class TestAPathTheScanCouldNotRead:
+    """A tree it could only partly open still printed the tick."""
+
+    def test_a_directory_that_will_not_list_fails_the_run(self, temp_git_repo):
+        if os.geteuid() == 0:
+            pytest.skip('root reads a 0o000 directory, so there is no refusal to observe')
+
+        locked = temp_git_repo / 'locked'
+        locked.mkdir()
+        os.chmod(locked, 0o000)
+        try:
+            result = run_check(cwd=temp_git_repo)
+        finally:
+            os.chmod(locked, 0o755)
+
+        assert result.returncode == 1
+        assert 'could not be read' in result.stdout
+        assert 'locked' in result.stdout
+
+    def test_a_directory_that_is_not_there_is_refused(self, temp_git_repo):
+        """Walking a path that does not exist finds nothing and passes every check."""
+        result = run_check('management/', cwd=temp_git_repo)
+
+        assert result.returncode == 2
+        assert 'is not there' in result.stderr

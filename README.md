@@ -393,13 +393,23 @@ Fragile to Refactoring (1):
 
 **When hits were set aside:**
 
-```text
-✅ No stale references, and 1 hit set aside
+Rows come in file order, then line order. One repo holding the old name at its
+root put eleven of these above a single finding, which is the shape to expect
+rather than the exception.
 
-1 hit matched the text and resolved to a path on disk, so none was reported:
+```text
+✅ No stale references, and 3 hits set aside
+
+3 hits matched the text and resolved to a path on disk, so none was reported:
 ────────────────────────────────────────────────────────────
+  CLAUDE.md:132
+    Found: markdownlint.json, inside .markdownlint.json
+    → resolves to .markdownlint.json
   configs/prettierignore.txt:16
     Found: markdownlint.json, inside .markdownlint.json
+    → resolves to .markdownlint.json
+  docs/setup.md:8
+    Found: markdownlint.json, inside ../.markdownlint.json
     → resolves to .markdownlint.json
 ```
 

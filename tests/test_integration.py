@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from refcheck import moves
 from refcheck.checker import ReferenceChecker
 from refcheck.config import Config
 
@@ -1015,26 +1016,93 @@ class TestSetAsideHits:
         assert '1 hit matched the text and resolved to a path on disk' in result.stdout
         assert 'configs/prettierignore.txt:1' in result.stdout
 
-    def test_moves_stays_quiet_about_the_sites_the_rename_repaired(self, temp_git_repo):
-        """End to end: git supplies the new path, so a repaired site is not listed.
+    def moved_boards_repo(self, root):
+        """`boards/` moved under `config/`, with a vendored copy that did not move.
 
-        Moving a directory under another leaves the old path inside the new
-        one, so every reference the move repaired still matches the pattern.
+        Two tokens, and the predicate has to separate them. Both resolve and
+        both contain the old path, so a repo carrying only the repaired one
+        cannot tell a working test from one that always passes.
         """
-        boards = temp_git_repo / 'boards' / 'arm'
+        boards = root / 'boards' / 'arm'
         boards.mkdir(parents=True)
         (boards / 'defconfig').write_text('CONFIG_ARM=y\n')
-        subprocess.run(['git', 'add', '-A'], cwd=temp_git_repo, capture_output=True, check=True)
-        subprocess.run(['git', 'commit', '-m', 'add boards'], cwd=temp_git_repo, capture_output=True, check=True)
-        (temp_git_repo / 'config').mkdir()
-        subprocess.run(['git', 'mv', 'boards', 'config/boards'], cwd=temp_git_repo, capture_output=True, check=True)
-        (temp_git_repo / 'README.md').write_text('The board is config/boards/arm/defconfig now.\n')
-        subprocess.run(['git', 'add', 'README.md'], cwd=temp_git_repo, capture_output=True, check=True)
+        subprocess.run(['git', 'add', '-A'], cwd=root, capture_output=True, check=True)
+        subprocess.run(['git', 'commit', '-m', 'add boards'], cwd=root, capture_output=True, check=True)
+        (root / 'config').mkdir()
+        subprocess.run(['git', 'mv', 'boards', 'config/boards'], cwd=root, capture_output=True, check=True)
+        vendored = root / 'vendor' / 'boards' / 'arm'
+        vendored.mkdir(parents=True)
+        (vendored / 'defconfig').write_text('CONFIG_ARM=y\n')
+        return root
 
-        result = run_check('--moves', cwd=temp_git_repo)
+    def staged_moves(self, root):
+        """The renames git has staged, as the patterns and replacements they become."""
+        found = moves.staged(root)
+        return {move.old: move.description for move in found}, {move.old: move.new for move in found if move.new}
+
+    def test_moves_does_not_list_the_site_the_rename_repaired(self, temp_git_repo):
+        """A token spelling the new path is a repair the record proves, so it is not named."""
+        repo = self.moved_boards_repo(temp_git_repo)
+        (repo / 'README.md').write_text('The board is config/boards/arm/defconfig now.\n')
+        patterns, replacements = self.staged_moves(repo)
+
+        checker = ReferenceChecker(repo)
+        checker.check_patterns(patterns, replacements)
+
+        assert checker.issues == []
+        assert checker.set_aside == []
+
+    def test_moves_lists_a_hit_the_rename_record_cannot_account_for(self, temp_git_repo):
+        """A token that resolves and names neither the new path nor the new name is named.
+
+        The move kept the filename, so `defconfig` sits inside the old path as
+        well as the new one. Asking whether the token holds it asks what put
+        the line here rather than what the token says, and every hit passes.
+        """
+        repo = self.moved_boards_repo(temp_git_repo)
+        (repo / 'README.md').write_text('The pinned copy is vendor/boards/arm/defconfig.\n')
+        patterns, replacements = self.staged_moves(repo)
+
+        checker = ReferenceChecker(repo)
+        checker.check_patterns(patterns, replacements)
+
+        assert checker.issues == []
+        assert [entry.token for entry in checker.set_aside] == ['vendor/boards/arm/defconfig']
+
+    def test_moves_names_the_unaccounted_hit_through_the_cli_too(self, temp_git_repo):
+        """The replacements reach the resolver from git, not only from a test."""
+        repo = self.moved_boards_repo(temp_git_repo)
+        (repo / 'README.md').write_text('The pinned copy is vendor/boards/arm/defconfig.\n')
+
+        result = run_check('--moves', cwd=repo)
 
         assert result.returncode == 0
-        assert 'matched the text and resolved' not in result.stdout
+        assert 'README.md:1' in result.stdout
+        assert 'vendor/boards/arm/defconfig' in result.stdout
+
+    def test_an_unreadable_path_does_not_swallow_the_hits_that_were_set_aside(self, temp_git_repo):
+        """Three outcomes are independent, so none of them may return in front of another.
+
+        A clean run that also failed to read a directory printed the refusal
+        and nothing else, which drops the whole list on exactly the runs that
+        already covered less than the tree.
+        """
+        if os.geteuid() == 0:
+            pytest.skip('root reads a 0o000 directory, so there is no refusal to observe')
+
+        (temp_git_repo / '.markdownlint.json').write_text('{}\n')
+        (temp_git_repo / 'configs').mkdir()
+        (temp_git_repo / 'configs' / 'prettierignore.txt').write_text('.markdownlint.json\n')
+        locked = temp_git_repo / 'locked'
+        locked.mkdir()
+        os.chmod(locked, 0o000)
+        try:
+            result = run_check('--pattern', 'markdownlint.json', cwd=temp_git_repo)
+        finally:
+            os.chmod(locked, 0o755)
+
+        assert 'could not be read' in result.stdout
+        assert 'configs/prettierignore.txt:1' in result.stdout
 
     def test_a_pattern_run_names_the_same_sites_moves_can_prove_are_repaired(self, temp_git_repo):
         """Typed in by hand there is no rename record, so the run says it is guessing."""

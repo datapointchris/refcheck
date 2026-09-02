@@ -42,11 +42,10 @@ class Warning:
 class SetAside:
     """A pattern hit the check found in the text and did not report, with why.
 
-    The resolver drops a hit whose path is on disk, and until it said so the
-    drop was indistinguishable from the string never being there. Both printed
-    the same tick, so a caller reading a clean run could not tell a repo with
-    nothing stale from one where every mention was set aside because the old
-    name still exists at the root.
+    The resolver drops a hit whose path is on disk. A drop nobody is shown is
+    indistinguishable from the string never being there, and in a repo still
+    holding the old name anywhere every mention of it resolves and every
+    mention goes. A tick over that says the rename is complete.
 
     Carried out to the report rather than counted, because the judgement is
     what a reader has to check. `target` is the path that resolved, which is
@@ -91,16 +90,20 @@ def print_results(
         search_info = f' in {search_path.relative_to(root_dir)}' if search_path != root_dir else ''
 
         # If no issues or warnings, success!
+        #
+        # Each block below runs on its own condition and none of them returns
+        # early. A run can be clean, have set a hit aside and have failed to
+        # read a path all at once, and a return in front of the others prints a
+        # report that reads complete while carrying one of the three.
         if not issues and not warnings:
-            if unreadable:
-                _print_unreadable(unreadable)
-                return
             if set_aside:
                 print(f'\n✅ No stale references{search_info}, and {_count(len(set_aside), "hit")} set aside\n')
                 _print_set_aside(set_aside)
                 print()
-                return
-            print(f'\n✅ All file references valid{search_info}\n')
+            elif not unreadable:
+                print(f'\n✅ All file references valid{search_info}\n')
+            if unreadable:
+                _print_unreadable(unreadable)
             return
 
         # Print summary header

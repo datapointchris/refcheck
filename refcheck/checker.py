@@ -23,10 +23,9 @@ from .suggestions import FileSuggestions
 class Verdict:
     """What one pattern hit came to: a finding, a set-aside, or neither.
 
-    A hit has two independent outcomes and one return value could only carry
-    the first. Reporting it produces a message; dropping it produces the pairs
-    that say what it resolved to, which the run has to print for the drop to be
-    visible. Neither is the cross-repo case, where a hit naming nothing in
+    The two are independent. A finding carries a message; a set-aside carries
+    the pairs saying what the hit resolved to, which the run prints so the drop
+    is visible. Neither is the cross-repo case, where a hit naming nothing in
     another repo is not a judgement about a reference at all.
     """
 
@@ -667,10 +666,15 @@ class ReferenceChecker:
             # resolved, so a live name is found and `$REPO_ROOT/hosts.json` still
             # resolves to nothing and is still reported.
             candidates = [token, self.VARIABLE_ROOT.sub('', token, count=1)]
-            found = next(
-                (base / candidate for base in bases for candidate in candidates if candidate and (base / candidate).exists()),
-                None,
-            )
+            found = None
+            for base in bases:
+                for candidate in candidates:
+                    if candidate and (base / candidate).exists():
+                        found = base / candidate
+                        break
+                if found is not None:
+                    break
+
             if found is None:
                 return None
             resolved.append((token, found))
@@ -803,12 +807,12 @@ class ReferenceChecker:
                 return Verdict(message=f'Found: {pattern}')
 
             replacement = replacements.get(pattern)
-            if replacement and all(self._names_the_new_path(token, replacement) for token, _ in hits):
+            if replacement and all(self._names_the_new_path(pattern, token, replacement) for token, _ in hits):
                 return Verdict()
 
             return Verdict(set_aside=hits)
 
-        self._scan_for_patterns(patterns, stale)
+        self.set_aside.extend(self._scan_for_patterns(patterns, stale))
 
     def check_patterns_across_repos(self, patterns: dict[str, str], repo_homes: dict[Path, str], repo_paths: dict[str, Path]):
         """Check this tree for paths that moved in one of the other repos.
@@ -837,10 +841,18 @@ class ReferenceChecker:
 
         self._scan_for_patterns(patterns, stale)
 
-    def _scan_for_patterns(self, patterns: dict[str, str], stale: Callable[[str, str, Path], Verdict]) -> None:
-        """One walk of the tree, asking `stale` of every hit it finds."""
+    def _scan_for_patterns(self, patterns: dict[str, str], stale: Callable[[str, str, Path], Verdict]) -> list[SetAside]:
+        """One walk of the tree, asking `stale` of every hit it finds.
+
+        Findings go straight onto self.issues, because every caller reports
+        them. Set-aside hits are handed back instead, so the one caller that
+        produces them is the one that stores them — a shared field would take
+        rows from a caller whose report has nowhere to print them.
+        """
         if not patterns:
-            return
+            return []
+
+        set_aside: list[SetAside] = []
 
         for file_path in self.find_files():
             if self.skip_docs and file_path.suffix == '.md':
@@ -874,7 +886,7 @@ class ReferenceChecker:
                             )
                         )
                     for token, target in dict.fromkeys(verdict.set_aside):
-                        self.set_aside.append(
+                        set_aside.append(
                             SetAside(
                                 file=rel_path,
                                 line_num=line_num,
@@ -884,16 +896,34 @@ class ReferenceChecker:
                             )
                         )
 
+        return set_aside
+
     @staticmethod
-    def _names_the_new_path(token: str, replacement: str) -> bool:
+    def _names_the_new_path(pattern: str, token: str, replacement: str) -> bool:
         """True when this token spells what the old path became.
 
-        The whole new path and its bare name both count. A reference reaches a
-        renamed file either way — a README names `pinned-versions.json` and a
-        script names `config/pinned-versions.json` — and both are the repair
-        a run has no reason to mention.
+        The whole new path counts, and so does its bare name on its own: a
+        README names `pinned-versions.json` where a script names
+        `config/pinned-versions.json`, and both reach the renamed file.
+
+        The bare name only counts when the rename changed it. Every token here
+        contains the pattern, because that is what put the line in front of
+        this function, and the pattern is the old path. So a move that keeps
+        the filename — `boards/` to `config/boards/` — has its new basename
+        inside the old path too, and testing for it asks the caller's filter
+        rather than the token. `vendor/boards/arm/defconfig` passed that test
+        while naming neither the new path nor anything the move produced.
+
+        Matched on a segment boundary in both halves, so `mydocs/versions.json`
+        does not answer for `docs/versions.json`.
         """
-        return replacement in token or Path(replacement).name in token
+        if token == replacement or token.endswith(f'/{replacement}'):
+            return True
+
+        new_name = Path(replacement).name
+        if new_name == Path(pattern).name:
+            return False
+        return token == new_name or token.endswith(f'/{new_name}')
 
     def _as_written(self, target: Path) -> Path:
         """A resolved path relative to the repo, or absolute when it is outside it.

@@ -6,11 +6,24 @@ the other. Bare `refcheck` prints help because the scan takes flags of its own,
 which is what disqualifies a bare default from standing in for a command.
 """
 
+import re
 import subprocess
+
+# Rich styles the help, and whether it does depends on the terminal it thinks it
+# has: a local run pipes into a non-tty and gets plain text, while CI forces
+# colour on. So `Usage: refcheck` arrives with escape sequences between the two
+# words, and `--check` arrives with them between the dashes and the name.
+ANSI = re.compile(r'\x1b\[[0-9;]*m')
 
 
 def run(*args, cwd=None) -> subprocess.CompletedProcess:
-    return subprocess.run(['refcheck', *args], capture_output=True, text=True, cwd=cwd)
+    result = subprocess.run(['refcheck', *args], capture_output=True, text=True, cwd=cwd)
+    return subprocess.CompletedProcess(
+        result.args,
+        result.returncode,
+        ANSI.sub('', result.stdout),
+        ANSI.sub('', result.stderr),
+    )
 
 
 def test_bare_invocation_shows_help(tmp_path):

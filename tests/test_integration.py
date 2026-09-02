@@ -11,7 +11,7 @@ from refcheck.config import Config
 
 
 def run_refcheck(*args, cwd=None):
-    """Run refcheck command and return result."""
+    """Run refcheck with the arguments exactly as given."""
     result = subprocess.run(
         ['refcheck', *args],
         capture_output=True,
@@ -21,11 +21,16 @@ def run_refcheck(*args, cwd=None):
     return result
 
 
+def run_check(*args, cwd=None):
+    """Run the check, which is what nearly every test below is asking for."""
+    return run_refcheck('check', *args, cwd=cwd)
+
+
 class TestBasicValidation:
     """Test 1: Basic validation (no flags)."""
 
     def test_finds_broken_references(self, test_fixtures):
-        result = run_refcheck(cwd=test_fixtures)
+        result = run_check(cwd=test_fixtures)
         assert result.returncode == 1
 
 
@@ -33,22 +38,22 @@ class TestDirectoryFiltering:
     """Test 2: Directory filtering (positional argument)."""
 
     def test_checks_specific_directory(self, test_fixtures):
-        result = run_refcheck('src/', cwd=test_fixtures)
+        result = run_check('src/', cwd=test_fixtures)
         assert result.returncode == 1
 
     def test_passes_for_clean_directory(self, test_fixtures):
-        result = run_refcheck('docs/', cwd=test_fixtures)
+        result = run_check('docs/', cwd=test_fixtures)
         assert result.returncode == 0
 
     def test_checks_single_file(self, test_fixtures):
         """Single file argument should be checked directly."""
-        result = run_refcheck('src/broken-source.sh', cwd=test_fixtures)
+        result = run_check('src/broken-source.sh', cwd=test_fixtures)
         assert result.returncode == 1
         assert 'nonexistent' in result.stdout
 
     def test_single_file_clean(self, test_fixtures):
         """Single clean file should pass."""
-        result = run_refcheck('valid/clean.sh', cwd=test_fixtures)
+        result = run_check('valid/clean.sh', cwd=test_fixtures)
         assert result.returncode == 0
 
 
@@ -56,15 +61,15 @@ class TestPatternChecking:
     """Test 3: Pattern checking."""
 
     def test_finds_old_pattern(self, test_fixtures):
-        result = run_refcheck('--pattern', 'management/tests/', cwd=test_fixtures)
+        result = run_check('--pattern', 'management/tests/', cwd=test_fixtures)
         assert result.returncode == 1
 
     def test_finds_pattern_in_specific_dir(self, test_fixtures):
-        result = run_refcheck('--pattern', 'management/tests/', 'src/', cwd=test_fixtures)
+        result = run_check('--pattern', 'management/tests/', 'src/', cwd=test_fixtures)
         assert result.returncode == 1
 
     def test_pattern_with_skip_docs(self, test_fixtures):
-        result = run_refcheck('--pattern', 'management/tests/', 'docs/', '--skip-docs', cwd=test_fixtures)
+        result = run_check('--pattern', 'management/tests/', 'docs/', '--skip-docs', cwd=test_fixtures)
         assert result.returncode == 0
 
 
@@ -72,7 +77,7 @@ class TestPatternWithDescription:
     """Test 4: Pattern with description."""
 
     def test_accepts_pattern_description(self, test_fixtures):
-        result = run_refcheck(
+        result = run_check(
             '--pattern',
             'management/tests/',
             '--desc',
@@ -86,12 +91,12 @@ class TestTypeFiltering:
     """Test 5: Type filtering."""
 
     def test_filters_by_shell_scripts(self, test_fixtures):
-        result = run_refcheck('--type', 'sh', 'src/', cwd=test_fixtures)
+        result = run_check('--type', 'sh', 'src/', cwd=test_fixtures)
         assert result.returncode == 1
 
     def test_filters_by_python_files(self, test_fixtures):
         (test_fixtures / 'src' / 'test.py').write_text('# Python file\nimport nonexistent_module\n')
-        result = run_refcheck('--type', 'py', 'src/', cwd=test_fixtures)
+        result = run_check('--type', 'py', 'src/', cwd=test_fixtures)
         assert result.returncode == 0
 
 
@@ -99,8 +104,8 @@ class TestSkipDocs:
     """Test 6: Skip docs flag."""
 
     def test_skip_docs_reduces_pattern_matches(self, test_fixtures):
-        with_docs = run_refcheck('--pattern', 'management/tests/', cwd=test_fixtures)
-        without_docs = run_refcheck('--pattern', 'management/tests/', '--skip-docs', cwd=test_fixtures)
+        with_docs = run_check('--pattern', 'management/tests/', cwd=test_fixtures)
+        without_docs = run_check('--pattern', 'management/tests/', '--skip-docs', cwd=test_fixtures)
 
         with_count = with_docs.stdout.count('management/tests/')
         without_count = without_docs.stdout.count('management/tests/')
@@ -112,15 +117,15 @@ class TestCombinedFilters:
     """Test 7: Combined filters."""
 
     def test_type_and_skip_docs(self, test_fixtures):
-        result = run_refcheck('--type', 'sh', '--skip-docs', 'src/', cwd=test_fixtures)
+        result = run_check('--type', 'sh', '--skip-docs', 'src/', cwd=test_fixtures)
         assert result.returncode == 1
 
     def test_pattern_and_directory(self, test_fixtures):
-        result = run_refcheck('--pattern', 'management/tests/', 'src/', cwd=test_fixtures)
+        result = run_check('--pattern', 'management/tests/', 'src/', cwd=test_fixtures)
         assert result.returncode == 1
 
     def test_all_filters(self, test_fixtures):
-        result = run_refcheck(
+        result = run_check(
             '--pattern',
             'management/tests/',
             '--type',
@@ -136,25 +141,25 @@ class TestValidReferences:
     """Test 8: Valid references should pass."""
 
     def test_passes_for_valid_refs(self, test_fixtures):
-        result = run_refcheck('valid/', cwd=test_fixtures)
+        result = run_check('valid/', cwd=test_fixtures)
         assert result.returncode == 0
 
     def test_filename_list_is_not_a_script_invocation(self, test_fixtures):
         """`for f in functions.sh aliases.sh` is a word list, not `sh aliases.sh`."""
-        result = run_refcheck('valid/filename-list.sh', cwd=test_fixtures)
+        result = run_check('valid/filename-list.sh', cwd=test_fixtures)
         assert result.returncode == 0
         assert 'aliases.sh' not in result.stdout
 
     def test_remote_execution_paths_are_not_local_references(self, test_fixtures):
         """A script run through pct exec or ssh lives on a filesystem we cannot see."""
-        result = run_refcheck('valid/remote-exec.sh', cwd=test_fixtures)
+        result = run_check('valid/remote-exec.sh', cwd=test_fixtures)
         assert result.returncode == 0
         assert 'install.sh' not in result.stdout
         assert 'remote-only.sh' not in result.stdout
 
     def test_commented_source_is_not_flagged_as_fragile(self, test_fixtures):
         """A source in a usage comment has no working directory to be fragile about."""
-        result = run_refcheck('valid/documented-usage.sh', cwd=test_fixtures)
+        result = run_check('valid/documented-usage.sh', cwd=test_fixtures)
         assert result.returncode == 0
         assert 'Fragile' not in result.stdout
 
@@ -164,53 +169,53 @@ class TestMarkdownReferences:
 
     def test_finds_stale_source_in_markdown(self, test_fixtures):
         """The regression: these checks globbed **/*.sh, so docs were never read."""
-        result = run_refcheck('stale-docs/stale-source.md', cwd=test_fixtures)
+        result = run_check('stale-docs/stale-source.md', cwd=test_fixtures)
         assert result.returncode == 1
         assert 'gone.sh' in result.stdout
 
     def test_finds_stale_script_invocation_in_markdown(self, test_fixtures):
-        result = run_refcheck('stale-docs/stale-source.md', cwd=test_fixtures)
+        result = run_check('stale-docs/stale-source.md', cwd=test_fixtures)
         assert 'also-gone.sh' in result.stdout
 
     def test_resolves_dotfiles_dir_in_markdown(self, test_fixtures):
         """Prose has no assignments to parse, so $DOTFILES_DIR must be seeded."""
-        result = run_refcheck('docs/live-source.md', cwd=test_fixtures)
+        result = run_check('docs/live-source.md', cwd=test_fixtures)
         assert result.returncode == 0
         assert 'helpers.sh' not in result.stdout
 
     def test_placeholders_are_not_reported(self, test_fixtures):
         """A how-to naming toolname.sh describes a file it never intended to ship."""
-        result = run_refcheck('docs/placeholders.md', cwd=test_fixtures)
+        result = run_check('docs/placeholders.md', cwd=test_fixtures)
         assert result.returncode == 0
         for stand_in in ('toolname.sh', 'tool}-plugins.sh', 'my-library.sh', 'script.sh'):
             assert stand_in not in result.stdout
 
     def test_placeholder_stems_still_resolve_in_shell(self, test_fixtures):
         """`bash script.sh` is prose in a README and a real invocation in code."""
-        result = run_refcheck('src/broken-script.sh', cwd=test_fixtures)
+        result = run_check('src/broken-script.sh', cwd=test_fixtures)
         assert result.returncode == 1
         assert 'script.sh' in result.stdout
 
     def test_skip_docs_excludes_markdown_references(self, test_fixtures):
-        result = run_refcheck('stale-docs/stale-source.md', '--skip-docs', cwd=test_fixtures)
+        result = run_check('stale-docs/stale-source.md', '--skip-docs', cwd=test_fixtures)
         assert result.returncode == 0
 
     def test_other_projects_trees_are_not_reported(self, test_fixtures):
         """Docs quote other people's layouts; none of it is a claim about this repo."""
-        result = run_refcheck('docs/other-trees.md', cwd=test_fixtures)
+        result = run_check('docs/other-trees.md', cwd=test_fixtures)
         assert result.returncode == 0
         for foreign in ('child.sh', 'mylib_test.sh', 'deploy.sh'):
             assert foreign not in result.stdout
 
     def test_resource_is_not_a_source_statement(self, test_fixtures):
         """`resource "aws_lambda_function"` ends in `source "..."` without a boundary."""
-        result = run_refcheck('docs/other-trees.md', cwd=test_fixtures)
+        result = run_check('docs/other-trees.md', cwd=test_fixtures)
         assert 'aws_lambda_function' not in result.stdout
         assert 'freshrss' not in result.stdout
 
     def test_rename_under_an_existing_directory_is_still_reported(self, test_fixtures):
         """The signal the tree rule must preserve: our directory, moved file."""
-        result = run_refcheck('stale-docs/renamed-dir.md', cwd=test_fixtures)
+        result = run_check('stale-docs/renamed-dir.md', cwd=test_fixtures)
         assert result.returncode == 1
         assert 'runner.sh' in result.stdout
 
@@ -219,14 +224,14 @@ class TestDocumentedInvocations:
     """A shell script explains itself in comments and usage strings."""
 
     def test_illustrated_invocations_are_not_reported(self, test_fixtures):
-        result = run_refcheck('valid/documented-invocations.sh', cwd=test_fixtures)
+        result = run_check('valid/documented-invocations.sh', cwd=test_fixtures)
         assert result.returncode == 0
         for illustrative in ('install.sh', 'run-and-summarize.sh', 'lib.sh'):
             assert illustrative not in result.stdout
 
     def test_documented_reference_under_an_existing_directory_is_still_reported(self, test_fixtures):
         """The signal the widened guard must preserve, in both contexts."""
-        result = run_refcheck('stale-docs/documented-stale.sh', cwd=test_fixtures)
+        result = run_check('stale-docs/documented-stale.sh', cwd=test_fixtures)
         assert result.returncode == 1
         assert result.stdout.count('valid/gone/runner.sh') == 2
 
@@ -234,7 +239,7 @@ class TestDocumentedInvocations:
         """Only the leading command decides; a script run after an echo still resolves."""
         script = test_fixtures / 'valid' / 'runs-after-echo.sh'
         script.write_text('#!/usr/bin/env bash\nbash valid/gone/runner.sh && echo done\n')
-        result = run_refcheck('valid/runs-after-echo.sh', cwd=test_fixtures)
+        result = run_check('valid/runs-after-echo.sh', cwd=test_fixtures)
         assert result.returncode == 1
         assert 'runner.sh' in result.stdout
 
@@ -256,7 +261,7 @@ class TestMovesEndToEnd:
     def test_finds_what_a_staged_rename_left_behind(self, temp_git_repo):
         self._repo_with_a_staged_move(temp_git_repo)
 
-        result = run_refcheck('--moves', cwd=temp_git_repo)
+        result = run_check('--moves', cwd=temp_git_repo)
         assert result.returncode == 1
         assert 'deploy.yml' in result.stdout
         assert 'now shared/helpers.sh' in result.stdout
@@ -266,13 +271,13 @@ class TestMovesEndToEnd:
         (temp_git_repo / 'deploy.yml').write_text('script: shared/helpers.sh\n')
         subprocess.run(['git', 'add', '-A'], cwd=temp_git_repo, capture_output=True, check=True)
 
-        result = run_refcheck('--moves', cwd=temp_git_repo)
+        result = run_check('--moves', cwd=temp_git_repo)
         assert result.returncode == 0
 
     def test_moves_is_off_unless_asked_for(self, temp_git_repo):
         self._repo_with_a_staged_move(temp_git_repo)
 
-        result = run_refcheck(cwd=temp_git_repo)
+        result = run_check(cwd=temp_git_repo)
         assert result.returncode == 0
 
     def test_changelog_entries_are_not_stale_references(self, temp_git_repo):
@@ -282,7 +287,7 @@ class TestMovesEndToEnd:
         (temp_git_repo / 'CHANGELOG.md').write_text('# Changelog\n\n- Added `lib/helpers.sh`\n')
         subprocess.run(['git', 'add', '-A'], cwd=temp_git_repo, capture_output=True, check=True)
 
-        result = run_refcheck('--moves', cwd=temp_git_repo)
+        result = run_check('--moves', cwd=temp_git_repo)
         assert result.returncode == 0
 
 
@@ -290,7 +295,7 @@ class TestSelfReferences:
     """Test 9: Self-references in comments should be ignored."""
 
     def test_ignores_self_references(self, test_fixtures):
-        result = run_refcheck('src/self-ref.sh', cwd=test_fixtures)
+        result = run_check('src/self-ref.sh', cwd=test_fixtures)
         assert result.returncode == 0
         assert 'self-ref.sh' not in result.stdout or 'Missing' not in result.stdout
 
@@ -299,11 +304,11 @@ class TestExitCodes:
     """Test 10: Exit codes."""
 
     def test_exit_0_for_valid(self, test_fixtures):
-        result = run_refcheck('valid/', cwd=test_fixtures)
+        result = run_check('valid/', cwd=test_fixtures)
         assert result.returncode == 0
 
     def test_exit_1_for_broken(self, test_fixtures):
-        result = run_refcheck('src/', cwd=test_fixtures)
+        result = run_check('src/', cwd=test_fixtures)
         assert result.returncode == 1
 
 
@@ -323,14 +328,14 @@ class TestRealWorldDotfiles:
         if dotfiles_dir is None:
             pytest.skip('Dotfiles directory not found')
 
-        result = run_refcheck('management/', cwd=dotfiles_dir)
+        result = run_check('management/', cwd=dotfiles_dir)
         assert result.returncode == 0
 
     def test_validates_apps_directory(self, dotfiles_dir):
         if dotfiles_dir is None:
             pytest.skip('Dotfiles directory not found')
 
-        result = run_refcheck('apps/', '--type', 'sh', cwd=dotfiles_dir)
+        result = run_check('apps/', '--type', 'sh', cwd=dotfiles_dir)
         assert result.returncode == 0
 
 
@@ -345,7 +350,7 @@ class TestVariablePathResolution:
         if not fixtures_dir.exists():
             pytest.skip('Test fixtures not found')
 
-        result = run_refcheck('--test-mode', str(fixtures_dir), cwd=dotfiles_dir)
+        result = run_check('--test-mode', str(fixtures_dir), cwd=dotfiles_dir)
         assert result.returncode == 1
 
     def test_shows_variable_resolution(self, dotfiles_dir):
@@ -356,7 +361,7 @@ class TestVariablePathResolution:
         if not fixtures_dir.exists():
             pytest.skip('Test fixtures not found')
 
-        result = run_refcheck('--test-mode', str(fixtures_dir), cwd=dotfiles_dir)
+        result = run_check('--test-mode', str(fixtures_dir), cwd=dotfiles_dir)
         assert '→' in result.stdout
 
 
@@ -364,33 +369,33 @@ class TestSuggestionFeature:
     """Test 14: Suggestion feature."""
 
     def test_shows_possible_matches(self, suggestion_fixtures):
-        result = run_refcheck(str(suggestion_fixtures / 'suggestions'), cwd=suggestion_fixtures)
+        result = run_check(str(suggestion_fixtures / 'suggestions'), cwd=suggestion_fixtures)
         assert 'Possible matches:' in result.stdout
 
     def test_shows_basename_match(self, suggestion_fixtures):
-        result = run_refcheck(str(suggestion_fixtures / 'suggestions'), cwd=suggestion_fixtures)
+        result = run_check(str(suggestion_fixtures / 'suggestions'), cwd=suggestion_fixtures)
         assert 'basename match' in result.stdout
 
     def test_shows_name_variant(self, suggestion_fixtures):
-        result = run_refcheck(str(suggestion_fixtures / 'suggestions'), cwd=suggestion_fixtures)
+        result = run_check(str(suggestion_fixtures / 'suggestions'), cwd=suggestion_fixtures)
         assert 'name variant' in result.stdout
 
 
 class TestLearnRules:
-    """Test 15: --learn-rules command."""
+    """Test 15: learn-rules command."""
 
     def test_runs_learn_rules(self, dotfiles_dir):
         if dotfiles_dir is None:
             pytest.skip('Dotfiles directory not found')
 
-        result = run_refcheck('--learn-rules', cwd=dotfiles_dir)
+        result = run_refcheck('learn-rules', cwd=dotfiles_dir)
         assert result.returncode == 0
 
     def test_creates_rules_file(self, dotfiles_dir):
         if dotfiles_dir is None:
             pytest.skip('Dotfiles directory not found')
 
-        run_refcheck('--learn-rules', cwd=dotfiles_dir)
+        run_refcheck('learn-rules', cwd=dotfiles_dir)
 
         safe_name = str(dotfiles_dir).lstrip('/').replace('/', '--')
         rules_path = Path.home() / '.config' / 'refcheck' / 'repos' / safe_name / 'rules.json'
@@ -401,7 +406,7 @@ class TestLearnRules:
         if dotfiles_dir is None:
             pytest.skip('Dotfiles directory not found')
 
-        run_refcheck('--learn-rules', cwd=dotfiles_dir)
+        run_refcheck('learn-rules', cwd=dotfiles_dir)
 
         safe_name = str(dotfiles_dir).lstrip('/').replace('/', '--')
         rules_path = Path.home() / '.config' / 'refcheck' / 'repos' / safe_name / 'rules.json'
@@ -417,7 +422,7 @@ class TestLearnedRulesHint:
     def test_silent_on_a_clean_run(self, temp_git_repo, monkeypatch, tmp_path):
         monkeypatch.setenv('HOME', str(tmp_path))
 
-        result = run_refcheck(cwd=temp_git_repo)
+        result = run_check(cwd=temp_git_repo)
         assert result.returncode == 0
         assert 'learn-rules' not in result.stdout
 
@@ -425,7 +430,7 @@ class TestLearnedRulesHint:
         monkeypatch.setenv('HOME', str(tmp_path))
         (temp_git_repo / 'run.sh').write_text('#!/usr/bin/env bash\nbash lib/vanished.sh\n')
 
-        result = run_refcheck(cwd=temp_git_repo)
+        result = run_check(cwd=temp_git_repo)
         assert result.returncode == 1
         assert 'learn-rules' in result.stdout
 
@@ -435,7 +440,7 @@ class TestLearnedRulesHint:
         (temp_git_repo / 'lib' / 'helpers.sh').write_text('echo hi\n')
         (temp_git_repo / 'run.sh').write_text('#!/usr/bin/env bash\nbash shared/helpers.sh\n')
 
-        result = run_refcheck(cwd=temp_git_repo)
+        result = run_check(cwd=temp_git_repo)
         assert result.returncode == 1
         assert 'Possible matches' in result.stdout
         assert 'learn-rules' not in result.stdout
@@ -739,11 +744,11 @@ def test_repo_config_excludes_a_subtree(temp_git_repo):
     reports.mkdir(parents=True)
     (reports / 'run.json').write_text('{"ran": "lib/helpers.sh"}\n')
 
-    assert run_refcheck('--pattern', 'lib/helpers.sh', cwd=temp_git_repo).returncode == 1
+    assert run_check('--pattern', 'lib/helpers.sh', cwd=temp_git_repo).returncode == 1
 
     (temp_git_repo / '.refcheck.toml').write_text('[scan]\nexclude = ["build/reports/**"]\n')
 
-    assert run_refcheck('--pattern', 'lib/helpers.sh', cwd=temp_git_repo).returncode == 0
+    assert run_check('--pattern', 'lib/helpers.sh', cwd=temp_git_repo).returncode == 0
 
 
 def test_exclude_flag_skips_a_subtree_without_declaring_it(temp_git_repo):
@@ -751,9 +756,9 @@ def test_exclude_flag_skips_a_subtree_without_declaring_it(temp_git_repo):
     reports.mkdir(parents=True)
     (reports / 'run.json').write_text('{"ran": "lib/helpers.sh"}\n')
 
-    assert run_refcheck('--pattern', 'lib/helpers.sh', cwd=temp_git_repo).returncode == 1
+    assert run_check('--pattern', 'lib/helpers.sh', cwd=temp_git_repo).returncode == 1
 
-    narrowed = run_refcheck('--pattern', 'lib/helpers.sh', '--exclude', 'build/reports/**', cwd=temp_git_repo)
+    narrowed = run_check('--pattern', 'lib/helpers.sh', '--exclude', 'build/reports/**', cwd=temp_git_repo)
 
     assert narrowed.returncode == 0
 
@@ -761,7 +766,7 @@ def test_exclude_flag_skips_a_subtree_without_declaring_it(temp_git_repo):
 def test_show_config_names_the_layer_each_exclusion_came_from(temp_git_repo):
     (temp_git_repo / '.refcheck.toml').write_text('[scan]\nexclude = ["build/reports/**"]\n')
 
-    result = run_refcheck('--show-config', '--exclude', 'tmp/**', cwd=temp_git_repo)
+    result = run_check('--show-config', '--exclude', 'tmp/**', cwd=temp_git_repo)
 
     assert result.returncode == 0
     assert '.refcheck.toml' in result.stdout
@@ -882,7 +887,7 @@ class TestSweepAcrossRepos:
         (consumer / 'config.yml').write_text(f'versions_file: {temp_git_repo}/versions.json\n')
         registry = self.registry_at(tmp_path / 'reg.json', temp_git_repo, consumer)
 
-        result = run_refcheck('--moves-since', 'HEAD~1', '--registry', str(registry), cwd=temp_git_repo)
+        result = run_check('--moves-since', 'HEAD~1', '--registry', str(registry), cwd=temp_git_repo)
 
         assert result.returncode == 1
         assert 'Gone from' in result.stdout
@@ -899,7 +904,7 @@ class TestSweepAcrossRepos:
         (consumer / 'config.yml').write_text(f'versions_file: {temp_git_repo}/pinned-versions.json\n')
         registry = self.registry_at(tmp_path / 'reg.json', temp_git_repo, consumer)
 
-        result = run_refcheck('--moves-since', 'HEAD~1', '--registry', str(registry), cwd=temp_git_repo)
+        result = run_check('--moves-since', 'HEAD~1', '--registry', str(registry), cwd=temp_git_repo)
 
         assert result.returncode == 0
         assert 'No repo names a path that moved' in result.stdout
@@ -910,7 +915,7 @@ class TestSweepAcrossRepos:
         (consumer / 'config.yml').write_text(f'versions_file: {temp_git_repo}/versions.json\n')
         registry = self.registry_at(tmp_path / 'reg.json', temp_git_repo, consumer)
 
-        result = run_refcheck('--pattern', 'versions.json', '--registry', str(registry), cwd=temp_git_repo)
+        result = run_check('--pattern', 'versions.json', '--registry', str(registry), cwd=temp_git_repo)
 
         assert result.returncode == 1
         assert 'Gone from' in result.stdout
@@ -919,7 +924,7 @@ class TestSweepAcrossRepos:
         """A sweep with no moved path asks ninety repos nothing and exits clean."""
         registry = self.registry_at(tmp_path / 'reg.json', temp_git_repo)
 
-        result = run_refcheck('--registry', str(registry), cwd=temp_git_repo)
+        result = run_check('--registry', str(registry), cwd=temp_git_repo)
 
         assert result.returncode == 2
         assert '--moves' in result.stderr
@@ -931,7 +936,7 @@ class TestSweepAcrossRepos:
         (consumer / 'config.yml').write_text(f'versions_file: {temp_git_repo}/versions.json\n')
         registry = self.registry_at(tmp_path / 'reg.json', consumer)
 
-        result = run_refcheck('--pattern', 'versions.json', '--registry', str(registry), cwd=temp_git_repo)
+        result = run_check('--pattern', 'versions.json', '--registry', str(registry), cwd=temp_git_repo)
 
         assert 'is not in the registry' in result.stdout
 
@@ -939,14 +944,14 @@ class TestSweepAcrossRepos:
         """An entry it could not read gets its own row, not silence inside the clean total."""
         (tmp_path / 'reg.json').write_text(json.dumps({'repos': [{'name': 'good', 'path': str(temp_git_repo)}, {'name': 'nameless'}]}))
 
-        result = run_refcheck('--pattern', 'versions.json', '--registry', str(tmp_path / 'reg.json'), cwd=temp_git_repo)
+        result = run_check('--pattern', 'versions.json', '--registry', str(tmp_path / 'reg.json'), cwd=temp_git_repo)
 
         assert '1 unreadable: nameless names no path' in result.stdout
 
     def test_refuses_a_registry_that_is_not_one(self, tmp_path, temp_git_repo):
         (tmp_path / 'reg.json').write_text('{not json')
 
-        result = run_refcheck('--pattern', 'x', '--registry', str(tmp_path / 'reg.json'), cwd=temp_git_repo)
+        result = run_check('--pattern', 'x', '--registry', str(tmp_path / 'reg.json'), cwd=temp_git_repo)
 
         assert result.returncode == 2
         assert 'not valid JSON' in result.stderr

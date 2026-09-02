@@ -86,7 +86,7 @@ in shell, where `bash script.sh` is a real invocation.
 uv tool install https://github.com/datapointchris/refcheck.git
 ```
 
-Update in place with `refcheck --update`, which installs the latest GitHub
+Update in place with `refcheck update`, which installs the latest GitHub
 release. Once a day, a run that is behind the latest release prints a one-line
 notice to stderr; set `NO_AUTO_UPDATE` to silence it.
 
@@ -119,28 +119,28 @@ exists to catch.
 
 ```bash
 # Validate all references in current directory
-refcheck
+refcheck check
 
 # Check specific directory
-refcheck install/
+refcheck check install/
 
 # Find old pattern after refactoring
-refcheck --pattern "old/path/" --desc "Update to new/path/"
+refcheck check --pattern "old/path/" --desc "Update to new/path/"
 
 # Filter by file type (like fd -e)
-refcheck --type sh apps/
+refcheck check --type sh apps/
 
 # Skip documentation files
-refcheck --skip-docs
+refcheck check --skip-docs
 
 # Combine filters
-refcheck --pattern "FooClass" --type py --skip-docs src/
+refcheck check --pattern "FooClass" --type py --skip-docs src/
 
 # Disable warnings (only check for errors)
-refcheck --no-warn
+refcheck check --no-warn
 
 # Treat warnings as errors (strict mode for CI)
-refcheck --strict
+refcheck check --strict
 ```
 
 ## Common workflows
@@ -149,11 +149,11 @@ refcheck --strict
 
 ```bash
 # Ask git what moved, instead of typing the old path in
-refcheck --moves              # renames and deletions you have staged
-refcheck --moves-since origin/main   # everything the branch moved
+refcheck check --moves              # renames and deletions you have staged
+refcheck check --moves-since origin/main   # everything the branch moved
 
 # Or name the old path yourself
-refcheck --pattern "tests/install/"
+refcheck check --pattern "tests/install/"
 ```
 
 `--moves` reads `git diff --diff-filter=RD -M` and runs a pattern check per old
@@ -168,7 +168,7 @@ else. That is the gap `--registry` closes: it asks the same question of every
 repo on the machine, driven by the same renames git already recorded.
 
 ```bash
-refcheck --moves-since origin/main --registry ~/.config/repos.json
+refcheck check --moves-since origin/main --registry ~/.config/repos.json
 ```
 
 The registry is named at the call site and refcheck never goes looking for one.
@@ -251,7 +251,7 @@ for reads no files at all.
 
 ```bash
 # Quick validation (2 seconds vs 10+ minutes for e2e tests)
-refcheck --skip-docs
+refcheck check --skip-docs
 # Catches broken references early
 ```
 
@@ -259,40 +259,40 @@ refcheck --skip-docs
 
 ```bash
 # Validate install/ directory only
-refcheck install/
+refcheck check install/
 
 # Check only shell scripts in apps/
-refcheck apps/ --type sh
+refcheck check apps/ --type sh
 ```
 
 ### Use in CI/CD
 
 ```bash
 # Strict mode - fail build on warnings
-refcheck --strict
+refcheck check --strict
 
 # Regular mode - warnings don't fail build
-refcheck
+refcheck check
 
 # Disable warnings for legacy code
-refcheck --no-warn
+refcheck check --no-warn
 ```
 
 ### Detect fragile patterns
 
 ```bash
 # Find paths that only work from specific directories
-refcheck  # Shows warnings for fragile relative paths
+refcheck check  # Shows warnings for fragile relative paths
 
 # Find variable assignments using ../ traversal
-refcheck  # Shows warnings for SCRIPT_DIR="$(cd "$DIR/../../.." && pwd)"
+refcheck check  # Shows warnings for SCRIPT_DIR="$(cd "$DIR/../../.." && pwd)"
 ```
 
 ### Learn from git history
 
 ```bash
 # Generate rules from git rename history (last 6 months by default)
-refcheck --learn-rules
+refcheck learn-rules
 
 # Rules are stored per-repo at ~/.config/refcheck/repos/{repo-name}/rules.json
 ```
@@ -368,12 +368,12 @@ Fragile to Refactoring (1):
 
 ```bash
 # Normal mode - warnings don't fail
-if refcheck; then
+if refcheck check; then
   echo "All references valid (warnings OK)"
 fi
 
 # Strict mode - warnings fail
-if refcheck --strict; then
+if refcheck check --strict; then
   echo "All references valid (no errors or warnings)"
 else
   echo "Issues found, fix before deploying"
@@ -381,11 +381,21 @@ else
 fi
 ```
 
-## Flags
+## Commands
+
+| Command | Description |
+| --- | --- |
+| `refcheck check [PATH]` | Validate every reference in the tree, or in one directory |
+| `refcheck learn-rules` | Write rules.json from git's rename history |
+| `refcheck update` | Install the latest release; `--check` reports one without installing |
+
+Bare `refcheck` prints help. Run any command with `--help` for its flags.
+
+## Flags on `check`
 
 | Flag | Description | Example |
 | --- | --- | --- |
-| `path` | Directory to check (positional) | `refcheck install/` |
+| `path` | Directory to check (positional) | `refcheck check install/` |
 | `--pattern PATTERN` | Find old pattern | `--pattern "old/"` |
 | `--desc DESC` | Description for pattern | `--desc "Now new/"` |
 | `--moves` | Check what staged renames and deletions left behind | `--moves` |
@@ -395,12 +405,10 @@ fi
 | `--skip-docs` | Skip markdown files, for both reference and pattern checks | `--skip-docs` |
 | `--strict` | Treat warnings as errors (exit 1) | `--strict` |
 | `--no-warn` | Disable fragile path warnings | `--no-warn` |
-| `--learn-rules` | Generate rules from git history | `--learn-rules` |
 | `--test-mode` | Include test fixtures (normally excluded) | `--test-mode` |
 | `--exclude GLOB` | Also skip paths matching this glob (repeatable) | `--exclude "build/reports/**"` |
 | `--show-config` | Print the exclusions in force and where each came from | `--show-config` |
-| `--update` | Install the latest release | `--update --check` |
-| `--version` | Show the installed version | `--version` |
+| `--version` | Show the installed version (on `refcheck` itself) | `refcheck --version` |
 | `--help, -h` | Show help | `--help` |
 
 ## Smart filtering

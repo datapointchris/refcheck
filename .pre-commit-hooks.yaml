@@ -1,7 +1,7 @@
 - id: refcheck
   name: refcheck
   description: Validate file references and flag fragile path patterns
-  entry: refcheck
+  entry: refcheck check
   language: python
   # A reference breaks in the file that was NOT edited: delete or move B, and
   # the stale `source B` sits in A, which is not in the changeset. Filtering to

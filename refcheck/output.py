@@ -224,4 +224,4 @@ def print_rules_hint(issues: list[Issue], rules_path: Path | None) -> None:
         return
 
     print(f'\n💡 {len(unsuggested)} broken reference(s) came up with no suggestions.')
-    print("   'refcheck --learn-rules' reads git's rename history to improve them.")
+    print("   'refcheck learn-rules' reads git's rename history to improve them.")

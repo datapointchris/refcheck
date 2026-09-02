@@ -6,7 +6,7 @@ from typing import Annotated
 
 import typer
 from pyselfupdate import notify
-from pyselfupdate.typercmd import run_update
+from pyselfupdate.typercmd import add_update_command
 
 from . import moves as moves_module
 from . import registry as registry_module
@@ -24,26 +24,38 @@ from .selfupdate import print_version
 
 HELP = (
     'Find file references that no longer resolve, and path patterns that will break the next time '
-    'something moves. A reference breaks in the file that was not edited, so refcheck always reads the '
-    'whole tree rather than a changeset. Give it a directory to narrow the search, or --pattern to ask '
-    'the one question a move leaves behind: what still points at the old name?'
+    'something moves. [b]check[/b] is the tool; [b]update[/b] and [b]learn-rules[/b] maintain it. '
+    'A reference breaks in the file that was not edited, so [b]check[/b] always reads the whole tree '
+    'rather than a changeset, and infers the repo from the directory you run it in. Run any command '
+    'with --help to see what comes next.'
+)
+
+CHECK_HELP = (
+    'Validate every file reference in the tree. Give it a directory to narrow the search, or --pattern '
+    'to ask the one question a move leaves behind: what still points at the old name?'
 )
 
 EPILOG = '\n\n'.join(
     [
         '[b]Examples[/b]',
-        '[b]refcheck[/b] — every source and bash reference in the repo, plus fragile-path warnings',
-        '[b]refcheck apps/ --type sh[/b] — narrow to one directory and one file type',
-        '[b]refcheck --strict[/b] — CI mode, where a warning is a failure',
-        '[b]refcheck --pattern "old/path/" --desc "now new/path/"[/b] — after a move, what still points at the old name',
-        '[b]refcheck --moves[/b] — ask that of every rename and deletion you have staged, without naming them',
-        '[b]refcheck --moves-since origin/main[/b] — the same over a branch, for CI',
+        '[b]refcheck check[/b] — every source and bash reference in the repo, plus fragile-path warnings',
+        '[b]refcheck check apps/ --type sh[/b] — narrow to one directory and one file type',
+        '[b]refcheck check --strict[/b] — CI mode, where a warning is a failure',
+        '[b]refcheck check --pattern "old/path/" --desc "now new/path/"[/b] — after a move, what still points at the old name',
+        '[b]refcheck check --moves[/b] — ask that of every rename and deletion you have staged, without naming them',
+        '[b]refcheck check --moves-since origin/main[/b] — the same over a branch, for CI',
         (
-            '[b]refcheck --moves-since origin/main --registry <repos.json>[/b] — and of every other '
+            '[b]refcheck check --moves-since origin/main --registry <repos.json>[/b] — and of every other '
             'repo the registry lists, which is where a rename breaks something you cannot see'
         ),
-        "[b]refcheck --learn-rules[/b] — derive pattern rules from git's own rename history",
-        '[b]refcheck --show-config[/b] — every exclusion in force, and the layer that set it',
+        '[b]refcheck check --show-config[/b] — every exclusion in force, and the layer that set it',
+        "[b]refcheck learn-rules[/b] — derive pattern rules from git's own rename history",
+        '[b]refcheck update[/b] — install the latest release',
+    ]
+)
+
+CHECK_EPILOG = '\n\n'.join(
+    [
         '[b]Excluding a repo of its own generated output[/b]',
         (
             'refcheck excludes what is true of any repository — logs, changelogs, tool caches. '
@@ -70,6 +82,9 @@ EPILOG = '\n\n'.join(
 
 app = typer.Typer(
     add_completion=False,
+    no_args_is_help=True,
+    help=HELP,
+    epilog=EPILOG,
     context_settings={'help_option_names': ['-h', '--help']},
 )
 
@@ -80,8 +95,23 @@ def _version_callback(value: bool) -> None:
         raise typer.Exit(0)
 
 
-@app.command(help=HELP, epilog=EPILOG)
-def main(
+@app.callback()
+def root(
+    version: Annotated[
+        bool,
+        typer.Option(
+            '--version',
+            callback=_version_callback,
+            is_eager=True,
+            help='Show the installed version and exit.',
+        ),
+    ] = False,
+):
+    """Options that belong to refcheck itself rather than to any one of its commands."""
+
+
+@app.command(help=CHECK_HELP, epilog=CHECK_EPILOG)
+def check(
     path: Annotated[
         Path | None,
         typer.Argument(help='Directory to check. Defaults to the current one.', rich_help_panel='Scope'),
@@ -138,39 +168,13 @@ def main(
         bool,
         typer.Option('--no-warn', help='Check only for errors, skipping fragile-path warnings.', rich_help_panel='Severity'),
     ] = False,
-    learn_rules: Annotated[
-        bool,
-        typer.Option('--learn-rules', help="Write rules.json from git's rename history.", rich_help_panel='Maintenance'),
-    ] = False,
     show_config: Annotated[
         bool,
         typer.Option(
             '--show-config', help='Print the exclusions in force and where each came from, then exit.', rich_help_panel='Maintenance'
         ),
     ] = False,
-    update: Annotated[
-        bool,
-        typer.Option('--update', help='Install the latest refcheck release.', rich_help_panel='Maintenance'),
-    ] = False,
-    check: Annotated[
-        bool,
-        typer.Option('--check', help='With --update, report an available release without installing it.', rich_help_panel='Maintenance'),
-    ] = False,
-    version: Annotated[
-        bool,
-        typer.Option(
-            '--version',
-            callback=_version_callback,
-            is_eager=True,
-            help='Show the installed version and exit.',
-            rich_help_panel='Maintenance',
-        ),
-    ] = False,
 ):
-    if update:
-        run_update(UPDATE_CONFIG, check_only=check)
-        raise typer.Exit(0)
-
     root_dir = Path.cwd()
     search_path = path.resolve() if path else root_dir
 
@@ -197,10 +201,6 @@ def main(
                 ('--exclude', flag_patterns),
             ],
         )
-        raise typer.Exit(0)
-
-    if learn_rules:
-        learn_rules_from_git(config.time_window)
         raise typer.Exit(0)
 
     # The sweep needs old paths to look for, and the source/bash checks are not
@@ -267,6 +267,18 @@ def main(
     if checker.issues or (swept and swept.issues) or (checker.strict and checker.warnings):
         raise typer.Exit(1)
     raise typer.Exit(0)
+
+
+@app.command(name='learn-rules')
+def learn_rules():
+    """Write rules.json from git's rename history, so a miss can suggest what replaced it."""
+    learn_rules_from_git(load_config(Path.cwd()).time_window)
+
+
+# Registered last so `check` heads the command list, and by the library rather
+# than by hand: the step order inside run_update is load-bearing, and every
+# fleet tool reports an update the same way because they all call it.
+add_update_command(app, UPDATE_CONFIG)
 
 
 def _sweep_other_repos(

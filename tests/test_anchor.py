@@ -5,10 +5,11 @@ the repo has to use. It was joined onto the repo root like a relative path, whic
 produces `<repo>/~/…` and cannot exist for any input, so every tilde reference
 was reported missing on every run.
 
-Measured on a real repo: three deployed shell libraries sourced by one test
-script, all three resolving fine, all three reported. That is a checker spending
-its whole value on noise — it is worth exactly its false-positive rate, and
-standing errors are what teach a reader to skim past the findings that are real.
+Measured on a repo whose only three errors were these: three deployed shell
+libraries sourced by one test script, all three resolving fine, all three
+reported. That is a checker spending its whole value on noise — it is worth
+exactly its false-positive rate, and three standing errors out of three is what
+teaches a reader to skim past the findings that are real.
 """
 
 from pathlib import Path

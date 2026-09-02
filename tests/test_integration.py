@@ -152,11 +152,24 @@ class TestValidReferences:
         assert 'aliases.sh' not in result.stdout
 
     def test_remote_execution_paths_are_not_local_references(self, test_fixtures):
-        """A script run through pct exec or ssh lives on a filesystem we cannot see."""
+        """A script handed to another host, container or user is on a filesystem we cannot see.
+
+        Asserted per executor. One assertion over a file holding all six lines
+        passes on whichever pattern matches first, so the other five can be
+        deleted with this test still green.
+        """
         result = run_check('valid/remote-exec.sh', cwd=test_fixtures)
+
         assert result.returncode == 0
-        assert 'install.sh' not in result.stdout
-        assert 'remote-only.sh' not in result.stdout
+        for handed_off in (
+            'container-only.sh',
+            'lxc-only.sh',
+            'docker-only.sh',
+            'kube-only.sh',
+            'remote-only.sh',
+            'other-user-only.sh',
+        ):
+            assert handed_off not in result.stdout
 
     def test_commented_source_is_not_flagged_as_fragile(self, test_fixtures):
         """A source in a usage comment has no working directory to be fragile about."""
@@ -322,57 +335,43 @@ class TestHelpFlag:
         assert 'refcheck' in result.stdout
 
 
-class TestRealWorldDotfiles:
-    """Test 12: Real-world usage on dotfiles."""
+class TestARepositoryItIsPointedAt:
+    """The shapes a real checkout has, built here rather than read off the machine."""
 
-    def test_validates_management_directory(self, dotfiles_dir):
-        """Skipped where the directory is absent, so a pass means a tree was read.
+    def test_a_clean_directory_passes(self, deployed_repo):
+        result = run_check('shell/', cwd=deployed_repo)
 
-        A directory that is not there yields no files, so every check passes
-        over nothing and the assertion holds. That is the false clean this tool
-        exists to catch, and asserting a clean exit without the guard below is a
-        test standing on it.
-        """
-        if dotfiles_dir is None:
-            pytest.skip('Dotfiles directory not found')
-        if not (dotfiles_dir / 'management').is_dir():
-            pytest.skip('management/ not found')
-
-        result = run_check('management/', cwd=dotfiles_dir)
         assert result.returncode == 0
 
-    def test_validates_apps_directory(self, dotfiles_dir):
-        if dotfiles_dir is None:
-            pytest.skip('Dotfiles directory not found')
+    def test_a_clean_directory_passes_under_a_type_filter(self, deployed_repo):
+        result = run_check('shell/', '--type', 'sh', cwd=deployed_repo)
 
-        result = run_check('apps/', '--type', 'sh', cwd=dotfiles_dir)
         assert result.returncode == 0
 
 
 class TestVariablePathResolution:
     """Test 13: Variable path resolution."""
 
-    def test_detects_broken_variable_references(self, dotfiles_dir):
-        if dotfiles_dir is None:
-            pytest.skip('Dotfiles directory not found')
+    def test_detects_broken_variable_references(self, deployed_repo):
+        """The fixture sits under fixtures/, so reaching it is what --test-mode is for."""
+        result = run_check('--test-mode', 'tests/fixtures/variables', cwd=deployed_repo)
 
-        fixtures_dir = dotfiles_dir / 'tests' / 'apps' / 'fixtures' / 'refcheck-variables'
-        if not fixtures_dir.exists():
-            pytest.skip('Test fixtures not found')
-
-        result = run_check('--test-mode', str(fixtures_dir), cwd=dotfiles_dir)
         assert result.returncode == 1
+        assert 'absent-helper.sh' in result.stdout
 
-    def test_shows_variable_resolution(self, dotfiles_dir):
-        if dotfiles_dir is None:
-            pytest.skip('Dotfiles directory not found')
+    def test_shows_variable_resolution(self, deployed_repo):
+        """Both spellings, because the resolved one is what says which file was looked for."""
+        result = run_check('--test-mode', 'tests/fixtures/variables', cwd=deployed_repo)
 
-        fixtures_dir = dotfiles_dir / 'tests' / 'apps' / 'fixtures' / 'refcheck-variables'
-        if not fixtures_dir.exists():
-            pytest.skip('Test fixtures not found')
+        assert '$SCRIPT_DIR/absent-helper.sh' in result.stdout
+        assert '\u2192' in result.stdout
 
-        result = run_check('--test-mode', str(fixtures_dir), cwd=dotfiles_dir)
-        assert '→' in result.stdout
+    def test_a_fixture_directory_is_out_of_scope_without_test_mode(self, deployed_repo):
+        """The flag has to be the reason the last two tests see anything."""
+        result = run_check(cwd=deployed_repo)
+
+        assert result.returncode == 0
+        assert 'absent-helper.sh' not in result.stdout
 
 
 class TestSuggestionFeature:
@@ -394,36 +393,35 @@ class TestSuggestionFeature:
 class TestLearnRules:
     """Test 15: learn-rules command."""
 
-    def test_runs_learn_rules(self, dotfiles_dir):
-        if dotfiles_dir is None:
-            pytest.skip('Dotfiles directory not found')
+    def rules_file_for(self, repo):
+        safe_name = str(repo).lstrip('/').replace('/', '--')
+        return Path.home() / '.config' / 'refcheck' / 'repos' / safe_name / 'rules.json'
 
-        result = run_refcheck('learn-rules', cwd=dotfiles_dir)
+    def test_runs_learn_rules(self, deployed_repo):
+        result = run_refcheck('learn-rules', cwd=deployed_repo)
+
         assert result.returncode == 0
 
-    def test_creates_rules_file(self, dotfiles_dir):
-        if dotfiles_dir is None:
-            pytest.skip('Dotfiles directory not found')
+    def test_creates_rules_file(self, deployed_repo):
+        run_refcheck('learn-rules', cwd=deployed_repo)
 
-        run_refcheck('learn-rules', cwd=dotfiles_dir)
+        assert self.rules_file_for(deployed_repo).exists()
 
-        safe_name = str(dotfiles_dir).lstrip('/').replace('/', '--')
-        rules_path = Path.home() / '.config' / 'refcheck' / 'repos' / safe_name / 'rules.json'
+    def test_rules_file_valid_json(self, deployed_repo):
+        run_refcheck('learn-rules', cwd=deployed_repo)
 
-        assert rules_path.exists()
+        rules = json.loads(self.rules_file_for(deployed_repo).read_text())
 
-    def test_rules_file_valid_json(self, dotfiles_dir):
-        if dotfiles_dir is None:
-            pytest.skip('Dotfiles directory not found')
-
-        run_refcheck('learn-rules', cwd=dotfiles_dir)
-
-        safe_name = str(dotfiles_dir).lstrip('/').replace('/', '--')
-        rules_path = Path.home() / '.config' / 'refcheck' / 'repos' / safe_name / 'rules.json'
-
-        rules = json.loads(rules_path.read_text())
         assert 'directory_mappings' in rules
         assert 'file_mappings' in rules
+
+    def test_reads_the_rename_out_of_the_history(self, deployed_repo):
+        """Asserting on the shape alone passes over an empty result."""
+        run_refcheck('learn-rules', cwd=deployed_repo)
+
+        rules = json.loads(self.rules_file_for(deployed_repo).read_text())
+
+        assert rules['file_mappings'] == {'logging.sh': 'log.sh'}
 
 
 class TestLearnedRulesHint:

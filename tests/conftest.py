@@ -140,10 +140,18 @@ def test_fixtures(temp_dir):
 
     (valid / 'filename-list.sh').write_text('#!/usr/bin/env bash\nfor f in functions.sh aliases.sh; do\n  echo "$f"\ndone\n')
 
+    # One line per REMOTE_EXECUTION_PATTERNS entry, each naming a path that is
+    # not here. Sharing a line between two patterns hides the second: whichever
+    # matches first is the reason the line passes, so the other can be deleted
+    # with the suite still green.
     (valid / 'remote-exec.sh').write_text(
         '#!/usr/bin/env bash\n'
-        'pct exec 100 -- su - deploy -c "cd ~/dotfiles && bash install.sh"\n'
+        'pct exec 100 -- bash /opt/container-only.sh\n'
+        'lxc exec web -- bash /opt/lxc-only.sh\n'
+        'docker exec api bash /opt/docker-only.sh\n'
+        'kubectl exec worker -- bash /opt/kube-only.sh\n'
         'ssh deploy@build-host bash /opt/remote-only.sh\n'
+        'su - deploy -c "bash /opt/other-user-only.sh"\n'
     )
 
     lib = valid / 'lib'
@@ -227,24 +235,51 @@ def rules_file(config_dir):
 
 
 @pytest.fixture
-def dotfiles_dir():
-    """The dotfiles repo, or None where it is not checked out.
+def deployed_repo(tmp_path, monkeypatch):
+    """A git repository shaped like one refcheck is pointed at in anger.
 
-    The existence check has to come first: subprocess raises rather than
-    returning non-zero when `cwd` does not exist, so without it the None branch
-    below is unreachable and every real-world test errors instead of skipping
-    on a machine without ~/dotfiles — which is every CI runner.
+    Built here rather than read off the machine. Seven tests used to run
+    against whatever `~/dotfiles` happened to hold, which made the suite's
+    result a property of the machine — green where that directory existed,
+    skipped where it did not, and red whenever a tree this repository does not
+    control grew a stale reference of its own.
+
+    It carries what those seven need and nothing else: a clean shell directory,
+    a fixtures directory holding a reference that does not resolve, and a
+    rename in its history for `learn-rules` to read. HOME points at `tmp_path`
+    so the rules file lands under the test's own directory instead of the
+    caller's config.
     """
-    repo = Path.home() / 'dotfiles'
-    if not repo.is_dir():
-        return None
+    monkeypatch.setenv('HOME', str(tmp_path))
+    repo = tmp_path / 'deployed'
+    (repo / 'apps').mkdir(parents=True)
+    (repo / 'shell').mkdir()
 
-    result = subprocess.run(
-        ['git', 'rev-parse', '--show-toplevel'],
-        capture_output=True,
-        text=True,
-        cwd=repo,
+    def git(*args):
+        subprocess.run(['git', *args], cwd=repo, capture_output=True, check=True)
+
+    git('init')
+    git('config', 'user.email', 'test@test.com')
+    git('config', 'user.name', 'Test')
+
+    (repo / 'shell' / 'logging.sh').write_text('#!/usr/bin/env bash\necho "logging"\n')
+    (repo / 'apps' / 'run.sh').write_text('#!/usr/bin/env bash\nsource "$DOTFILES_DIR/shell/logging.sh"\n')
+    git('add', '-A')
+    git('commit', '-m', 'add the shell library')
+
+    # A rename in the history is the whole input to learn-rules, so a fixture
+    # without one exercises the command and asserts on an empty result.
+    git('mv', 'shell/logging.sh', 'shell/log.sh')
+    (repo / 'apps' / 'run.sh').write_text('#!/usr/bin/env bash\nsource "$DOTFILES_DIR/shell/log.sh"\n')
+    git('add', '-A')
+    git('commit', '-m', 'rename the shell library')
+
+    # Under fixtures/ on purpose: it is excluded by default, so reaching it at
+    # all is what --test-mode is for.
+    variables = repo / 'tests' / 'fixtures' / 'variables'
+    variables.mkdir(parents=True)
+    (variables / 'broken.sh').write_text(
+        '#!/usr/bin/env bash\nSCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"\nsource "$SCRIPT_DIR/absent-helper.sh"\n'
     )
-    if result.returncode == 0:
-        return Path(result.stdout.strip())
-    return None
+
+    return repo

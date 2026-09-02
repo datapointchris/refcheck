@@ -50,18 +50,18 @@ class ReferenceChecker:
         # A changelog is that same thing written deliberately: an entry naming
         # cli/Makefile is correct precisely because that is where the file was
         # when it shipped, and rewriting history to match the current tree would
-        # be the bug. Replaying a batch of real renames across a machine, nearly
-        # a third of the hits were changelog entries — the largest single source
-        # of noise in the run.
+        # be the bug. Replaying twenty-two real renames across a machine, seven
+        # of the hits were changelog entries — the largest single source of
+        # noise in the run.
         'CHANGELOG.md',
     ]
 
     # A fixtures directory holds recorded data, not references. A captured tool
     # output — a file listing, a coverage report — names every file that existed
-    # when it was taken, so one commit deleting a subsystem turns it into
-    # hundreds of hits, enough to bury the handful that are real. Nobody would
-    # hand-edit one either; the fix is to re-run the tool that wrote it.
-    # `--test-mode` scans them anyway.
+    # when it was taken, so one commit deleting a subsystem made a single such
+    # file 219 of the 280 hits in one run, burying the four that were real.
+    # Nobody would hand-edit one either; the fix is to re-run the tool that
+    # wrote it. `--test-mode` scans them anyway.
     TEST_FIXTURE_PATTERNS = [
         'fixtures/**',
         '**/fixtures/**',
@@ -310,12 +310,12 @@ class ReferenceChecker:
         it to the repo root produces `<repo>/~/…`, which cannot exist for any
         input. Every tilde reference was therefore reported missing, always.
 
-        Measured on a real repo: one test script sourced three deployed shell
-        libraries by their `~/.local/shell/` paths, and all three were reported
-        on every run while resolving fine. That is the whole of this tool's
-        value spent on noise — a checker is worth its false-positive rate, and
-        three standing errors is what teaches a reader to stop reading the
-        output.
+        Measured on a repo whose only three errors were these: one test script
+        sourced three deployed shell libraries by their `~/.local/shell/` paths,
+        and all three were reported on every run while resolving fine. That is
+        the whole of a tool's value spent on noise — a checker is worth its
+        false-positive rate, and three standing errors out of three is what
+        teaches a reader to stop reading the output.
 
         A `~/` reference is the *deployed* spelling, which is the one a script
         that runs outside the repo has to use. It is not a variant of a repo-

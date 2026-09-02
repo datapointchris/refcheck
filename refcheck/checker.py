@@ -2,17 +2,35 @@
 
 import os
 import re
+from collections.abc import Callable
 from collections.abc import Iterable
 from collections.abc import Iterator
+from dataclasses import dataclass
+from dataclasses import field
 from pathlib import Path
 
 from .config import Config
 from .output import CheckType
 from .output import Issue
+from .output import SetAside
 from .output import Unreadable
 from .output import Warning
 from .rules import load_rules
 from .suggestions import FileSuggestions
+
+
+@dataclass(frozen=True)
+class Verdict:
+    """What one pattern hit came to: a finding, a set-aside, or neither.
+
+    The two are independent. A finding carries a message; a set-aside carries
+    the pairs saying what the hit resolved to, which the run prints so the drop
+    is visible. Neither is the cross-repo case, where a hit naming nothing in
+    another repo is not a judgement about a reference at all.
+    """
+
+    message: str | None = None
+    set_aside: list[tuple[str, Path]] = field(default_factory=list)
 
 
 class ReferenceChecker:
@@ -204,6 +222,7 @@ class ReferenceChecker:
         self.issues: list[Issue] = []
         self.warnings: list[Warning] = []
         self.unreadable: list[Unreadable] = []
+        self.set_aside: list[SetAside] = []
         self.exclude_dirs = self.DEFAULT_EXCLUDES.copy()
         self.exclude_patterns = self.DEFAULT_EXCLUDE_PATTERNS.copy()
         self._rules: dict | None = None
@@ -588,8 +607,14 @@ class ReferenceChecker:
             return None
         return Path(expanded)
 
-    def _pattern_hit_still_resolves(self, pattern: str, line: str, from_file: Path | None = None) -> bool:
-        """True when every hit on this line sits inside a path that exists.
+    def _resolved_hits(self, pattern: str, line: str, from_file: Path | None = None) -> list[tuple[str, Path]] | None:
+        """Every hit on this line paired with the path it resolves to, or None.
+
+        None means at least one hit sits inside a path that is not there, which
+        is what makes the line stale. Otherwise the pairs come back so the
+        caller can say what each hit resolved to and test that against what the
+        path became — existence alone says a file of that name is on disk, not
+        that this reference was repaired.
 
         `--pattern boards/arm` matched `config/boards/arm/...` after the
         directory moved under config/, reporting the file that had just been
@@ -614,9 +639,11 @@ class ReferenceChecker:
         is a corrected reference and hangs off no root in this repo, so joining
         it to one reported the file that had just been fixed.
         """
+        resolved: list[tuple[str, Path]] = []
+
         for token, begins_the_token in self._path_tokens_around(pattern, line):
             if begins_the_token or not token:
-                return False
+                return None
 
             # Tried first and never on its own. An absolute token needs nothing
             # here — joining it to a root discards the root — but `~` and a set
@@ -626,6 +653,7 @@ class ReferenceChecker:
             # candidates below, which answer for a variable pointing elsewhere.
             target = self._on_this_filesystem(token)
             if target is not None and target.exists():
+                resolved.append((token, target))
                 continue
 
             bases = [self.root_dir]
@@ -638,10 +666,20 @@ class ReferenceChecker:
             # resolved, so a live name is found and `$REPO_ROOT/hosts.json` still
             # resolves to nothing and is still reported.
             candidates = [token, self.VARIABLE_ROOT.sub('', token, count=1)]
-            if not any((base / candidate).exists() for base in bases for candidate in candidates if candidate):
-                return False
+            found = None
+            for base in bases:
+                for candidate in candidates:
+                    if candidate and (base / candidate).exists():
+                        found = base / candidate
+                        break
+                if found is not None:
+                    break
 
-        return True
+            if found is None:
+                return None
+            resolved.append((token, found))
+
+        return resolved
 
     @staticmethod
     def _in_a_named_repo(token: str, repo_paths: dict[str, Path]) -> Path | None:
@@ -745,21 +783,36 @@ class ReferenceChecker:
         """Check for old path pattern references."""
         self.check_patterns({pattern: description or f'Old pattern: {pattern}'})
 
-    def check_patterns(self, patterns: dict[str, str]):
+    def check_patterns(self, patterns: dict[str, str], replacements: dict[str, str] | None = None):
         """Check for several old paths in one walk of the tree.
 
         A commit that moves a directory stages a rename per file in it, and
         --moves turns each into a pattern. Walking once per pattern made the
         cost of the check scale with the size of the move, which is backwards:
         the large refactor is exactly the one worth checking.
+
+        `replacements` maps a pattern to the path it became, which git records
+        for a rename and a typed-in --pattern cannot supply. It decides only
+        whether a dropped hit is worth naming, never whether the hit is
+        reported: a token spelling the new path is a repair this run can prove,
+        so listing it would be noise on every rename. Everything else the
+        resolver drops is a guess about what a file being on disk means, and a
+        guess the caller never sees is the one that reads as a clean sweep.
         """
+        replacements = replacements or {}
 
-        def stale(pattern: str, line: str, from_file: Path) -> str | None:
-            if self._pattern_hit_still_resolves(pattern, line, from_file):
-                return None
-            return f'Found: {pattern}'
+        def stale(pattern: str, line: str, from_file: Path) -> Verdict:
+            hits = self._resolved_hits(pattern, line, from_file)
+            if hits is None:
+                return Verdict(message=f'Found: {pattern}')
 
-        self._scan_for_patterns(patterns, stale)
+            replacement = replacements.get(pattern)
+            if replacement and all(self._names_the_new_path(pattern, token, replacement) for token, _ in hits):
+                return Verdict()
+
+            return Verdict(set_aside=hits)
+
+        self.set_aside.extend(self._scan_for_patterns(patterns, stale))
 
     def check_patterns_across_repos(self, patterns: dict[str, str], repo_homes: dict[Path, str], repo_paths: dict[str, Path]):
         """Check this tree for paths that moved in one of the other repos.
@@ -782,16 +835,24 @@ class ReferenceChecker:
         and the name is not a physical key.
         """
 
-        def stale(pattern: str, line: str, from_file: Path) -> str | None:
+        def stale(pattern: str, line: str, from_file: Path) -> Verdict:
             owner = self._reaches_a_gone_path_in(pattern, line, repo_homes, repo_paths, from_file)
-            return f'Gone from {owner}: {pattern}' if owner else None
+            return Verdict(message=f'Gone from {owner}: {pattern}' if owner else None)
 
         self._scan_for_patterns(patterns, stale)
 
-    def _scan_for_patterns(self, patterns: dict[str, str], stale) -> None:
-        """One walk of the tree, asking `stale` of every hit it finds."""
+    def _scan_for_patterns(self, patterns: dict[str, str], stale: Callable[[str, str, Path], Verdict]) -> list[SetAside]:
+        """One walk of the tree, asking `stale` of every hit it finds.
+
+        Findings go straight onto self.issues, because every caller reports
+        them. Set-aside hits are handed back instead, so the one caller that
+        produces them is the one that stores them — a shared field would take
+        rows from a caller whose report has nowhere to print them.
+        """
         if not patterns:
-            return
+            return []
+
+        set_aside: list[SetAside] = []
 
         for file_path in self.find_files():
             if self.skip_docs and file_path.suffix == '.md':
@@ -813,17 +874,69 @@ class ReferenceChecker:
                 for pattern, description in patterns.items():
                     if pattern not in line:
                         continue
-                    message = stale(pattern, line, file_path)
-                    if message:
+                    verdict = stale(pattern, line, file_path)
+                    if verdict.message:
                         self.issues.append(
                             Issue(
                                 file=rel_path,
                                 line_num=line_num,
                                 check_type=CheckType.PATTERN,
-                                message=message,
+                                message=verdict.message,
                                 suggestion=description,
                             )
                         )
+                    for token, target in dict.fromkeys(verdict.set_aside):
+                        set_aside.append(
+                            SetAside(
+                                file=rel_path,
+                                line_num=line_num,
+                                pattern=pattern,
+                                token=token,
+                                target=self._as_written(target),
+                            )
+                        )
+
+        return set_aside
+
+    @staticmethod
+    def _names_the_new_path(pattern: str, token: str, replacement: str) -> bool:
+        """True when this token spells what the old path became.
+
+        The whole new path counts, and so does its bare name on its own: a
+        README names `pinned-versions.json` where a script names
+        `config/pinned-versions.json`, and both reach the renamed file.
+
+        The bare name only counts when the rename changed it. Every token here
+        contains the pattern, because that is what put the line in front of
+        this function, and the pattern is the old path. So a move that keeps
+        the filename — `boards/` to `config/boards/` — has its new basename
+        inside the old path too, and testing for it asks the caller's filter
+        rather than the token. `vendor/boards/arm/defconfig` passed that test
+        while naming neither the new path nor anything the move produced.
+
+        Matched on a segment boundary in both halves, so `mydocs/versions.json`
+        does not answer for `docs/versions.json`.
+        """
+        if token == replacement or token.endswith(f'/{replacement}'):
+            return True
+
+        new_name = Path(replacement).name
+        if new_name == Path(pattern).name:
+            return False
+        return token == new_name or token.endswith(f'/{new_name}')
+
+    def _as_written(self, target: Path) -> Path:
+        """A resolved path relative to the repo, or absolute when it is outside it.
+
+        Every other line of the report is repo-relative, and a set-aside hit
+        reads beside those. A token spelling `~/...` resolves outside the tree
+        and has no relative form, so it stays absolute rather than being forced
+        into one that would name a file the repo does not hold.
+        """
+        try:
+            return target.relative_to(self.root_dir)
+        except ValueError:
+            return target
 
     def go_up_n_levels(self, file_path: Path, n: int) -> Path:
         """Go up N directory levels from file_path."""

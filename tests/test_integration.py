@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from refcheck import moves
 from refcheck.checker import ReferenceChecker
 from refcheck.config import Config
 
@@ -686,7 +687,14 @@ def test_pattern_still_reports_a_stale_name_under_a_shell_variable(tmp_path):
 
 
 def test_pattern_ignores_a_hit_inside_a_url(tmp_path):
-    """A URL is never a file reference, however much of the pattern it contains."""
+    """A URL is never a file reference, however much of the pattern it contains.
+
+    Not listed as set aside either, and the two silences are different. The
+    resolver guesses what a file being on disk means, so its drops are handed
+    to the reader to check. A URL names no file here whatever the tree looks
+    like, so there is no judgement to hand over — and a docs repo swept for a
+    moved path would list every link that quotes it.
+    """
     (tmp_path / 'docs').mkdir()
     (tmp_path / 'docs' / 'hooks.md').write_text('- [Hooks Guide](https://docs.anthropic.com/en/docs/claude-code/hooks) - Official docs\n')
 
@@ -694,6 +702,7 @@ def test_pattern_ignores_a_hit_inside_a_url(tmp_path):
     checker.check_pattern('docs/claude-code', 'moved to the docs hub')
 
     assert checker.issues == []
+    assert checker.set_aside == []
 
 
 def test_pattern_reports_a_stale_path_on_a_line_that_also_holds_a_url(tmp_path):
@@ -873,6 +882,248 @@ def test_pattern_skips_a_binary_in_a_repo_that_is_not_the_working_directory(tmp_
     checker.check_pattern('versions.json', 'now pinned-versions.json')
 
     assert checker.issues == []
+
+
+class TestSetAsideHits:
+    """A hit the resolver drops is named, because a silent drop reads as a clean sweep."""
+
+    def markdownlint_repo(self, root):
+        """A repo still holding the old name at its root, with the literal deeper in.
+
+        The shape a generator repo takes: it deploys `.markdownlint.json` to
+        every repo including itself, so the old name is on disk at the root
+        while the templates naming it are two directories down.
+        """
+        (root / '.markdownlint.json').write_text('{}\n')
+        (root / 'configs').mkdir()
+        (root / 'configs' / 'prettierignore.txt').write_text('.pre-commit-config.yaml\n.markdownlint.json\n')
+        return root
+
+    def test_a_hit_dropped_because_the_old_name_is_still_on_disk_is_named(self, tmp_path):
+        """Existence at the root suppressed every mention and said nothing about it.
+
+        `--pattern markdownlint.json` reported one file and stayed silent on
+        ten more, because `.markdownlint.json` was still at the root and every
+        widened token resolved to it. The run printed what a repo with nothing
+        stale prints.
+        """
+        repo = self.markdownlint_repo(tmp_path)
+
+        checker = ReferenceChecker(repo)
+        checker.check_pattern('markdownlint.json', 'now markdownlint.yml')
+
+        assert checker.issues == []
+        assert [(entry.file.as_posix(), entry.line_num) for entry in checker.set_aside] == [('configs/prettierignore.txt', 2)]
+        assert checker.set_aside[0].token == '.markdownlint.json'
+        assert checker.set_aside[0].target == Path('.markdownlint.json')
+
+    def test_the_same_name_is_found_whichever_spelling_the_pattern_uses(self, tmp_path):
+        """A broader pattern must never return fewer hits than a narrower one.
+
+        `.markdownlint.json` covers the token's left edge and is reported on
+        sight; `markdownlint.json` does not and goes to the resolver. The same
+        line then came back as a finding under one spelling and as nothing at
+        all under the other.
+        """
+        repo = self.markdownlint_repo(tmp_path)
+
+        seen = []
+        for pattern in ('markdownlint.json', '.markdownlint.json'):
+            checker = ReferenceChecker(repo)
+            checker.check_pattern(pattern, 'now markdownlint.yml')
+            found = {(issue.file.as_posix(), issue.line_num) for issue in checker.issues}
+            seen.append(found | {(entry.file.as_posix(), entry.line_num) for entry in checker.set_aside})
+
+        assert seen[0] == seen[1]
+
+    def test_a_hit_resolving_to_the_old_name_is_named_even_when_the_new_one_is_known(self, tmp_path):
+        """The token resolves, but to the path that moved rather than the one it became.
+
+        Knowing the new name is what separates a repair from a coincidence.
+        This is the coincidence, so it stays in the list the run prints.
+        """
+        repo = self.markdownlint_repo(tmp_path)
+
+        checker = ReferenceChecker(repo)
+        checker.check_patterns({'markdownlint.json': 'now markdownlint.yml'}, {'markdownlint.json': 'configs/markdownlint.yml'})
+
+        assert checker.issues == []
+        assert [entry.file.as_posix() for entry in checker.set_aside] == ['configs/prettierignore.txt']
+
+    def test_a_repair_the_rename_record_confirms_is_not_listed(self, tmp_path):
+        """A hit spelling the new path is a repair the run can prove, so it says nothing.
+
+        Every rename repairs sites the pattern still matches, and listing all
+        of them puts a screen of noise above the findings.
+        """
+        (tmp_path / 'built-tools.json').write_text('{}\n')
+        (tmp_path / 'README.md').write_text('The list is `built-tools.json` now.\n')
+
+        checker = ReferenceChecker(tmp_path)
+        checker.check_patterns({'tools.json': 'now built-tools.json'}, {'tools.json': 'built-tools.json'})
+
+        assert checker.issues == []
+        assert checker.set_aside == []
+
+    def test_knowing_the_new_name_never_turns_a_dropped_hit_into_a_finding(self, tmp_path):
+        """A vendored copy resolves and is not the renamed file, and is not broken either.
+
+        Reporting on "resolves but does not name the new path" would call that
+        stale. The reference opens the file it names, so the rename record
+        decides what gets listed and never what gets reported.
+        """
+        (tmp_path / 'vendor' / 'configs').mkdir(parents=True)
+        (tmp_path / 'vendor' / 'configs' / 'markdownlint.json').write_text('{}\n')
+        (tmp_path / 'README.md').write_text('The pinned copy is vendor/configs/markdownlint.json.\n')
+
+        moved = 'configs/markdownlint.json'
+        checker = ReferenceChecker(tmp_path)
+        checker.check_patterns({moved: 'now configs/markdownlint.yml'}, {moved: 'configs/markdownlint.yml'})
+
+        assert checker.issues == []
+
+    def test_one_line_naming_the_same_path_twice_is_one_row(self, tmp_path):
+        """A row per occurrence says the same thing twice and buries the next hit."""
+        (tmp_path / '.markdownlint.json').write_text('{}\n')
+        (tmp_path / 'notes.md').write_text('Both .markdownlint.json and .markdownlint.json are ignored.\n')
+
+        checker = ReferenceChecker(tmp_path)
+        checker.check_pattern('markdownlint.json', 'now markdownlint.yml')
+
+        assert len(checker.set_aside) == 1
+
+    def test_a_hit_resolving_outside_the_repo_keeps_its_absolute_path(self, tmp_path):
+        """A `~`-rooted token has no repo-relative form to print.
+
+        Forcing one would name a file the repo does not hold, which is worse
+        than the long path: the reader opens it and finds nothing there.
+        """
+        outside = tmp_path / 'elsewhere'
+        outside.mkdir()
+        (outside / 'pinned-versions.json').write_text('{}\n')
+        repo = tmp_path / 'repo'
+        repo.mkdir()
+        (repo / 'notes.md').write_text(f'The pins live at {outside}/pinned-versions.json today.\n')
+
+        checker = ReferenceChecker(repo)
+        checker.check_pattern('versions.json', 'now pinned-versions.json')
+
+        assert checker.issues == []
+        assert [entry.target for entry in checker.set_aside] == [outside / 'pinned-versions.json']
+
+    def test_a_run_with_hits_set_aside_does_not_claim_every_reference_is_valid(self, temp_git_repo):
+        """The tick is the product, so it cannot be printed over a judgement call."""
+        (temp_git_repo / '.markdownlint.json').write_text('{}\n')
+        (temp_git_repo / 'configs').mkdir()
+        (temp_git_repo / 'configs' / 'prettierignore.txt').write_text('.markdownlint.json\n')
+
+        result = run_check('--pattern', 'markdownlint.json', cwd=temp_git_repo)
+
+        assert result.returncode == 0
+        assert 'All file references valid' not in result.stdout
+        assert '1 hit matched the text and resolved to a path on disk' in result.stdout
+        assert 'configs/prettierignore.txt:1' in result.stdout
+
+    def moved_boards_repo(self, root):
+        """`boards/` moved under `config/`, with a vendored copy that did not move.
+
+        Two tokens, and the predicate has to separate them. Both resolve and
+        both contain the old path, so a repo carrying only the repaired one
+        cannot tell a working test from one that always passes.
+        """
+        boards = root / 'boards' / 'arm'
+        boards.mkdir(parents=True)
+        (boards / 'defconfig').write_text('CONFIG_ARM=y\n')
+        subprocess.run(['git', 'add', '-A'], cwd=root, capture_output=True, check=True)
+        subprocess.run(['git', 'commit', '-m', 'add boards'], cwd=root, capture_output=True, check=True)
+        (root / 'config').mkdir()
+        subprocess.run(['git', 'mv', 'boards', 'config/boards'], cwd=root, capture_output=True, check=True)
+        vendored = root / 'vendor' / 'boards' / 'arm'
+        vendored.mkdir(parents=True)
+        (vendored / 'defconfig').write_text('CONFIG_ARM=y\n')
+        return root
+
+    def staged_moves(self, root):
+        """The renames git has staged, as the patterns and replacements they become."""
+        found = moves.staged(root)
+        return {move.old: move.description for move in found}, {move.old: move.new for move in found if move.new}
+
+    def test_moves_does_not_list_the_site_the_rename_repaired(self, temp_git_repo):
+        """A token spelling the new path is a repair the record proves, so it is not named."""
+        repo = self.moved_boards_repo(temp_git_repo)
+        (repo / 'README.md').write_text('The board is config/boards/arm/defconfig now.\n')
+        patterns, replacements = self.staged_moves(repo)
+
+        checker = ReferenceChecker(repo)
+        checker.check_patterns(patterns, replacements)
+
+        assert checker.issues == []
+        assert checker.set_aside == []
+
+    def test_moves_lists_a_hit_the_rename_record_cannot_account_for(self, temp_git_repo):
+        """A token that resolves and names neither the new path nor the new name is named.
+
+        The move kept the filename, so `defconfig` sits inside the old path as
+        well as the new one. Asking whether the token holds it asks what put
+        the line here rather than what the token says, and every hit passes.
+        """
+        repo = self.moved_boards_repo(temp_git_repo)
+        (repo / 'README.md').write_text('The pinned copy is vendor/boards/arm/defconfig.\n')
+        patterns, replacements = self.staged_moves(repo)
+
+        checker = ReferenceChecker(repo)
+        checker.check_patterns(patterns, replacements)
+
+        assert checker.issues == []
+        assert [entry.token for entry in checker.set_aside] == ['vendor/boards/arm/defconfig']
+
+    def test_moves_names_the_unaccounted_hit_through_the_cli_too(self, temp_git_repo):
+        """The replacements reach the resolver from git, not only from a test."""
+        repo = self.moved_boards_repo(temp_git_repo)
+        (repo / 'README.md').write_text('The pinned copy is vendor/boards/arm/defconfig.\n')
+
+        result = run_check('--moves', cwd=repo)
+
+        assert result.returncode == 0
+        assert 'README.md:1' in result.stdout
+        assert 'vendor/boards/arm/defconfig' in result.stdout
+
+    def test_an_unreadable_path_does_not_swallow_the_hits_that_were_set_aside(self, temp_git_repo):
+        """Three outcomes are independent, so none of them may return in front of another.
+
+        A clean run that also failed to read a directory printed the refusal
+        and nothing else, which drops the whole list on exactly the runs that
+        already covered less than the tree.
+        """
+        if os.geteuid() == 0:
+            pytest.skip('root reads a 0o000 directory, so there is no refusal to observe')
+
+        (temp_git_repo / '.markdownlint.json').write_text('{}\n')
+        (temp_git_repo / 'configs').mkdir()
+        (temp_git_repo / 'configs' / 'prettierignore.txt').write_text('.markdownlint.json\n')
+        locked = temp_git_repo / 'locked'
+        locked.mkdir()
+        os.chmod(locked, 0o000)
+        try:
+            result = run_check('--pattern', 'markdownlint.json', cwd=temp_git_repo)
+        finally:
+            os.chmod(locked, 0o755)
+
+        assert 'could not be read' in result.stdout
+        assert 'configs/prettierignore.txt:1' in result.stdout
+
+    def test_a_pattern_run_names_the_same_sites_moves_can_prove_are_repaired(self, temp_git_repo):
+        """Typed in by hand there is no rename record, so the run says it is guessing."""
+        boards = temp_git_repo / 'config' / 'boards' / 'arm'
+        boards.mkdir(parents=True)
+        (boards / 'defconfig').write_text('CONFIG_ARM=y\n')
+        (temp_git_repo / 'README.md').write_text('The board is config/boards/arm/defconfig now.\n')
+
+        result = run_check('--pattern', 'boards/arm/defconfig', cwd=temp_git_repo)
+
+        assert result.returncode == 0
+        assert '1 hit matched the text and resolved to a path on disk' in result.stdout
+        assert 'README.md:1' in result.stdout
 
 
 class TestSweepAcrossRepos:

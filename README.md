@@ -19,6 +19,12 @@ exactly the way code does — a usage example naming a library that has since
 moved is the drift this tool exists to catch — so prose is scanned unless you
 pass `--skip-docs`.
 
+Inside markdown, a fenced block is read as shell when it is tagged as shell
+(` ```bash `, ` ```sh `, ` ```shell `, ` ```console `) or carries no tag at all.
+A block tagged as another language holds another language: a ` ```yaml ` sample
+showing a tool's own report is not an invocation, however much its
+`bash some/path.sh` line looks like one.
+
 ### Warnings (exit 0 unless --strict)
 
 1. **Fragile to working directory** - Relative paths that only work from

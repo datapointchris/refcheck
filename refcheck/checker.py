@@ -2,6 +2,7 @@
 
 import os
 import re
+from collections.abc import Iterable
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -101,6 +102,28 @@ class ReferenceChecker:
     # reason the source and script lookbehinds exist: `bash setup.sh && echo ok`
     # runs the script, and only the leading command says what the line is for.
     DOCUMENTING_COMMANDS = re.compile(r'^\s*(?:echo|printf)\b')
+
+    # A fenced block opens on three or more backticks or tildes and may name the
+    # language it holds. Only the first word of that info string is the
+    # language, because ```bash file=scripts/deploy.sh carries an attribute
+    # after it.
+    FENCE_DELIMITER = re.compile(r'^\s*(`{3,}|~{3,})\s*(\S*)')
+
+    # The info strings that mean a block holds shell. `console` and
+    # `shellsession` are the two spellings markdown uses for a transcript, and
+    # a transcript is exactly where a documented invocation lives.
+    SHELL_FENCE_LANGUAGES = frozenset(
+        {
+            'bash',
+            'sh',
+            'shell',
+            'shellsession',
+            'shell-session',
+            'console',
+            'zsh',
+            'ksh',
+        }
+    )
 
     # An argument ends on a path character so prose punctuation stays out of the
     # filename: `source lib/setup.sh, then run it` has to yield lib/setup.sh and
@@ -223,6 +246,61 @@ class ReferenceChecker:
         was careful to keep scanning for.
         """
         return file_path.suffix == '.md' or line.lstrip().startswith('#') or bool(self.DOCUMENTING_COMMANDS.match(line))
+
+    def fence_reads_as_shell(self, info: str) -> bool:
+        """Whether a fence's info string says the block holds shell.
+
+        An empty info string is shell here. An untagged block is very commonly
+        shell, and prose is where a stale reference survives longest, so an
+        explicit tag naming another language is the only thing that puts a block
+        out of scope.
+        """
+        language = info.strip('{}.').lower()
+        return not language or language in self.SHELL_FENCE_LANGUAGES
+
+    def lines_a_shell_could_run(self, file_path: Path, lines: Iterable[str]) -> Iterator[tuple[int, str]]:
+        """The numbered lines of a file, less the fenced blocks holding another language.
+
+        Markdown quotes other languages constantly, and a tool's own output is
+        the case that bites hardest. A ```yaml block showing a sample report
+        prints `bash tests/helpers.sh` as a finding; `tests/` is a directory the
+        repo really has, so the leading-directory guard passes it through and
+        refcheck reports itself. Nothing downstream can tell that line from an
+        invocation, because by the time it arrives it is identical to one.
+
+        The fence markers never come back either. ```bash file=scripts/deploy.sh
+        opens a block rather than running anything, and its attributes parse as
+        an invocation of a file named `file=scripts/deploy.sh`.
+
+        Fences are a markdown construct, so every line of any other file is
+        yielded as it is read.
+        """
+        if file_path.suffix != '.md':
+            yield from enumerate(lines, 1)
+            return
+
+        fence = ''
+        holds_shell = False
+
+        for line_num, line in enumerate(lines, 1):
+            if fence:
+                # A closing run is the same character as the opener and at least
+                # as long, which is what lets a ``` block sit inside a ````
+                # block without ending it.
+                closer = line.strip()
+                if len(closer) >= len(fence) and set(closer) == {fence[0]}:
+                    fence = ''
+                elif holds_shell:
+                    yield line_num, line
+                continue
+
+            opener = self.FENCE_DELIMITER.match(line)
+            if opener:
+                fence = opener.group(1)
+                holds_shell = self.fence_reads_as_shell(opener.group(2))
+                continue
+
+            yield line_num, line
 
     def anchor(self, path: str) -> Path:
         """Where a referenced path actually lives, absolute.
@@ -664,7 +742,7 @@ class ReferenceChecker:
                 symbol_table = self.parse_variable_assignments(file_path)
 
                 with file_path.open(encoding='utf-8') as f:
-                    for line_num, line in enumerate(f, 1):
+                    for line_num, line in self.lines_a_shell_could_run(file_path, f):
                         match = self.SOURCE_COMMAND.search(line)
                         if not match:
                             continue
@@ -726,14 +804,8 @@ class ReferenceChecker:
             try:
                 rel_path = file_path.relative_to(self.root_dir)
                 with file_path.open(encoding='utf-8') as f:
-                    for line_num, line in enumerate(f, 1):
+                    for line_num, line in self.lines_a_shell_could_run(file_path, f):
                         if 'bash' not in line and 'sh' not in line:
-                            continue
-
-                        # ```bash file=scripts/deploy.sh opens a fence, it does
-                        # not run anything, and its attributes parse as an
-                        # invocation of a file named `file=scripts/deploy.sh`.
-                        if line.lstrip().startswith('```'):
                             continue
 
                         if self.runs_on_another_host(line):

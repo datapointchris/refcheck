@@ -40,29 +40,29 @@ class ReferenceChecker:
         '.planning/**',
         'site/**',
         # Append-only event logs record what a path *was*, not what should
-        # exist. A 197 MB devstats log naming every file a hook once checked
-        # reported nine misses for one query, all of them history.
+        # exist. A 197 MB log naming every file a hook had ever checked reported
+        # nine misses for one query, all of them history.
         '*.jsonl',
         # Same reasoning: a run transcript names what existed when it ran. A
-        # gitignored test-wsl-docker.log reported the pre-rename name of a tool
-        # that had just been renamed everywhere it is actually referenced.
+        # gitignored test log reported the pre-rename name of a tool that had
+        # just been renamed everywhere it is actually referenced.
         '*.log',
         # A changelog is that same thing written deliberately: an entry naming
         # cli/Makefile is correct precisely because that is where the file was
         # when it shipped, and rewriting history to match the current tree would
-        # be the bug. Seven of the twenty-two hits in the fleet-wide rename
-        # replay were changelog entries, the single largest source of noise.
+        # be the bug. Replaying a batch of real renames across a machine, nearly
+        # a third of the hits were changelog entries — the largest single source
+        # of noise in the run.
         'CHANGELOG.md',
     ]
 
-    # A fixtures directory holds recorded data, not references. ichrisbirch's
-    # tests/stats/fixtures/tool_outputs/tokei_output.json is a captured tokei
-    # run naming every file in the repo when it was taken, and one commit
-    # removing the Flask app made it 219 of the 280 hits across the whole fleet
-    # — enough to bury the four findings that were real. Nobody would hand-edit
-    # it either; the fix is to re-run the tool. `--test-mode` scans them anyway.
+    # A fixtures directory holds recorded data, not references. A captured tool
+    # output — a file listing, a coverage report — names every file that existed
+    # when it was taken, so one commit deleting a subsystem turns it into
+    # hundreds of hits, enough to bury the handful that are real. Nobody would
+    # hand-edit one either; the fix is to re-run the tool that wrote it.
+    # `--test-mode` scans them anyway.
     TEST_FIXTURE_PATTERNS = [
-        'tests/apps/test-refcheck.sh',
         'fixtures/**',
         '**/fixtures/**',
         'testdata/**',
@@ -91,8 +91,8 @@ class ReferenceChecker:
         r'^/Users/',
         # Same class as the home directories above: machine state, not repo
         # content. Whether /etc/os-release resolves says which OS is running the
-        # check, so a Mac would report the `. /etc/os-release` that theme and
-        # font each run behind a Linux guard.
+        # check, so a Mac reports every `. /etc/os-release` that a script runs
+        # behind a Linux guard.
         r'^/etc/',
         r'/nvm\.sh$',
         r'^/lib/lib\.sh',
@@ -236,11 +236,9 @@ class ReferenceChecker:
 
         Markdown is documentation throughout. A shell script is documentation in
         the two places it explains itself: a `#` comment, and a usage string it
-        echoes. logsift's header block writes `bash install.sh` as an
-        illustration and `bash management/run-and-summarize.sh` under a
-        "CORRECT:" heading, then echoes both back from its usage function — and
-        that one file produced seven reported misses, none of them a reference to
-        anything.
+        echoes. A header block writing `bash install.sh` as an illustration, and
+        a usage function echoing the same line back, produced seven reported
+        misses from one file — none of them a reference to anything.
 
         This chooses which guards apply, never whether the line is read. A
         comment naming a directory the repo has still resolves and is still
@@ -312,11 +310,11 @@ class ReferenceChecker:
         it to the repo root produces `<repo>/~/…`, which cannot exist for any
         input. Every tilde reference was therefore reported missing, always.
 
-        Measured on dotfiles: `tests/apps/all-apps.sh` sources three deployed
-        shell libraries by their `~/.local/shell/` paths, and all three were
-        reported on every run while resolving fine. That is the whole of this
-        tool's value spent on noise — a checker is worth its false-positive rate,
-        and three standing errors is what teaches a reader to stop reading the
+        Measured on a real repo: one test script sourced three deployed shell
+        libraries by their `~/.local/shell/` paths, and all three were reported
+        on every run while resolving fine. That is the whole of this tool's
+        value spent on noise — a checker is worth its false-positive rate, and
+        three standing errors is what teaches a reader to stop reading the
         output.
 
         A `~/` reference is the *deployed* spelling, which is the one a script
@@ -395,10 +393,10 @@ class ReferenceChecker:
         Markdown is in because a usage example naming a library is exactly the
         drift this tool exists to catch, and for a long time it was scanned by
         nothing: these checks globbed `**/*.sh`, so `refcheck docs/` reported
-        "all references valid" over five copies of
-        `source "$DOTFILES_DIR/install/common/lib/error-handling.sh"` pointing
-        at a path no code had used in months. A false clean is worse than a
-        false positive, because it certifies the rot.
+        "all references valid" over five copies of a documented
+        `source "$SOME_DIR/lib/error-handling.sh"` pointing at a path no code
+        had used in months. A false clean is worse than a false positive,
+        because it certifies the rot.
 
         Filtering one full listing rather than globbing per suffix is what makes
         a single-file argument behave: find_files ignores its pattern in that
@@ -434,9 +432,9 @@ class ReferenceChecker:
         drops the bytes it cannot decode and hands the rest on as the line, so
         a directory name carrying an accent arrives with that letter missing and
         the existence test asks the kernel about a path nobody wrote. That
-        contradicts the property the
-        cross-repo check rests on — a token is tested as written, because that
-        is what a program on that line would open.
+        contradicts the property the cross-repo check rests on — a token is
+        tested as written, because that is what a program on that line would
+        open.
 
         A refusal is recorded and a file that is not text is not. The bytes
         arrived in the second case, so no reference was missed, and naming
@@ -602,14 +600,14 @@ class ReferenceChecker:
 
         A bare filename is resolved the same way, because a rename whose new
         name ends in the old one is the common case rather than the exotic one
-        — `tools.json` to `fleet-built-tools.json` puts the pattern inside
-        every site that was just repaired. A hit standing alone as its own
-        token is still reported, so `--pattern backmeup` finds `Run backmeup`.
+        — `tools.json` to `built-tools.json` puts the pattern inside every
+        site that was just repaired. A hit standing alone as its own token is
+        still reported, so `--pattern oldname` finds `Run oldname`.
 
         `from_file` is the file the line came from, and a token is resolved
         against that file's directory as well as the root. A markdown link
-        spells its target relative to itself, so `../pinned-versions.json` in
-        standards/ resolves from there and nowhere else.
+        spells its target relative to itself, so `../pinned-versions.json` in a
+        subdirectory resolves from there and nowhere else.
 
         A token naming somewhere absolute is tested against the filesystem
         rather than against a root. `~/.local/share/<repo>/pinned-versions.json`
@@ -635,7 +633,7 @@ class ReferenceChecker:
                 bases.append(from_file.parent)
 
             # A token rooted at a shell variable has no literal path to test, and
-            # `$REPO_ROOT/homelab-hosts.json` is the corrected reference rather
+            # `$REPO_ROOT/cluster-hosts.json` is the corrected reference rather
             # than a stale one. The variable is dropped and the remainder is
             # resolved, so a live name is found and `$REPO_ROOT/hosts.json` still
             # resolves to nothing and is still reported.
@@ -669,11 +667,11 @@ class ReferenceChecker:
     def _is_this_repos_own(self, token: str, from_file: Path | None) -> bool:
         """True when the token is about a directory this repo holds itself.
 
-        A registry name and an ordinary directory name collide — `docs`,
-        `theme`, `font` and `work` are all repos and all common top-level
-        directories. So a repo holding its own `docs/` answers for everything
-        under it, and only a token whose first segment names nothing here is
-        handed to the repo that segment names.
+        A registry name and an ordinary directory name collide constantly: a
+        registry of any size carries a repo called `docs`, `assets` or `tools`,
+        and so does half the trees it lists. So a repo holding its own `docs/`
+        answers for everything under it, and only a token whose first segment
+        names nothing here is handed to the repo that segment names.
 
         The question is about the first segment, not the whole token. Asking
         whether the whole path exists answers no for exactly the tokens worth

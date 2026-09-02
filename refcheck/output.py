@@ -275,10 +275,9 @@ def print_rules_hint(issues: list[Issue], rules_path: Path | None) -> None:
 
     Rules feed exactly one thing: the "Possible matches" line under a broken
     reference. They detect nothing on their own, so a run that found nothing has
-    nothing to gain from them — and the old unconditional hint printed on 48 of
-    the 49 repos in the fleet, every one of them passing. A prompt to do
-    maintenance with no finding behind it is what teaches a reader to skim past
-    the output.
+    nothing to gain from them. Printed unconditionally the hint lands on nearly
+    every passing run, and a prompt to do maintenance with no finding behind it
+    is what teaches a reader to skim past the output.
     """
     if rules_path is None or rules_path.exists():
         return

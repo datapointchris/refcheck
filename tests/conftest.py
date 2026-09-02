@@ -142,8 +142,8 @@ def test_fixtures(temp_dir):
 
     (valid / 'remote-exec.sh').write_text(
         '#!/usr/bin/env bash\n'
-        'pct exec 100 -- su - chris -c "cd ~/dotfiles && bash install.sh"\n'
-        'ssh chris@10.0.0.1 bash /opt/remote-only.sh\n'
+        'pct exec 100 -- su - deploy -c "cd ~/dotfiles && bash install.sh"\n'
+        'ssh deploy@build-host bash /opt/remote-only.sh\n'
     )
 
     lib = valid / 'lib'
@@ -153,9 +153,9 @@ def test_fixtures(temp_dir):
         '#!/usr/bin/env bash\n# Usage:\n#   source valid/lib/helpers.sh\necho "the source above is documentation"\n'
     )
 
-    # The shapes logsift's run-and-summarize.sh reported seven misses for: a
-    # header block illustrating invocations, and a usage function echoing them
-    # back. Neither names anything meant to exist here.
+    # The two shapes that reported seven misses from a single file: a header
+    # block illustrating invocations, and a usage function echoing them back.
+    # Neither names anything meant to exist here.
     (valid / 'documented-invocations.sh').write_text(
         '#!/usr/bin/env bash\n'
         '# Examples:\n'

@@ -563,10 +563,10 @@ def test_an_unquoted_variable_source_resolves_instead_of_going_absolute(tmp_path
 def test_a_system_file_under_etc_is_not_a_repo_reference(tmp_path):
     """Whether /etc/os-release exists says which OS is linting, not what went stale.
 
-    theme and font both source it behind a `-f /etc/os-release` guard, and both
-    already carry a comment that it is absent on macOS. The dot form is the
-    usual spelling, so matching it put those two files one platform away from
-    being reported.
+    Two scripts sourced it behind a `-f /etc/os-release` guard, each already
+    carrying a comment that it is absent on macOS. The dot form is the usual
+    spelling, so matching it put both files one platform away from being
+    reported.
     """
     (tmp_path / 'run.sh').write_text('#!/usr/bin/env bash\n. /etc/absent-on-every-machine.conf\n')
 
@@ -606,26 +606,26 @@ def test_pattern_still_reports_a_path_that_does_not_resolve(tmp_path):
 def test_pattern_ignores_a_bare_name_inside_the_name_that_replaced_it(tmp_path):
     """A rename whose new name ends in the old one repairs every site into a hit.
 
-    `tools.json` became `fleet-built-tools.json`, so the pattern sits inside
-    every reference that was just corrected. Reporting those is a clean tree
-    coming back red, which is how a checker stops being run.
+    `tools.json` became `built-tools.json`, so the pattern sits inside every
+    reference that was just corrected. Reporting those is a clean tree coming
+    back red, which is how a checker stops being run.
     """
-    (tmp_path / 'fleet-built-tools.json').write_text('{}\n')
-    (tmp_path / 'README.md').write_text('The list is `fleet-built-tools.json` now.\n')
+    (tmp_path / 'built-tools.json').write_text('{}\n')
+    (tmp_path / 'README.md').write_text('The list is `built-tools.json` now.\n')
 
     checker = ReferenceChecker(tmp_path)
-    checker.check_pattern('tools.json', 'fleet-built-tools.json')
+    checker.check_pattern('tools.json', 'built-tools.json')
 
     assert checker.issues == []
 
 
 def test_pattern_still_reports_a_bare_name_standing_on_its_own(tmp_path):
     """The old name alone is the reference the rename left behind."""
-    (tmp_path / 'fleet-built-tools.json').write_text('{}\n')
+    (tmp_path / 'built-tools.json').write_text('{}\n')
     (tmp_path / 'README.md').write_text('The list is `tools.json` at the root.\n')
 
     checker = ReferenceChecker(tmp_path)
-    checker.check_pattern('tools.json', 'fleet-built-tools.json')
+    checker.check_pattern('tools.json', 'built-tools.json')
 
     assert len(checker.issues) == 1
 
@@ -633,13 +633,13 @@ def test_pattern_still_reports_a_bare_name_standing_on_its_own(tmp_path):
 def test_pattern_resolves_a_relative_link_against_the_file_holding_it(tmp_path):
     """A markdown link spells its target relative to itself, not to the root.
 
-    `[pinned-versions.json](../pinned-versions.json)` in standards/ resolves
-    from standards/ and from nowhere else, so resolving only against the root
-    reports a working link.
+    `[pinned-versions.json](../pinned-versions.json)` in a subdirectory
+    resolves from that subdirectory and from nowhere else, so resolving only
+    against the root reports a working link.
     """
     (tmp_path / 'pinned-versions.json').write_text('{}\n')
-    (tmp_path / 'standards').mkdir()
-    (tmp_path / 'standards' / 'go.md').write_text('The numbers are [pinned-versions.json](../pinned-versions.json).\n')
+    (tmp_path / 'guides').mkdir()
+    (tmp_path / 'guides' / 'go.md').write_text('The numbers are [pinned-versions.json](../pinned-versions.json).\n')
 
     checker = ReferenceChecker(tmp_path)
     checker.check_pattern('versions.json', 'pinned-versions.json')
@@ -650,8 +650,8 @@ def test_pattern_resolves_a_relative_link_against_the_file_holding_it(tmp_path):
 def test_pattern_still_reports_a_relative_link_to_something_gone(tmp_path):
     """Resolving against the file's own directory does not launder a dead link."""
     (tmp_path / 'pinned-versions.json').write_text('{}\n')
-    (tmp_path / 'standards').mkdir()
-    (tmp_path / 'standards' / 'go.md').write_text('The numbers are [versions.json](../versions.json).\n')
+    (tmp_path / 'guides').mkdir()
+    (tmp_path / 'guides' / 'go.md').write_text('The numbers are [versions.json](../versions.json).\n')
 
     checker = ReferenceChecker(tmp_path)
     checker.check_pattern('versions.json', 'pinned-versions.json')
@@ -660,29 +660,29 @@ def test_pattern_still_reports_a_relative_link_to_something_gone(tmp_path):
 
 
 def test_pattern_resolves_a_token_rooted_at_a_shell_variable(tmp_path):
-    """`$REPO_ROOT/homelab-hosts.json` is the corrected reference, not a stale one.
+    """`$REPO_ROOT/cluster-hosts.json` is the corrected reference, not a stale one.
 
     The variable has no literal path to test, so the token resolves to
     nothing and every repaired assignment in a test file comes back as a hit.
     """
-    (tmp_path / 'homelab-hosts.json').write_text('{}\n')
+    (tmp_path / 'cluster-hosts.json').write_text('{}\n')
     (tmp_path / 'tests').mkdir()
-    (tmp_path / 'tests' / 'registry.bats').write_text('  HOMELAB_HOSTS="$REPO_ROOT/homelab-hosts.json"\n')
+    (tmp_path / 'tests' / 'registry.bats').write_text('  CLUSTER_HOSTS="$REPO_ROOT/cluster-hosts.json"\n')
 
     checker = ReferenceChecker(tmp_path)
-    checker.check_pattern('hosts.json', 'homelab-hosts.json')
+    checker.check_pattern('hosts.json', 'cluster-hosts.json')
 
     assert checker.issues == []
 
 
 def test_pattern_still_reports_a_stale_name_under_a_shell_variable(tmp_path):
     """Dropping the variable resolves the name; it does not excuse a dead one."""
-    (tmp_path / 'homelab-hosts.json').write_text('{}\n')
+    (tmp_path / 'cluster-hosts.json').write_text('{}\n')
     (tmp_path / 'tests').mkdir()
     (tmp_path / 'tests' / 'registry.bats').write_text('  HOSTS="$REPO_ROOT/hosts.json"\n')
 
     checker = ReferenceChecker(tmp_path)
-    checker.check_pattern('hosts.json', 'homelab-hosts.json')
+    checker.check_pattern('hosts.json', 'cluster-hosts.json')
 
     assert len(checker.issues) == 1
 
@@ -712,15 +712,15 @@ def test_pattern_reports_a_stale_path_on_a_line_that_also_holds_a_url(tmp_path):
 def test_pattern_ignores_hits_inside_run_logs(tmp_path):
     """A run transcript names what existed when it ran, like the .jsonl logs.
 
-    Renaming backmeup to packup reported one miss against a gitignored
-    test-wsl-docker.log, after every live reference had already been updated.
+    Renaming a tool reported one miss against a gitignored run log, after every
+    live reference had already been updated.
     """
-    (tmp_path / 'test-wsl-docker.log').write_text('✓ backmeup help\n')
+    (tmp_path / 'run-transcript.log').write_text('✓ oldname help\n')
     (tmp_path / 'docs').mkdir()
-    (tmp_path / 'docs' / 'guide.md').write_text('Run backmeup to archive a directory.\n')
+    (tmp_path / 'docs' / 'guide.md').write_text('Run oldname to archive a directory.\n')
 
     checker = ReferenceChecker(tmp_path)
-    checker.check_pattern('backmeup', 'renamed to packup')
+    checker.check_pattern('oldname', 'renamed to newname')
 
     assert len(checker.issues) == 1
     assert 'docs/guide.md' in str(checker.issues[0])
@@ -844,17 +844,17 @@ def test_pattern_falls_back_when_a_variable_points_somewhere_else(tmp_path, monk
     """Expansion is tried first and is never the only answer.
 
     `$REPO_ROOT` set to another checkout expands to a path with no
-    homelab-hosts.json in it, and the corrected reference is still corrected.
+    cluster-hosts.json in it, and the corrected reference is still corrected.
     """
     monkeypatch.setenv('REPO_ROOT', str(tmp_path / 'somewhere-else'))
     (tmp_path / 'somewhere-else').mkdir()
     repo = tmp_path / 'repo'
     repo.mkdir()
-    (repo / 'homelab-hosts.json').write_text('{}\n')
-    (repo / 'registry.bats').write_text('  HOMELAB_HOSTS="$REPO_ROOT/homelab-hosts.json"\n')
+    (repo / 'cluster-hosts.json').write_text('{}\n')
+    (repo / 'registry.bats').write_text('  CLUSTER_HOSTS="$REPO_ROOT/cluster-hosts.json"\n')
 
     checker = ReferenceChecker(repo)
-    checker.check_pattern('hosts.json', 'now homelab-hosts.json')
+    checker.check_pattern('hosts.json', 'now cluster-hosts.json')
 
     assert checker.issues == []
 
@@ -978,13 +978,13 @@ class TestSweepAcrossRepos:
         """
         consumer = tmp_path / 'consumer'
         consumer.mkdir()
-        (consumer / 'standards.md').write_text(f'The live reader is `{temp_git_repo.name}/versions.json`, which builds the pins.\n')
+        (consumer / 'guide.md').write_text(f'The live reader is `{temp_git_repo.name}/versions.json`, which builds the pins.\n')
         registry = self.registry_at(tmp_path / 'reg.json', temp_git_repo, consumer)
 
         result = run_check('--pattern', 'versions.json', '--desc', 'now pinned', '--registry', str(registry), cwd=temp_git_repo)
 
         assert result.returncode == 1
-        assert f'{consumer}/standards.md:1' in result.stdout
+        assert f'{consumer}/guide.md:1' in result.stdout
         assert f'Gone from {temp_git_repo.name}: versions.json' in result.stdout
 
     def test_the_registry_form_finds_what_the_in_repo_form_finds(self, tmp_path, temp_git_repo):
@@ -997,7 +997,7 @@ class TestSweepAcrossRepos:
         """
         consumer = tmp_path / 'consumer'
         consumer.mkdir()
-        (consumer / 'standards.md').write_text(
+        (consumer / 'guide.md').write_text(
             f'The live reader is `{temp_git_repo.name}/versions.json`.\nAlso at {temp_git_repo}/versions.json today.\n'
         )
         registry = self.registry_at(tmp_path / 'reg.json', temp_git_repo, consumer)
@@ -1005,11 +1005,11 @@ class TestSweepAcrossRepos:
         in_repo = run_check('--pattern', 'versions.json', cwd=consumer)
         through_registry = run_check('--pattern', 'versions.json', '--registry', str(registry), cwd=temp_git_repo)
 
-        found_locally = {line for line in in_repo.stdout.splitlines() if 'standards.md:' in line}
-        found_by_sweep = {line.split('/')[-1] for line in through_registry.stdout.splitlines() if 'standards.md:' in line}
+        found_locally = {line for line in in_repo.stdout.splitlines() if 'guide.md:' in line}
+        found_by_sweep = {line.split('/')[-1] for line in through_registry.stdout.splitlines() if 'guide.md:' in line}
 
-        assert {line.strip() for line in found_locally} == {'standards.md:1', 'standards.md:2'}
-        assert found_by_sweep == {'standards.md:1', 'standards.md:2'}
+        assert {line.strip() for line in found_locally} == {'guide.md:1', 'guide.md:2'}
+        assert found_by_sweep == {'guide.md:1', 'guide.md:2'}
 
     def test_expands_a_home_relative_registry_path(self, tmp_path, temp_git_repo, monkeypatch):
         """The registry spells its paths with `~`, so an unexpanded one would sweep nothing."""

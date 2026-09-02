@@ -189,7 +189,7 @@ honoured:
 {
   "exclude_paths": ["~/code/third-party"],
   "repos": [
-    {"name": "dotfiles", "path": "~/dotfiles", "status": "active"},
+    {"name": "toolbox", "path": "~/code/toolbox", "status": "active"},
     {"name": "old-thing", "path": "~/code/old-thing", "status": "retired"}
   ]
 }
@@ -206,10 +206,10 @@ names sits inside a repo the registry lists and is not there.
 
 The second form is resolved through the registry's own names, so a token is only
 repo-qualified when its first segment is a name the registry carries. A repo
-name and a directory name collide often — `docs`, `theme`, `font` and `work` are
-all repos and all ordinary top-level directories — so the repo being scanned is
-asked first, and only a path it cannot answer for is handed to the repo its
-first segment names.
+name and a directory name collide constantly — a registry of any size carries a
+repo called `docs`, `assets` or `tools`, and so does half the trees it lists —
+so the repo being scanned is asked first, and only a path it cannot answer for
+is handed to the repo its first segment names.
 
 Those two halves ask about different forms of the same path, because different
 things answer them. **Is it there** is the kernel's answer, so it gets the path
@@ -384,7 +384,13 @@ Fragile to Refactoring (1):
 ## Exit codes
 
 - `0` - All references valid, or only warnings found (default mode)
-- `1` - Found errors, or warnings in strict mode (`--strict`)
+- `1` - Found errors, a path the run could not read, or warnings in strict mode
+  (`--strict`)
+- `2` - The run was asked for something it cannot do: a directory that is not
+  there, a `--registry` that is missing or is not JSON, or `--registry` with no
+  moved path to look for
+- `128` - `--moves` or `--moves-since` outside a git repository, which is git's
+  own code for it
 
 **Use in scripts:**
 
@@ -487,7 +493,7 @@ is stdlib.
 
 Modular structure:
 
-- `cli.py` - argparse CLI entry point
+- `cli.py` - typer CLI entry point
 - `config.py` - Config dataclass, TOML loading
 - `checker.py` - ReferenceChecker class (core logic)
 - `moves.py` - Renames and deletions read from git

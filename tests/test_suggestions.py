@@ -63,8 +63,9 @@ class TestFileSuggestions:
     def test_should_skip_binary_content_whatever_the_extension(self, temp_dir, suggestions):
         """A suffix list never keeps up; content decides.
 
-        Regression for a 1.4 GB indy.db being read as text and pattern-matched,
-        which produced 29 of the 31 hits reported for a single --pattern query.
+        Regression for a multi-gigabyte SQLite database being read as text and
+        pattern-matched, which produced 29 of the 31 hits reported for a single
+        --pattern query.
         """
         database = temp_dir / 'index.db'
         database.write_bytes(b'SQLite format 3\x00' + b'\x01\x02\x03' * 100)

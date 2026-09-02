@@ -372,16 +372,16 @@ class TestACitationThatNamesTheRepoItReaches:
 
     def test_reports_a_citation_naming_the_repo_and_the_gone_path(self, two_repos):
         upstream, consumer = two_repos
-        (consumer / 'standards.md').write_text('The live reader is `upstream/versions.json`, which builds the pins.\n')
+        (consumer / 'guide.md').write_text('The live reader is `upstream/versions.json`, which builds the pins.\n')
 
         result = sweep.across_repos(repos_for(upstream, consumer), {'versions.json': 'now pinned-versions.json'})
 
-        assert names(result) == ['consumer:standards.md']
+        assert names(result) == ['consumer:guide.md']
         assert result.issues[0].message == 'Gone from upstream: versions.json'
 
     def test_the_corrected_citation_stays_silent(self, two_repos):
         upstream, consumer = two_repos
-        (consumer / 'standards.md').write_text('The live reader is `upstream/pinned-versions.json`.\n')
+        (consumer / 'guide.md').write_text('The live reader is `upstream/pinned-versions.json`.\n')
 
         assert names(sweep.across_repos(repos_for(upstream, consumer), {'versions.json': 'now pinned-versions.json'})) == []
 
@@ -393,7 +393,7 @@ class TestACitationThatNamesTheRepoItReaches:
         assert names(sweep.across_repos(repos_for(upstream, consumer), {'versions.json': 'now pinned-versions.json'})) == []
 
     def test_a_directory_this_repo_holds_stays_silent(self, two_repos):
-        """`docs`, `theme`, `font` and `work` are registry names and ordinary directories.
+        """A registry of any size carries a name that is also an ordinary directory.
 
         A repo naming its own `upstream/versions.json` is answering for a file it
         holds, so the first segment matching a repo name decides nothing until

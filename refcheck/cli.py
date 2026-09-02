@@ -289,8 +289,8 @@ def learn_rules():
 
 
 # Registered last so `check` heads the command list, and by the library rather
-# than by hand: the step order inside run_update is load-bearing, and every
-# fleet tool reports an update the same way because they all call it.
+# than by hand: the step order inside run_update is load-bearing, so calling it
+# is what keeps the update path the same as every other consumer's.
 add_update_command(app, UPDATE_CONFIG)
 
 

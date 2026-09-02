@@ -55,6 +55,17 @@ it was repaired or merely has not been cleaned up yet.
 only the hits that record cannot account for. A hit spelling the new path is a
 repair the run can prove, so it says nothing about it.
 
+What the listing covers is the resolver's guesses, not every occurrence of the
+string. A hit inside a URL is not listed, because a URL names no file whatever
+the tree holds, and a docs page swept for a moved path would otherwise list
+every link quoting it. Nor is a file the scan never opened — `--show-config`
+prints every exclusion in force and the layer that set it.
+
+Two spellings of the same name are not ordered, so neither is a workaround for
+the other. `--pattern .markdownlint.json` finds nothing on a line spelling the
+name without the dot, and `--pattern markdownlint.json` finds both. Sweep for
+the shortest form the rename left behind.
+
 ## Why use it
 
 **Proactive error detection:**

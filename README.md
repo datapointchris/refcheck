@@ -197,8 +197,8 @@ honoured:
 
 **A reference from one repo into another either spells a location or names the
 repo.** Code spells it — an absolute path, a `~`, or a variable holding one.
-Prose names it, because `dotfiles/apps/common/pull-requests` is how a document
-points at a file in another repo without knowing where that repo is checked out.
+Prose names it, because `<repo-name>/path/inside-it` is how a document points at
+a file in another repo without knowing where that repo is checked out.
 Both forms resolve to a directory here, which is what makes the sweep safe on a
 pattern as loose as `versions.json`: the token becomes a location and the answer
 is the filesystem's, not the string's. A hit is reported only when the path it

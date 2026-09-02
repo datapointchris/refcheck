@@ -44,9 +44,9 @@ class Unreadable:
 
     A file that will not open and a directory that will not list are both
     unscanned, and a scan that covered less than it was handed cannot print a
-    tick. So the failure travels beside the issues instead of being dropped at
-    the `except`, which is the same false clean a missing repo produces one
-    level up.
+    tick. So a refusal is carried out to the report rather than swallowed where
+    it happens, which is the same false clean a missing repo produces one level
+    up.
     """
 
     path: Path
@@ -141,9 +141,9 @@ def print_results(
 def _print_unreadable(unreadable: list[Unreadable]) -> None:
     """Say which files and directories the walk could not read.
 
-    A scan of a tree it could only partly open still printed the tick, so the
-    one thing this tool sells — a clean result that means something — was being
-    said about files nobody had read.
+    The one thing this tool sells is a clean result that means something, and a
+    tree it could only partly open cannot support one. Naming what it could not
+    reach is what keeps the tick honest for the files it did read.
     """
     print(f'\n❌ {len(unreadable)} path(s) could not be read, so this scan covered less than the tree\n')
     print('Unreadable:')
@@ -175,10 +175,16 @@ def print_sweep(sweep: 'SweepResult', patterns: dict[str, str]) -> None:
 
         repos = _count(sweep.scanned, 'repo')
 
-        if not sweep.issues:
+        # The tick is a claim about every repo the caller named, so a run that
+        # could not read one of them has no tick to print. Saying "no repo names
+        # a path that moved" above a repo the sweep never opened is the false
+        # clean in one line.
+        if sweep.issues:
+            print(f'❌ Found {len(sweep.issues)} stale reference(s) in {len(sweep.with_issues)} of {repos}{skipped}')
+        elif not sweep.unreached:
             print(f'✅ No repo names a path that moved — {repos}, {len(patterns)} moved path(s){skipped}')
         else:
-            print(f'❌ Found {len(sweep.issues)} stale reference(s) in {len(sweep.with_issues)} of {repos}{skipped}')
+            print(f'❌ {repos} swept, {len(patterns)} moved path(s){skipped} — but the sweep could not read everything it was given')
 
         _print_unlisted_source(sweep)
         print()

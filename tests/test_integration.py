@@ -328,10 +328,10 @@ class TestRealWorldDotfiles:
     def test_validates_management_directory(self, dotfiles_dir):
         """Skipped where the directory is absent, so a pass means a tree was read.
 
-        This asserted a clean exit on `management/` long after dotfiles removed
-        it. The walk found no files, every check passed over nothing, and the
-        assertion held — a green test standing on the false clean refcheck
-        exists to catch.
+        A directory that is not there yields no files, so every check passes
+        over nothing and the assertion holds. That is the false clean this tool
+        exists to catch, and asserting a clean exit without the guard below is a
+        test standing on it.
         """
         if dotfiles_dir is None:
             pytest.skip('Dotfiles directory not found')
@@ -971,11 +971,10 @@ class TestSweepAcrossRepos:
     def test_reports_a_citation_that_names_the_repo_it_reaches(self, tmp_path, temp_git_repo):
         """The reported false negative, through the registry file and the CLI.
 
-        `dotfiles/apps/common/pr-list` in the standards corpus survived a rename
-        that deleted it. The in-repo run found it and the --registry run, which
-        `documentation.md` § "A moved file is swept from above every repo that
-        names it, not from inside one" prescribes as the sweep, reported clean
-        across 93 repos.
+        A document cited `<repo-name>/path/inside-it` and the rename deleted
+        that path. The in-repo run found the citation. The --registry run, which
+        is the only form that can see a consumer in another repo, reported clean
+        across every repo it swept.
         """
         consumer = tmp_path / 'consumer'
         consumer.mkdir()
@@ -1095,6 +1094,51 @@ class TestAPathTheScanCouldNotRead:
         assert result.returncode == 1
         assert 'could not be read' in result.stdout
         assert 'locked' in result.stdout
+
+    def test_the_sweep_prints_no_tick_over_a_repo_it_could_not_read(self, tmp_path, temp_git_repo):
+        """The tick claims every repo the caller named, so one unread repo removes it."""
+        registry = tmp_path / 'reg.json'
+        registry.write_text(
+            json.dumps(
+                {
+                    'repos': [
+                        {'name': temp_git_repo.name, 'path': str(temp_git_repo), 'status': 'active'},
+                        {'name': 'never-cloned', 'path': str(tmp_path / 'never-cloned'), 'status': 'active'},
+                    ]
+                }
+            )
+        )
+
+        result = run_check('--pattern', 'versions.json', '--registry', str(registry), cwd=temp_git_repo)
+
+        assert result.returncode == 1
+        assert 'No repo names a path that moved' not in result.stdout
+        assert 'could not read everything it was given' in result.stdout
+
+    def test_an_unreadable_excluded_directory_does_not_fail_the_run(self, temp_git_repo):
+        """`node_modules` is excluded by declaration, so a refusal inside it is not a gap."""
+        if os.geteuid() == 0:
+            pytest.skip('root reads a 0o000 directory, so there is no refusal to observe')
+
+        blocked = temp_git_repo / 'node_modules' / 'blocked'
+        blocked.mkdir(parents=True)
+        os.chmod(blocked, 0o000)
+        try:
+            result = run_check(cwd=temp_git_repo)
+        finally:
+            os.chmod(blocked, 0o755)
+
+        assert result.returncode == 0
+        assert 'could not be read' not in result.stdout
+
+    def test_a_path_is_tested_as_written_rather_than_with_its_undecodable_bytes_dropped(self, temp_git_repo):
+        """Dropping bytes it cannot decode hands on a path nobody wrote."""
+        accented = 'See ~/x/r\xe9sum\xe9s/versions.json for the pins.\n'
+        (temp_git_repo / 'notes.md').write_bytes(accented.encode('latin-1'))
+
+        result = run_check('--pattern', 'versions.json', cwd=temp_git_repo)
+
+        assert 'notes.md' not in result.stdout
 
     def test_a_directory_that_is_not_there_is_refused(self, temp_git_repo):
         """Walking a path that does not exist finds nothing and passes every check."""

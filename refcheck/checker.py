@@ -411,28 +411,88 @@ class ReferenceChecker:
     def note_unreadable(self, path: Path, error: OSError) -> None:
         """Record a path the walk was handed and could not read.
 
-        Every caller here sat behind a bare `continue`. A file that will not
-        open is a file nobody scanned, and the run still printed a tick, so the
-        one output the tool exists to produce was a claim about files it had
-        never seen.
+        A file that will not open is a file nobody scanned, so a run that hides
+        the refusal prints a tick about files it never saw. The one output this
+        tool sells is a clean result that means something, which is exactly the
+        claim a silent skip empties.
 
         Recorded once per path. A single run walks the tree four times — once
         for patterns, once for source and script statements, twice for the
         fragile-path warnings — so one refused directory arrives here four
-        times and would print as four findings.
+        times and a bare append prints it as four findings.
         """
         entry = Unreadable(path=path, reason=error.strerror or str(error))
         if entry not in self.unreadable:
             self.unreadable.append(entry)
 
-    def find_files(self, suffix: str | None = None) -> list[Path]:
-        """Every file under the search path, minus the exclusions.
+    def lines_of(self, file_path: Path) -> list[str] | None:
+        """The file's lines, or None when it could not be read as text.
+
+        The one place a scanned file is opened, so `encoding` and `errors` are
+        decided once for every check that reads one. Left to each call site
+        they diverge, and `errors='ignore'` is the divergence that matters: it
+        drops the bytes it cannot decode and hands the rest on as the line, so
+        a directory name carrying an accent arrives with that letter missing and
+        the existence test asks the kernel about a path nobody wrote. That
+        contradicts the property the
+        cross-repo check rests on — a token is tested as written, because that
+        is what a program on that line would open.
+
+        A refusal is recorded and a file that is not text is not. The bytes
+        arrived in the second case, so no reference was missed, and naming
+        every binary file is the noise that buries the real findings.
+        """
+        try:
+            return file_path.read_text(encoding='utf-8').splitlines(keepends=True)
+        except OSError as error:
+            self.note_unreadable(file_path, error)
+            return None
+        except UnicodeDecodeError:
+            return None
+
+    def _descend(self, root: Path) -> Iterator[Path]:
+        """Every file under root, skipping an excluded subtree without entering it.
 
         Walked rather than globbed because a glob has nowhere to report a
         directory it could not enter. `Path.glob` swallows the kernel's refusal
-        and yields the entries it did reach, so an unreadable directory removed
-        part of a repo from the scan and nothing said so. `os.walk` hands the
-        error to `onerror`, which is the only reason the walk is written out.
+        and yields the entries it did reach, so an unreadable directory takes
+        part of a repo out of the scan and the run still prints a tick.
+
+        The exclusions are applied here, during the descent, rather than to the
+        files that come out of it. Both answers depend on it: a directory the
+        scan does not read is not a coverage shortfall, so an unreadable
+        `node_modules` must not fail a run that never intended to open it.
+
+        Iterative rather than recursive so a deep tree cannot exhaust the
+        stack, and a symlinked directory is not followed — descending one would
+        report the same files twice and can loop.
+        """
+        stack = [root]
+        while stack:
+            directory = stack.pop()
+            try:
+                entries = sorted(directory.iterdir())
+            except OSError as error:
+                self.note_unreadable(directory, error)
+                continue
+
+            for entry in entries:
+                if entry.is_symlink():
+                    if entry.is_file():
+                        yield entry
+                    continue
+                if entry.is_dir():
+                    try:
+                        rel_path = entry.relative_to(self.root_dir)
+                    except ValueError:
+                        continue
+                    if not self._suggestions.should_skip_directory(rel_path):
+                        stack.append(entry)
+                elif entry.is_file():
+                    yield entry
+
+    def find_files(self, suffix: str | None = None) -> list[Path]:
+        """Every file under the search path, minus the exclusions.
 
         Sorted so two runs over the same tree report in the same order.
         """
@@ -451,33 +511,22 @@ class ReferenceChecker:
                 files.append(search_root)
             return files
 
-        def refused(error: OSError) -> None:
-            self.note_unreadable(Path(error.filename or search_root), error)
+        for file_path in self._descend(search_root):
+            try:
+                rel_path = file_path.relative_to(self.root_dir)
+            except ValueError:
+                continue
 
-        for dirpath, _, filenames in os.walk(search_root, onerror=refused):
-            for name in filenames:
-                file_path = Path(dirpath) / name
+            if self.should_skip_file(rel_path):
+                continue
 
-                # A broken symlink lists as a file and is not one. glob dropped
-                # it on the same question, so the walk has to ask it too.
-                if not file_path.is_file():
-                    continue
+            if suffix and file_path.suffix != suffix:
+                continue
 
-                try:
-                    rel_path = file_path.relative_to(self.root_dir)
-                except ValueError:
-                    continue
+            if self.file_type and file_path.suffix != f'.{self.file_type}':
+                continue
 
-                if self.should_skip_file(rel_path):
-                    continue
-
-                if suffix and file_path.suffix != suffix:
-                    continue
-
-                if self.file_type and file_path.suffix != f'.{self.file_type}':
-                    continue
-
-                files.append(file_path)
+            files.append(file_path)
 
         return sorted(files)
 
@@ -600,16 +649,16 @@ class ReferenceChecker:
     def _in_a_named_repo(token: str, repo_paths: dict[str, Path]) -> Path | None:
         """A `<repo-name>/path/inside/it` token as a location, or None.
 
-        Prose reaches another repo by naming it. `documentation.md` § "A
-        citation names a repo by its registry name" makes that the fleet's
-        declared form, so `dotfiles/apps/common/pr-list` is what a standards
-        file writes and a `~`-rooted path is what it does not. The registry
-        supplies the mapping, which is what turns the first segment into a
-        directory.
+        Prose reaches another repo by naming it, because a document does not
+        know where that repo is checked out on the machine reading it. So a
+        citation spells the repo and the path inside it, where code would spell
+        an absolute or `~`-rooted path. The registry supplies the mapping, which
+        is what turns the first segment into a directory.
 
-        A token carrying no `/` is a bare name and stays None. `dotfiles` alone
-        in a sentence names a repo rather than a file in one, and resolving it
-        to the repo root would answer about a directory that always exists.
+        A token carrying no `/` is a bare name and stays None. A repo's name
+        alone in a sentence names the repo rather than a file in it, and
+        resolving it to the repo root would answer about a directory that
+        always exists.
         """
         head, slash, tail = token.partition('/')
         if not slash or not tail:
@@ -617,19 +666,29 @@ class ReferenceChecker:
         home = repo_paths.get(head)
         return home / tail if home else None
 
-    def _resolves_in_this_repo(self, token: str, from_file: Path | None) -> bool:
-        """True when the token names something this repo actually holds.
+    def _is_this_repos_own(self, token: str, from_file: Path | None) -> bool:
+        """True when the token is about a directory this repo holds itself.
 
         A registry name and an ordinary directory name collide — `docs`,
         `theme`, `font` and `work` are all repos and all common top-level
-        directories. So a repo's own `docs/index.md` is asked about here first,
-        and only a token this repo cannot answer for is handed to the repo its
-        first segment names.
+        directories. So a repo holding its own `docs/` answers for everything
+        under it, and only a token whose first segment names nothing here is
+        handed to the repo that segment names.
+
+        The question is about the first segment, not the whole token. Asking
+        whether the whole path exists answers no for exactly the tokens worth
+        reporting, because a missing file is the thing being looked for. A
+        repo's own stale `docs/versions.json` would then be credited to an
+        unrelated `docs` repo that never held it, and the owner name is the
+        only part of the message telling a reader where to go.
         """
+        head = token.partition('/')[0]
+        if not head:
+            return False
         bases = [self.root_dir]
         if from_file is not None:
             bases.append(from_file.parent)
-        return any((base / token).exists() for base in bases)
+        return any((base / head).is_dir() or (base / token).exists() for base in bases)
 
     def _reaches_a_gone_path_in(
         self,
@@ -668,7 +727,7 @@ class ReferenceChecker:
 
             target = self._on_this_filesystem(token)
             if target is None:
-                if self._resolves_in_this_repo(token, from_file):
+                if self._is_this_repos_own(token, from_file):
                     continue
                 target = self._in_a_named_repo(token, repo_paths)
             if target is None or target.exists():
@@ -743,32 +802,30 @@ class ReferenceChecker:
             if file_path.name in ('refcheck', 'verify-references.py', 'verify-file-references.sh'):
                 continue
 
+            lines = self.lines_of(file_path)
+            if lines is None:
+                continue
+
             try:
                 rel_path = file_path.relative_to(self.root_dir)
-                with file_path.open(encoding='utf-8', errors='ignore') as f:
-                    for line_num, line in enumerate(f, 1):
-                        for pattern, description in patterns.items():
-                            if pattern not in line:
-                                continue
-                            message = stale(pattern, line, file_path)
-                            if message:
-                                self.issues.append(
-                                    Issue(
-                                        file=rel_path,
-                                        line_num=line_num,
-                                        check_type=CheckType.PATTERN,
-                                        message=message,
-                                        suggestion=description,
-                                    )
-                                )
-            except OSError as error:
-                self.note_unreadable(file_path, error)
+            except ValueError:
                 continue
-            except UnicodeDecodeError:
-                # Not a failure to read. The bytes arrived and are not text, so
-                # there is no reference in them to miss, and reporting every
-                # binary file is the noise that stops the real findings landing.
-                continue
+
+            for line_num, line in enumerate(lines, 1):
+                for pattern, description in patterns.items():
+                    if pattern not in line:
+                        continue
+                    message = stale(pattern, line, file_path)
+                    if message:
+                        self.issues.append(
+                            Issue(
+                                file=rel_path,
+                                line_num=line_num,
+                                check_type=CheckType.PATTERN,
+                                message=message,
+                                suggestion=description,
+                            )
+                        )
 
     def go_up_n_levels(self, file_path: Path, n: int) -> Path:
         """Go up N directory levels from file_path."""
@@ -800,13 +857,10 @@ class ReferenceChecker:
             symbol_table['DOTFILES_DIR'] = str(self.find_repo_root(file_path))
             return symbol_table
 
-        try:
-            content = file_path.read_text(encoding='utf-8')
-        except OSError as error:
-            self.note_unreadable(file_path, error)
+        lines = self.lines_of(file_path)
+        if lines is None:
             return symbol_table
-        except UnicodeDecodeError:
-            return symbol_table
+        content = ''.join(lines)
 
         if re.search(r'SCRIPT_DIR="\$\(cd.*BASH_SOURCE', content):
             symbol_table['SCRIPT_DIR'] = str(file_path.parent)
@@ -842,62 +896,59 @@ class ReferenceChecker:
                 rel_path = file_path.relative_to(self.root_dir)
                 symbol_table = self.parse_variable_assignments(file_path)
 
-                with file_path.open(encoding='utf-8') as f:
-                    for line_num, line in self.lines_a_shell_could_run(file_path, f):
-                        match = self.SOURCE_COMMAND.search(line)
-                        if not match:
+                lines = self.lines_of(file_path)
+                if lines is None:
+                    continue
+
+                for line_num, line in self.lines_a_shell_could_run(file_path, lines):
+                    match = self.SOURCE_COMMAND.search(line)
+                    if not match:
+                        continue
+
+                    if self.runs_on_another_host(line):
+                        continue
+
+                    quoted, bare = match.group(1) or match.group(3), match.group(2) or match.group(4)
+                    source_path = quoted or bare
+                    if not source_path:
+                        continue
+
+                    if bare and not self.PATH_SHAPED_ARGUMENT.search(bare):
+                        continue
+
+                    if '$' not in source_path and self.is_dynamic_path(source_path):
+                        continue
+
+                    documentation = self.documents_rather_than_runs(line, file_path)
+
+                    if documentation and self.names_a_placeholder(source_path):
+                        continue
+
+                    original_path = source_path
+                    if '$' in source_path:
+                        try:
+                            source_path = self.resolve_path(source_path, symbol_table, file_path)
+                        except ValueError:
                             continue
 
-                        if self.runs_on_another_host(line):
-                            continue
+                    if documentation and self.describes_another_tree(source_path):
+                        continue
 
-                        quoted, bare = match.group(1) or match.group(3), match.group(2) or match.group(4)
-                        source_path = quoted or bare
-                        if not source_path:
-                            continue
+                    resolved = self.anchor(source_path)
 
-                        if bare and not self.PATH_SHAPED_ARGUMENT.search(bare):
-                            continue
-
-                        if '$' not in source_path and self.is_dynamic_path(source_path):
-                            continue
-
-                        documentation = self.documents_rather_than_runs(line, file_path)
-
-                        if documentation and self.names_a_placeholder(source_path):
-                            continue
-
-                        original_path = source_path
-                        if '$' in source_path:
-                            try:
-                                source_path = self.resolve_path(source_path, symbol_table, file_path)
-                            except ValueError:
-                                continue
-
-                        if documentation and self.describes_another_tree(source_path):
-                            continue
-
-                        resolved = self.anchor(source_path)
-
-                        if not resolved.exists():
-                            similar = self.find_similar_files(source_path)
-                            self.issues.append(
-                                Issue(
-                                    file=rel_path,
-                                    line_num=line_num,
-                                    check_type=CheckType.SOURCE,
-                                    message=f'Missing: {original_path}' + (f' → {source_path}' if original_path != source_path else ''),
-                                    suggestion='Verify path exists or update reference',
-                                    similar_files=similar,
-                                )
+                    if not resolved.exists():
+                        similar = self.find_similar_files(source_path)
+                        self.issues.append(
+                            Issue(
+                                file=rel_path,
+                                line_num=line_num,
+                                check_type=CheckType.SOURCE,
+                                message=f'Missing: {original_path}' + (f' → {source_path}' if original_path != source_path else ''),
+                                suggestion='Verify path exists or update reference',
+                                similar_files=similar,
                             )
-            except OSError as error:
-                self.note_unreadable(file_path, error)
-                continue
-            except UnicodeDecodeError:
-                # Not a failure to read. The bytes arrived and are not text, so
-                # there is no reference in them to miss, and reporting every
-                # binary file is the noise that stops the real findings landing.
+                        )
+            except ValueError:
                 continue
 
     def check_script_references(self):
@@ -910,49 +961,46 @@ class ReferenceChecker:
         for file_path in self.reference_check_files():
             try:
                 rel_path = file_path.relative_to(self.root_dir)
-                with file_path.open(encoding='utf-8') as f:
-                    for line_num, line in self.lines_a_shell_could_run(file_path, f):
-                        if 'bash' not in line and 'sh' not in line:
+                lines = self.lines_of(file_path)
+                if lines is None:
+                    continue
+
+                for line_num, line in self.lines_a_shell_could_run(file_path, lines):
+                    if 'bash' not in line and 'sh' not in line:
+                        continue
+
+                    if self.runs_on_another_host(line):
+                        continue
+
+                    documentation = self.documents_rather_than_runs(line, file_path)
+
+                    for match in script_pattern.finditer(line):
+                        script_path = match.group(1).rstrip('"\'')
+
+                        if not script_path or self.is_dynamic_path(script_path):
                             continue
 
-                        if self.runs_on_another_host(line):
+                        if documentation and self.names_a_placeholder(script_path):
                             continue
 
-                        documentation = self.documents_rather_than_runs(line, file_path)
+                        if documentation and self.describes_another_tree(script_path):
+                            continue
 
-                        for match in script_pattern.finditer(line):
-                            script_path = match.group(1).rstrip('"\'')
+                        resolved = self.anchor(script_path)
 
-                            if not script_path or self.is_dynamic_path(script_path):
-                                continue
-
-                            if documentation and self.names_a_placeholder(script_path):
-                                continue
-
-                            if documentation and self.describes_another_tree(script_path):
-                                continue
-
-                            resolved = self.anchor(script_path)
-
-                            if not resolved.exists():
-                                similar = self.find_similar_files(script_path)
-                                self.issues.append(
-                                    Issue(
-                                        file=rel_path,
-                                        line_num=line_num,
-                                        check_type=CheckType.SCRIPT,
-                                        message=f'Missing: {script_path}',
-                                        suggestion='Verify script exists or update reference',
-                                        similar_files=similar,
-                                    )
+                        if not resolved.exists():
+                            similar = self.find_similar_files(script_path)
+                            self.issues.append(
+                                Issue(
+                                    file=rel_path,
+                                    line_num=line_num,
+                                    check_type=CheckType.SCRIPT,
+                                    message=f'Missing: {script_path}',
+                                    suggestion='Verify script exists or update reference',
+                                    similar_files=similar,
                                 )
-            except OSError as error:
-                self.note_unreadable(file_path, error)
-                continue
-            except UnicodeDecodeError:
-                # Not a failure to read. The bytes arrived and are not text, so
-                # there is no reference in them to miss, and reporting every
-                # binary file is the noise that stops the real findings landing.
+                            )
+            except ValueError:
                 continue
 
     def check_relative_path_fragility(self):
@@ -963,65 +1011,62 @@ class ReferenceChecker:
             try:
                 rel_path = file_path.relative_to(self.root_dir)
 
-                with file_path.open(encoding='utf-8') as f:
-                    for line_num, line in enumerate(f, 1):
-                        if 'source' not in line:
-                            continue
+                lines = self.lines_of(file_path)
+                if lines is None:
+                    continue
 
-                        match = source_pattern.search(line)
-                        if not match:
-                            continue
+                for line_num, line in enumerate(lines, 1):
+                    if 'source' not in line:
+                        continue
 
-                        source_path = match.group(1) or match.group(2)
-                        if not source_path:
-                            continue
+                    match = source_pattern.search(line)
+                    if not match:
+                        continue
 
-                        # A commented `source` has no working directory to be
-                        # fragile about. Broken-reference errors still scan
-                        # comments, because a stale path in a usage example is
-                        # exactly the drift this tool exists to catch.
-                        if line.strip().startswith('#'):
-                            continue
+                    source_path = match.group(1) or match.group(2)
+                    if not source_path:
+                        continue
 
-                        if '$' in source_path or source_path.startswith('/') or self.is_dynamic_path(source_path):
-                            continue
+                    # A commented `source` has no working directory to be
+                    # fragile about. Broken-reference errors still scan
+                    # comments, because a stale path in a usage example is
+                    # exactly the drift this tool exists to catch.
+                    if line.strip().startswith('#'):
+                        continue
 
-                        test_dirs = [
-                            self.root_dir,
-                            file_path.parent,
-                            file_path.parent.parent,
-                        ]
+                    if '$' in source_path or source_path.startswith('/') or self.is_dynamic_path(source_path):
+                        continue
 
-                        valid_from = []
-                        for test_dir in test_dirs:
-                            resolved = test_dir / source_path
-                            if resolved.exists():
-                                valid_from.append(test_dir)
+                    test_dirs = [
+                        self.root_dir,
+                        file_path.parent,
+                        file_path.parent.parent,
+                    ]
 
-                        if 0 < len(valid_from) < len(test_dirs):
-                            try:
-                                valid_desc = ', '.join(
-                                    str(d.relative_to(self.root_dir)) if d != self.root_dir else 'repo root' for d in valid_from
-                                )
-                            except ValueError:
-                                valid_desc = ', '.join(str(d) for d in valid_from)
+                    valid_from = []
+                    for test_dir in test_dirs:
+                        resolved = test_dir / source_path
+                        if resolved.exists():
+                            valid_from.append(test_dir)
 
-                            self.warnings.append(
-                                Warning(
-                                    file=rel_path,
-                                    line_num=line_num,
-                                    check_type=CheckType.FRAGILE_CWD,
-                                    message=f'Relative path only valid from: {valid_desc}',
-                                    suggestion='Use absolute path or root directory variable',
-                                )
+                    if 0 < len(valid_from) < len(test_dirs):
+                        try:
+                            valid_desc = ', '.join(
+                                str(d.relative_to(self.root_dir)) if d != self.root_dir else 'repo root' for d in valid_from
                             )
-            except OSError as error:
-                self.note_unreadable(file_path, error)
-                continue
-            except UnicodeDecodeError:
-                # Not a failure to read. The bytes arrived and are not text, so
-                # there is no reference in them to miss, and reporting every
-                # binary file is the noise that stops the real findings landing.
+                        except ValueError:
+                            valid_desc = ', '.join(str(d) for d in valid_from)
+
+                        self.warnings.append(
+                            Warning(
+                                file=rel_path,
+                                line_num=line_num,
+                                check_type=CheckType.FRAGILE_CWD,
+                                message=f'Relative path only valid from: {valid_desc}',
+                                suggestion='Use absolute path or root directory variable',
+                            )
+                        )
+            except ValueError:
                 continue
 
     def check_relative_traversal(self):
@@ -1032,30 +1077,27 @@ class ReferenceChecker:
             try:
                 rel_path = file_path.relative_to(self.root_dir)
 
-                with file_path.open(encoding='utf-8') as f:
-                    for line_num, line in enumerate(f, 1):
-                        match = traversal_pattern.search(line)
-                        if not match:
-                            continue
+                lines = self.lines_of(file_path)
+                if lines is None:
+                    continue
 
-                        var_name = match.group(1)
+                for line_num, line in enumerate(lines, 1):
+                    match = traversal_pattern.search(line)
+                    if not match:
+                        continue
 
-                        self.warnings.append(
-                            Warning(
-                                file=rel_path,
-                                line_num=line_num,
-                                check_type=CheckType.FRAGILE_REFACTOR,
-                                message=(f'{var_name} uses relative directory traversal (../) - fragile to file moves'),
-                                suggestion=('Consider dynamic root detection: git rev-parse --show-toplevel'),
-                            )
+                    var_name = match.group(1)
+
+                    self.warnings.append(
+                        Warning(
+                            file=rel_path,
+                            line_num=line_num,
+                            check_type=CheckType.FRAGILE_REFACTOR,
+                            message=(f'{var_name} uses relative directory traversal (../) - fragile to file moves'),
+                            suggestion=('Consider dynamic root detection: git rev-parse --show-toplevel'),
                         )
-            except OSError as error:
-                self.note_unreadable(file_path, error)
-                continue
-            except UnicodeDecodeError:
-                # Not a failure to read. The bytes arrived and are not text, so
-                # there is no reference in them to miss, and reporting every
-                # binary file is the noise that stops the real findings landing.
+                    )
+            except ValueError:
                 continue
 
     def run_all_checks(self):

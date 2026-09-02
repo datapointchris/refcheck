@@ -179,9 +179,9 @@ def check(
     search_path = path.resolve() if path else root_dir
 
     # A directory that is not there holds no references, so walking it finds
-    # nothing and every check passes. `refcheck check management/` answered
-    # "all file references valid" for a directory dotfiles had removed, which
-    # is the tool certifying a tree it never opened.
+    # nothing, every check passes over nothing, and the run reports valid. That
+    # is the tool certifying a tree it never opened, which is worse than any
+    # finding it could have reported.
     if path is not None and not search_path.exists():
         print(f'refcheck: {search_path} is not there, so a scan of it would call every reference in it valid.', file=sys.stderr)
         raise typer.Exit(2)

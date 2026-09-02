@@ -82,6 +82,35 @@ class SweepResult:
         return bool(self.absent or self.unusable or self.with_unreadable)
 
 
+def homes_by_path(registry: Registry) -> dict[Path, str]:
+    """Which repo holds a resolved path, for every listed repo on disk.
+
+    Keyed physically, since that is the form a token is compared against once
+    its symlinks and `..` are walked out. A repo reached through a symlink is
+    then credited to the repo that holds the file rather than to nothing.
+
+    A repo this machine does not hold is left out. Nothing inside one exists,
+    so every reference into it would resolve to a missing file and be reported.
+    """
+    return {Path(os.path.realpath(repo.path)): repo.name for repo in registry.repos if repo.is_on_disk}
+
+
+def homes_by_name(registry: Registry) -> dict[str, Path]:
+    """Where a named repo sits, for every listed repo on disk.
+
+    The same set keyed the other way, for a citation that names its target
+    rather than spelling a path to it. Not `homes_by_path` inverted: two
+    declared paths can walk out to one physical directory, and inverting would
+    drop whichever name lost the collision.
+
+    An absent repo is excluded here for its own reason, not as a copy of the
+    one above. A citation naming a repo this machine has never cloned would
+    otherwise resolve to a path that cannot exist, and every such citation
+    would be reported as a stale reference into a repo nobody can check.
+    """
+    return {repo.name: Path(os.path.realpath(repo.path)) for repo in registry.repos if repo.is_on_disk}
+
+
 def across_repos(
     registry: Registry,
     patterns: dict[str, str],
@@ -132,14 +161,9 @@ def across_repos(
     # Keyed by the physical path, since that is the form a token is compared
     # against. A repo reached through a symlink is then credited to the repo
     # that holds the file rather than to nothing.
-    homes = {Path(os.path.realpath(repo.path)): repo.name for repo in registry.repos if repo.is_on_disk}
+    homes = homes_by_path(registry)
     sweep.source_is_listed = source_root is None or Path(os.path.realpath(source_root)) in homes
-
-    # The same set keyed the other way, for a citation that names its target
-    # rather than spelling a path to it. Not `homes` inverted: two declared
-    # paths can walk out to one physical directory, and inverting would then
-    # drop whichever name lost the collision.
-    paths = {repo.name: Path(os.path.realpath(repo.path)) for repo in registry.repos if repo.is_on_disk}
+    paths = homes_by_name(registry)
 
     for repo in live:
         config = load_config(repo.path)

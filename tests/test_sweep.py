@@ -363,13 +363,11 @@ class TestWhatWasNotSwept:
 class TestACitationThatNamesTheRepoItReaches:
     """Prose reaches another repo by naming it, and that form was invisible.
 
-    `documentation.md` § "A citation names a repo by its registry name" makes
-    `dotfiles/apps/common/pr-list` the fleet's declared way to point at another
-    repo, and § "A moved file is swept from above every repo that names it" makes
-    --registry the prescribed sweep. The sweep resolved only an absolute path, a
-    `~` path or a set variable, so every citation written the declared way passed
-    through it silently and the prescribed command reported clean over a real
-    stale reference.
+    A document points at a file in another repo by naming the repo, because it
+    cannot know where that repo is checked out. The sweep resolved only an
+    absolute path, a `~` path or a set variable, so a citation written the one
+    way prose can write it passed through silently and the cross-repo command
+    reported clean over a real stale reference.
     """
 
     def test_reports_a_citation_naming_the_repo_and_the_gone_path(self, two_repos):
@@ -511,3 +509,121 @@ class TestWhatTheSweepCouldNotRead:
             os.chmod(locked, 0o755)
 
         assert len([entry for result_ in result.with_unreadable for entry in result_.unreadable]) == 1
+
+
+class TestWhichRepoOwnsATokenTheScannedRepoCannotAnswerFor:
+    """The first segment decides, and only after this repo has been asked."""
+
+    def test_a_repos_own_stale_path_is_not_credited_to_the_repo_it_names(self, temp_dir):
+        """A missing file is what the sweep looks for, so asking whether the whole
+        token exists answers no for exactly the tokens worth reporting.
+        """
+        docs, consumer = temp_dir / 'docs', temp_dir / 'consumer'
+        docs.mkdir()
+        consumer.mkdir()
+        (consumer / 'docs').mkdir()
+        (consumer / 'docs' / 'guide.md').write_text('x\n')
+        (consumer / 'README.md').write_text('The pins are in `docs/versions.json`, beside the guide.\n')
+
+        result = sweep.across_repos(repos_for(docs, consumer), {'versions.json': 'now pinned-versions.json'})
+
+        assert names(result) == []
+
+    def test_a_citation_still_fires_where_this_repo_has_no_such_directory(self, temp_dir):
+        """The guard must not swallow the case the whole change is for."""
+        docs, consumer = temp_dir / 'docs', temp_dir / 'consumer'
+        docs.mkdir()
+        consumer.mkdir()
+        (consumer / 'README.md').write_text('The pins are in `docs/versions.json`.\n')
+
+        result = sweep.across_repos(repos_for(docs, consumer), {'versions.json': 'now pinned-versions.json'})
+
+        assert names(result) == ['consumer:README.md']
+        assert result.issues[0].message == 'Gone from docs: versions.json'
+
+
+class TestTheMapsTheSweepBuilds:
+    """An absent repo is excluded from both maps, for two different reasons."""
+
+    def test_an_absent_repo_is_not_somewhere_a_citation_can_name(self, temp_dir):
+        present = temp_dir / 'present'
+        present.mkdir()
+        listed = listing(
+            Repo(name='present', path=present, status='active'),
+            Repo(name='never-cloned', path=temp_dir / 'never-cloned', status='active'),
+        )
+
+        assert sweep.homes_by_name(listed) == {'present': present}
+
+    def test_an_absent_repo_cannot_own_a_resolved_path(self, temp_dir):
+        present = temp_dir / 'present'
+        present.mkdir()
+        listed = listing(
+            Repo(name='present', path=present, status='active'),
+            Repo(name='never-cloned', path=temp_dir / 'never-cloned', status='active'),
+        )
+
+        assert sweep.homes_by_path(listed) == {present: 'present'}
+
+    def test_two_declared_paths_onto_one_directory_keep_both_names(self, temp_dir):
+        """homes_by_name is not homes_by_path inverted, and this is why."""
+        real = temp_dir / 'real'
+        real.mkdir()
+        (temp_dir / 'declared').symlink_to(real)
+        listed = listing(
+            Repo(name='under-its-own-name', path=real, status='active'),
+            Repo(name='under-the-link', path=temp_dir / 'declared', status='active'),
+        )
+
+        assert sweep.homes_by_name(listed) == {'under-its-own-name': real, 'under-the-link': real}
+        assert sweep.homes_by_path(listed) == {real: 'under-the-link'}
+
+
+class TestAnExcludedSubtreeIsNotACoverageGap:
+    """A directory the scan does not read is outside what the run promised."""
+
+    def test_an_unreadable_default_exclude_does_not_fail_the_run(self, two_repos):
+        if os.geteuid() == 0:
+            pytest.skip('root reads a 0o000 directory, so there is no refusal to observe')
+
+        upstream, consumer = two_repos
+        blocked = consumer / 'node_modules' / 'blocked'
+        blocked.mkdir(parents=True)
+        os.chmod(blocked, 0o000)
+        try:
+            result = sweep.across_repos(repos_for(upstream, consumer), {'versions.json': 'x'})
+        finally:
+            os.chmod(blocked, 0o755)
+
+        assert not result.unreached
+
+    def test_an_unreadable_flag_excluded_subtree_does_not_fail_the_run(self, two_repos):
+        if os.geteuid() == 0:
+            pytest.skip('root reads a 0o000 directory, so there is no refusal to observe')
+
+        upstream, consumer = two_repos
+        blocked = consumer / 'vendor' / 'blocked'
+        blocked.mkdir(parents=True)
+        os.chmod(blocked, 0o000)
+        try:
+            result = sweep.across_repos(repos_for(upstream, consumer), {'versions.json': 'x'}, flag_excludes=['vendor/**'])
+        finally:
+            os.chmod(blocked, 0o755)
+
+        assert not result.unreached
+
+    def test_an_unreadable_directory_the_scan_does_read_still_fails_it(self, two_repos):
+        """The narrowing must not become a blanket excuse for every refusal."""
+        if os.geteuid() == 0:
+            pytest.skip('root reads a 0o000 directory, so there is no refusal to observe')
+
+        upstream, consumer = two_repos
+        blocked = consumer / 'src' / 'blocked'
+        blocked.mkdir(parents=True)
+        os.chmod(blocked, 0o000)
+        try:
+            result = sweep.across_repos(repos_for(upstream, consumer), {'versions.json': 'x'})
+        finally:
+            os.chmod(blocked, 0o755)
+
+        assert result.unreached

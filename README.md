@@ -13,6 +13,13 @@ fragile path patterns, and validates variable-based paths.
    quoted or not (including variable paths like `$SCRIPT_DIR/file.sh`)
 2. **Broken script references** - Missing files in `bash` or `sh` commands
 3. **Old path patterns** - Stale references after refactoring
+4. **A path it was handed and could not read** - a directory that will not list
+   or a file that will not open, because a scan of a tree it could only partly
+   open has no business printing a tick
+
+A directory named on the command line and not there is refused outright, exit 2.
+Walking it would find no files, pass every check over nothing, and certify a
+tree that does not exist.
 
 Shell scripts and markdown are both checked. Documentation goes stale in
 exactly the way code does — a usage example naming a library that has since
@@ -188,12 +195,21 @@ honoured:
 }
 ```
 
-**A reference from one repo into another cannot be relative.** The file is not
-in that tree, so the only way to reach it is an absolute path, a `~`, or a
-variable holding one. That is what makes the sweep safe on a pattern as loose as
-`versions.json`: the token is expanded and the answer is the filesystem's, not
-the string's. A hit is reported only when the path it names sits inside a repo
-the registry lists and is not there.
+**A reference from one repo into another either spells a location or names the
+repo.** Code spells it — an absolute path, a `~`, or a variable holding one.
+Prose names it, because `<repo-name>/path/inside-it` is how a document points at
+a file in another repo without knowing where that repo is checked out.
+Both forms resolve to a directory here, which is what makes the sweep safe on a
+pattern as loose as `versions.json`: the token becomes a location and the answer
+is the filesystem's, not the string's. A hit is reported only when the path it
+names sits inside a repo the registry lists and is not there.
+
+The second form is resolved through the registry's own names, so a token is only
+repo-qualified when its first segment is a name the registry carries. A repo
+name and a directory name collide often — `docs`, `theme`, `font` and `work` are
+all repos and all ordinary top-level directories — so the repo being scanned is
+asked first, and only a path it cannot answer for is handed to the repo its
+first segment names.
 
 Those two halves ask about different forms of the same path, because different
 things answer them. **Is it there** is the kernel's answer, so it gets the path
@@ -213,9 +229,13 @@ reports the one reference that had genuinely broken.
 | What the line holds | Swept |
 | --- | --- |
 | `versions_file: ~/…/store/versions.json`, gone from a listed repo | reported |
+| ``The reader is `store/versions.json` ``, naming a listed repo | reported |
 | `versions_file: ~/…/store/pinned-versions.json`, the corrected path | silent |
+| ``The reader is `store/pinned-versions.json` ``, the corrected citation | silent |
 | `PINS = "versions.json"`, a filename literal | silent |
 | `The pins live in versions.json`, prose | silent |
+| `store renamed versions.json last week`, a bare repo name | silent |
+| `docs/versions.json`, where this repo holds that file | silent |
 | `/srv/versions.json`, inside no listed repo | silent |
 | `$UNSET_VAR/versions.json`, nothing to expand | silent |
 
@@ -226,13 +246,15 @@ can still *own* a gone path, though: a live repo holding a path into one still
 holds a path that does not resolve, and the edit that fixes it is in the live
 repo.
 
-Four things stop a repo owning a gone path, and each gets its own row rather
-than folding into the clean total — never listed, listed but unreadable, listed
-and retired, listed and not on disk. Without that a tick cannot be told from
-"the repo the file left was not in the map", which is the false clean this whole
-tool exists to avoid. Where the repo you are standing in is itself unlisted, the
-sweep says so, because nothing it finds can be credited to the renames you just
-made.
+Four things stop a repo owning a gone path, and only one of them is a deliberate
+skip. Retired is that one, and it stays in the count line. The other three are
+the sweep failing to look — an entry naming no path, a listed repo with no
+directory here, a directory or file that will not open — and each fails the run
+with its own row. A tick that cannot be told from "the repo the file left was
+not in the map" is the false clean this whole tool exists to avoid, so a run
+that covered less than it was handed does not print one. Where the repo you are
+standing in is itself unlisted, the sweep says so, because nothing it finds can
+be credited to the renames you just made.
 
 Every filter narrows the sweep as well as the local run — `--type`, `--skip-docs`,
 `--test-mode` and `--exclude` all reach all of it. Each repo still reads its own

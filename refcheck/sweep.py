@@ -20,6 +20,7 @@ from pathlib import Path
 from .checker import ReferenceChecker
 from .config import load_config
 from .output import Issue
+from .output import Unreadable
 from .registry import Registry
 from .registry import Repo
 
@@ -30,6 +31,7 @@ class RepoResult:
 
     repo: Repo
     issues: list[Issue] = field(default_factory=list)
+    unreadable: list[Unreadable] = field(default_factory=list)
 
 
 @dataclass
@@ -61,6 +63,52 @@ class SweepResult:
     @property
     def with_issues(self) -> list[RepoResult]:
         return [result for result in self.results if result.issues]
+
+    @property
+    def with_unreadable(self) -> list[RepoResult]:
+        return [result for result in self.results if result.unreadable]
+
+    @property
+    def unreached(self) -> bool:
+        """True when the sweep was asked for a repo or a file it could not read.
+
+        Retired is the one deliberate skip and is not counted here. Everything
+        else in this list is the sweep failing to look: an entry naming no path,
+        a repo the machine does not hold, a directory that would not list, a
+        file that would not open. Each one shrinks what the run covered without
+        changing what it claims, and a clean result that means nothing is the
+        only outcome this tool cannot afford.
+        """
+        return bool(self.absent or self.unusable or self.with_unreadable)
+
+
+def homes_by_path(registry: Registry) -> dict[Path, str]:
+    """Which repo holds a resolved path, for every listed repo on disk.
+
+    Keyed physically, since that is the form a token is compared against once
+    its symlinks and `..` are walked out. A repo reached through a symlink is
+    then credited to the repo that holds the file rather than to nothing.
+
+    A repo this machine does not hold is left out. Nothing inside one exists,
+    so every reference into it would resolve to a missing file and be reported.
+    """
+    return {Path(os.path.realpath(repo.path)): repo.name for repo in registry.repos if repo.is_on_disk}
+
+
+def homes_by_name(registry: Registry) -> dict[str, Path]:
+    """Where a named repo sits, for every listed repo on disk.
+
+    The same set keyed the other way, for a citation that names its target
+    rather than spelling a path to it. Not `homes_by_path` inverted: two
+    declared paths can walk out to one physical directory, and inverting would
+    drop whichever name lost the collision.
+
+    An absent repo is excluded here for its own reason, not as a copy of the
+    one above. A citation naming a repo this machine has never cloned would
+    otherwise resolve to a path that cannot exist, and every such citation
+    would be reported as a stale reference into a repo nobody can check.
+    """
+    return {repo.name: Path(os.path.realpath(repo.path)) for repo in registry.repos if repo.is_on_disk}
 
 
 def across_repos(
@@ -113,8 +161,9 @@ def across_repos(
     # Keyed by the physical path, since that is the form a token is compared
     # against. A repo reached through a symlink is then credited to the repo
     # that holds the file rather than to nothing.
-    homes = {Path(os.path.realpath(repo.path)): repo.name for repo in registry.repos if repo.is_on_disk}
+    homes = homes_by_path(registry)
     sweep.source_is_listed = source_root is None or Path(os.path.realpath(source_root)) in homes
+    paths = homes_by_name(registry)
 
     for repo in live:
         config = load_config(repo.path)
@@ -128,7 +177,7 @@ def across_repos(
             warn_fragile=False,
             config=config,
         )
-        checker.check_patterns_across_repos(patterns, homes)
-        sweep.results.append(RepoResult(repo=repo, issues=checker.issues))
+        checker.check_patterns_across_repos(patterns, homes, paths)
+        sweep.results.append(RepoResult(repo=repo, issues=checker.issues, unreadable=checker.unreadable))
 
     return sweep

@@ -16,6 +16,23 @@ class FileSuggestions:
         self.exclude_patterns = exclude_patterns
         self._file_index: list[Path] | None = None
 
+    def should_skip_directory(self, rel_path: Path) -> bool:
+        """Whether a whole subtree is outside what the scan reads.
+
+        Asked during the descent rather than after it, so an excluded
+        directory is never entered. That is what keeps it out of the coverage
+        claim as well as out of the results: a directory the scan was
+        configured to skip is outside what the run promised to read, so a
+        refusal inside it is not a shortfall and must not fail the run.
+
+        A subtree pattern is matched against the path with a trailing slash.
+        `build/**` describes what is under `build`, and without the slash the
+        directory itself matches nothing while everything inside it matches.
+        """
+        if any(part in self.exclude_dirs for part in rel_path.parts):
+            return True
+        return any(fnmatch(f'{rel_path.as_posix()}/', pattern) for pattern in self.exclude_patterns)
+
     def should_skip_file(self, file_path: Path) -> bool:
         """Determine if file should be skipped."""
         for part in file_path.parts:

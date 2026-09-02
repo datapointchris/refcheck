@@ -38,19 +38,39 @@ class Warning:
     suggestion: str | None = None
 
 
+@dataclass(frozen=True)
+class Unreadable:
+    """A path the walk was told to read and could not, with what the kernel said.
+
+    A file that will not open and a directory that will not list are both
+    unscanned, and a scan that covered less than it was handed cannot print a
+    tick. So a refusal is carried out to the report rather than swallowed where
+    it happens, which is the same false clean a missing repo produces one level
+    up.
+    """
+
+    path: Path
+    reason: str
+
+
 def print_results(
     issues: list[Issue],
     warnings: list[Warning],
     rules_path: Path | None,
     root_dir: Path,
     search_path: Path,
+    unreadable: list[Unreadable] | None = None,
 ) -> None:
     """Print validation results."""
+    unreadable = unreadable or []
     try:
         search_info = f' in {search_path.relative_to(root_dir)}' if search_path != root_dir else ''
 
         # If no issues or warnings, success!
         if not issues and not warnings:
+            if unreadable:
+                _print_unreadable(unreadable)
+                return
             print(f'\n✅ All file references valid{search_info}\n')
             return
 
@@ -108,10 +128,29 @@ def print_results(
                     if warning.suggestion:
                         print(f'    → {warning.suggestion}')
 
+        if unreadable:
+            print()
+            _print_unreadable(unreadable)
+
         print_rules_hint(issues, rules_path)
         print()
     except BrokenPipeError:
         sys.stderr.close()
+
+
+def _print_unreadable(unreadable: list[Unreadable]) -> None:
+    """Say which files and directories the walk could not read.
+
+    The one thing this tool sells is a clean result that means something, and a
+    tree it could only partly open cannot support one. Naming what it could not
+    reach is what keeps the tick honest for the files it did read.
+    """
+    print(f'\n❌ {len(unreadable)} path(s) could not be read, so this scan covered less than the tree\n')
+    print('Unreadable:')
+    print('─' * 60)
+    for entry in unreadable:
+        print(f'  {entry.path}')
+        print(f'    {entry.reason}')
 
 
 def print_sweep(sweep: 'SweepResult', patterns: dict[str, str]) -> None:
@@ -132,15 +171,21 @@ def print_sweep(sweep: 'SweepResult', patterns: dict[str, str]) -> None:
             print('✅ Nothing moved, so no repo was swept\n')
             return
 
-        skipped = _describe_skipped(sweep)
+        skipped = f' (skipped {len(sweep.retired)} retired)' if sweep.retired else ''
 
-        if not sweep.issues:
-            print(f'✅ No repo names a path that moved — {_count(sweep.scanned, "repo")}, {len(patterns)} moved path(s){skipped}')
-            _print_unlisted_source(sweep)
-            print()
-            return
+        repos = _count(sweep.scanned, 'repo')
 
-        print(f'❌ Found {len(sweep.issues)} stale reference(s) in {len(sweep.with_issues)} of {_count(sweep.scanned, "repo")}{skipped}')
+        # The tick is a claim about every repo the caller named, so a run that
+        # could not read one of them has no tick to print. Saying "no repo names
+        # a path that moved" above a repo the sweep never opened is the false
+        # clean in one line.
+        if sweep.issues:
+            print(f'❌ Found {len(sweep.issues)} stale reference(s) in {len(sweep.with_issues)} of {repos}{skipped}')
+        elif not sweep.unreached:
+            print(f'✅ No repo names a path that moved — {repos}, {len(patterns)} moved path(s){skipped}')
+        else:
+            print(f'❌ {repos} swept, {len(patterns)} moved path(s){skipped} — but the sweep could not read everything it was given')
+
         _print_unlisted_source(sweep)
         print()
 
@@ -153,6 +198,8 @@ def print_sweep(sweep: 'SweepResult', patterns: dict[str, str]) -> None:
                 if issue.suggestion:
                     print(f'    → {issue.suggestion}')
             print()
+
+        _print_unreached(sweep)
     except BrokenPipeError:
         sys.stderr.close()
 
@@ -161,15 +208,32 @@ def _count(number: int, noun: str) -> str:
     return f'{number} {noun}' if number == 1 else f'{number} {noun}s'
 
 
-def _describe_skipped(sweep: 'SweepResult') -> str:
-    parts = []
-    if sweep.retired:
-        parts.append(f'{len(sweep.retired)} retired')
-    if sweep.absent:
-        parts.append(f'{len(sweep.absent)} with no directory: {", ".join(repo.name for repo in sweep.absent)}')
-    if sweep.unusable:
-        parts.append(f'{len(sweep.unusable)} unreadable: {"; ".join(sweep.unusable)}')
-    return f' (skipped {"; ".join(parts)})' if parts else ''
+def _print_unreached(sweep: 'SweepResult') -> None:
+    """Say what the sweep was asked to read and could not, as an error.
+
+    Retired is the one deliberate skip, so it stays in the count line above.
+    Everything here is the sweep covering less than it was handed, which the
+    tick above cannot distinguish from a machine with nothing stale. A clean
+    result is the entire product, so anything that narrows it without saying so
+    is worse than a finding nobody wanted.
+    """
+    if not sweep.unreached:
+        return
+
+    unreadable = [entry for result in sweep.with_unreadable for entry in result.unreadable]
+    total = len(sweep.absent) + len(sweep.unusable) + len(unreadable)
+
+    print(f'❌ {_count(total, "path")} the sweep was asked to read and could not, so this run covered less than it claims')
+    print('─' * 60)
+    for description in sweep.unusable:
+        print(f'  {description}')
+    for repo in sweep.absent:
+        print(f'  {repo.name}  ({repo.path})')
+        print('    No directory here, though the registry says this machine holds it')
+    for entry in unreadable:
+        print(f'  {entry.path}')
+        print(f'    {entry.reason}')
+    print()
 
 
 def _print_unlisted_source(sweep: 'SweepResult') -> None:

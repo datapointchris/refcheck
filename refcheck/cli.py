@@ -71,7 +71,7 @@ CHECK_EPILOG = '\n\n'.join(
         '[b]What counts as what[/b]',
         (
             'Errors, always checked, exit 1: a source statement or a bash/sh invocation naming a file '
-            'that is not there, and any --pattern hit.'
+            'that is not there, any --pattern hit, and any path this run was handed and could not read.'
         ),
         (
             'Warnings, checked by default, exit 0 unless --strict: relative paths that only resolve from '
@@ -178,6 +178,14 @@ def check(
     root_dir = Path.cwd()
     search_path = path.resolve() if path else root_dir
 
+    # A directory that is not there holds no references, so walking it finds
+    # nothing, every check passes over nothing, and the run reports valid. That
+    # is the tool certifying a tree it never opened, which is worse than any
+    # finding it could have reported.
+    if path is not None and not search_path.exists():
+        print(f'refcheck: {search_path} is not there, so a scan of it would call every reference in it valid.', file=sys.stderr)
+        raise typer.Exit(2)
+
     try:
         search_path.relative_to(root_dir)
     except ValueError:
@@ -254,6 +262,7 @@ def check(
         checker.get_rules_path(),
         checker.root_dir,
         checker.search_path,
+        checker.unreadable,
     )
 
     swept = (
@@ -264,7 +273,11 @@ def check(
 
     notify(UPDATE_CONFIG)
 
-    if checker.issues or (swept and swept.issues) or (checker.strict and checker.warnings):
+    # A path the run was handed and could not read fails it, the same as a
+    # finding. Both mean the tick would be a lie, and the tick is the product.
+    unreached = bool(checker.unreadable) or bool(swept and swept.unreached)
+
+    if checker.issues or (swept and swept.issues) or unreached or (checker.strict and checker.warnings):
         raise typer.Exit(1)
     raise typer.Exit(0)
 

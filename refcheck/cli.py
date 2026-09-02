@@ -77,6 +77,12 @@ CHECK_EPILOG = '\n\n'.join(
             'Warnings, checked by default, exit 0 unless --strict: relative paths that only resolve from '
             'one directory, and directory variables built by ../ traversal.'
         ),
+        (
+            'Set aside, never a failure: a --pattern hit whose path is on disk. Whether that means the '
+            'reference was repaired or that the old name is simply still there is yours to say, so each '
+            'one is listed with the path it resolved to. --moves knows what each path became and lists '
+            'only the hits that record cannot account for.'
+        ),
     ]
 )
 
@@ -253,7 +259,13 @@ def check(
                 if moves_since
                 else moves_module.staged(repo_root, include_bare_names=True)
             )
-            checker.check_patterns({move.old: move.description for move in found if not move.is_bare})
+            # git recorded what each path became, so a hit that resolves can be
+            # tested against it rather than taken for a repair on the strength
+            # of some file of that name being on disk.
+            checker.check_patterns(
+                {move.old: move.description for move in found if not move.is_bare},
+                {move.old: move.new for move in found if move.new},
+            )
             sweep_patterns = {move.old: move.description for move in found}
 
     print_results(
@@ -263,6 +275,7 @@ def check(
         checker.root_dir,
         checker.search_path,
         checker.unreadable,
+        checker.set_aside,
     )
 
     swept = (

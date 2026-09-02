@@ -39,6 +39,28 @@ class Warning:
 
 
 @dataclass(frozen=True)
+class SetAside:
+    """A pattern hit the check found in the text and did not report, with why.
+
+    The resolver drops a hit whose path is on disk, and until it said so the
+    drop was indistinguishable from the string never being there. Both printed
+    the same tick, so a caller reading a clean run could not tell a repo with
+    nothing stale from one where every mention was set aside because the old
+    name still exists at the root.
+
+    Carried out to the report rather than counted, because the judgement is
+    what a reader has to check. `target` is the path that resolved, which is
+    the whole reason the hit was dropped.
+    """
+
+    file: Path
+    line_num: int
+    pattern: str
+    token: str
+    target: Path
+
+
+@dataclass(frozen=True)
 class Unreadable:
     """A path the walk was told to read and could not, with what the kernel said.
 
@@ -60,9 +82,11 @@ def print_results(
     root_dir: Path,
     search_path: Path,
     unreadable: list[Unreadable] | None = None,
+    set_aside: list[SetAside] | None = None,
 ) -> None:
     """Print validation results."""
     unreadable = unreadable or []
+    set_aside = set_aside or []
     try:
         search_info = f' in {search_path.relative_to(root_dir)}' if search_path != root_dir else ''
 
@@ -70,6 +94,11 @@ def print_results(
         if not issues and not warnings:
             if unreadable:
                 _print_unreadable(unreadable)
+                return
+            if set_aside:
+                print(f'\n✅ No stale references{search_info}, and {_count(len(set_aside), "hit")} set aside\n')
+                _print_set_aside(set_aside)
+                print()
                 return
             print(f'\n✅ All file references valid{search_info}\n')
             return
@@ -128,6 +157,10 @@ def print_results(
                     if warning.suggestion:
                         print(f'    → {warning.suggestion}')
 
+        if set_aside:
+            print()
+            _print_set_aside(set_aside)
+
         if unreadable:
             print()
             _print_unreadable(unreadable)
@@ -136,6 +169,26 @@ def print_results(
         print()
     except BrokenPipeError:
         sys.stderr.close()
+
+
+def _print_set_aside(set_aside: list[SetAside]) -> None:
+    """Say which hits the resolver dropped, and what each one resolved to.
+
+    Not an error and not a warning, so nothing here fails a run. The reader is
+    being handed a judgement to check, not a defect to fix: the path is on disk
+    today, and whether that means the reference was repaired or that the old
+    name simply has not been cleaned up yet is a question only they can answer.
+
+    Printed whenever the check is guessing. A run that knows what each path
+    became tests the hits against that and prints none of this, so a list here
+    means refcheck had nothing to compare against.
+    """
+    print(f'{_count(len(set_aside), "hit")} matched the text and resolved to a path on disk, so none was reported:')
+    print('─' * 60)
+    for entry in set_aside:
+        print(f'  {entry.file}:{entry.line_num}')
+        print(f'    Found: {entry.pattern}, inside {entry.token}')
+        print(f'    → resolves to {entry.target}')
 
 
 def _print_unreadable(unreadable: list[Unreadable]) -> None:

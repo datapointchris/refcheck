@@ -875,6 +875,181 @@ def test_pattern_skips_a_binary_in_a_repo_that_is_not_the_working_directory(tmp_
     assert checker.issues == []
 
 
+class TestSetAsideHits:
+    """A hit the resolver drops is named, because a silent drop reads as a clean sweep."""
+
+    def markdownlint_repo(self, root):
+        """A repo still holding the old name at its root, with the literal deeper in.
+
+        The shape a generator repo takes: it deploys `.markdownlint.json` to
+        every repo including itself, so the old name is on disk at the root
+        while the templates naming it are two directories down.
+        """
+        (root / '.markdownlint.json').write_text('{}\n')
+        (root / 'configs').mkdir()
+        (root / 'configs' / 'prettierignore.txt').write_text('.pre-commit-config.yaml\n.markdownlint.json\n')
+        return root
+
+    def test_a_hit_dropped_because_the_old_name_is_still_on_disk_is_named(self, tmp_path):
+        """Existence at the root suppressed every mention and said nothing about it.
+
+        `--pattern markdownlint.json` reported one file and stayed silent on
+        ten more, because `.markdownlint.json` was still at the root and every
+        widened token resolved to it. The run printed what a repo with nothing
+        stale prints.
+        """
+        repo = self.markdownlint_repo(tmp_path)
+
+        checker = ReferenceChecker(repo)
+        checker.check_pattern('markdownlint.json', 'now markdownlint.yml')
+
+        assert checker.issues == []
+        assert [(entry.file.as_posix(), entry.line_num) for entry in checker.set_aside] == [('configs/prettierignore.txt', 2)]
+        assert checker.set_aside[0].token == '.markdownlint.json'
+        assert checker.set_aside[0].target == Path('.markdownlint.json')
+
+    def test_the_same_name_is_found_whichever_spelling_the_pattern_uses(self, tmp_path):
+        """A broader pattern must never return fewer hits than a narrower one.
+
+        `.markdownlint.json` covers the token's left edge and is reported on
+        sight; `markdownlint.json` does not and goes to the resolver. The same
+        line then came back as a finding under one spelling and as nothing at
+        all under the other.
+        """
+        repo = self.markdownlint_repo(tmp_path)
+
+        seen = []
+        for pattern in ('markdownlint.json', '.markdownlint.json'):
+            checker = ReferenceChecker(repo)
+            checker.check_pattern(pattern, 'now markdownlint.yml')
+            found = {(issue.file.as_posix(), issue.line_num) for issue in checker.issues}
+            seen.append(found | {(entry.file.as_posix(), entry.line_num) for entry in checker.set_aside})
+
+        assert seen[0] == seen[1]
+
+    def test_a_hit_resolving_to_the_old_name_is_named_even_when_the_new_one_is_known(self, tmp_path):
+        """The token resolves, but to the path that moved rather than the one it became.
+
+        Knowing the new name is what separates a repair from a coincidence.
+        This is the coincidence, so it stays in the list the run prints.
+        """
+        repo = self.markdownlint_repo(tmp_path)
+
+        checker = ReferenceChecker(repo)
+        checker.check_patterns({'markdownlint.json': 'now markdownlint.yml'}, {'markdownlint.json': 'configs/markdownlint.yml'})
+
+        assert checker.issues == []
+        assert [entry.file.as_posix() for entry in checker.set_aside] == ['configs/prettierignore.txt']
+
+    def test_a_repair_the_rename_record_confirms_is_not_listed(self, tmp_path):
+        """A hit spelling the new path is a repair the run can prove, so it says nothing.
+
+        Every rename repairs sites the pattern still matches, and listing all
+        of them puts a screen of noise above the findings.
+        """
+        (tmp_path / 'built-tools.json').write_text('{}\n')
+        (tmp_path / 'README.md').write_text('The list is `built-tools.json` now.\n')
+
+        checker = ReferenceChecker(tmp_path)
+        checker.check_patterns({'tools.json': 'now built-tools.json'}, {'tools.json': 'built-tools.json'})
+
+        assert checker.issues == []
+        assert checker.set_aside == []
+
+    def test_knowing_the_new_name_never_turns_a_dropped_hit_into_a_finding(self, tmp_path):
+        """A vendored copy resolves and is not the renamed file, and is not broken either.
+
+        Reporting on "resolves but does not name the new path" would call that
+        stale. The reference opens the file it names, so the rename record
+        decides what gets listed and never what gets reported.
+        """
+        (tmp_path / 'vendor' / 'configs').mkdir(parents=True)
+        (tmp_path / 'vendor' / 'configs' / 'markdownlint.json').write_text('{}\n')
+        (tmp_path / 'README.md').write_text('The pinned copy is vendor/configs/markdownlint.json.\n')
+
+        moved = 'configs/markdownlint.json'
+        checker = ReferenceChecker(tmp_path)
+        checker.check_patterns({moved: 'now configs/markdownlint.yml'}, {moved: 'configs/markdownlint.yml'})
+
+        assert checker.issues == []
+
+    def test_one_line_naming_the_same_path_twice_is_one_row(self, tmp_path):
+        """A row per occurrence says the same thing twice and buries the next hit."""
+        (tmp_path / '.markdownlint.json').write_text('{}\n')
+        (tmp_path / 'notes.md').write_text('Both .markdownlint.json and .markdownlint.json are ignored.\n')
+
+        checker = ReferenceChecker(tmp_path)
+        checker.check_pattern('markdownlint.json', 'now markdownlint.yml')
+
+        assert len(checker.set_aside) == 1
+
+    def test_a_hit_resolving_outside_the_repo_keeps_its_absolute_path(self, tmp_path):
+        """A `~`-rooted token has no repo-relative form to print.
+
+        Forcing one would name a file the repo does not hold, which is worse
+        than the long path: the reader opens it and finds nothing there.
+        """
+        outside = tmp_path / 'elsewhere'
+        outside.mkdir()
+        (outside / 'pinned-versions.json').write_text('{}\n')
+        repo = tmp_path / 'repo'
+        repo.mkdir()
+        (repo / 'notes.md').write_text(f'The pins live at {outside}/pinned-versions.json today.\n')
+
+        checker = ReferenceChecker(repo)
+        checker.check_pattern('versions.json', 'now pinned-versions.json')
+
+        assert checker.issues == []
+        assert [entry.target for entry in checker.set_aside] == [outside / 'pinned-versions.json']
+
+    def test_a_run_with_hits_set_aside_does_not_claim_every_reference_is_valid(self, temp_git_repo):
+        """The tick is the product, so it cannot be printed over a judgement call."""
+        (temp_git_repo / '.markdownlint.json').write_text('{}\n')
+        (temp_git_repo / 'configs').mkdir()
+        (temp_git_repo / 'configs' / 'prettierignore.txt').write_text('.markdownlint.json\n')
+
+        result = run_check('--pattern', 'markdownlint.json', cwd=temp_git_repo)
+
+        assert result.returncode == 0
+        assert 'All file references valid' not in result.stdout
+        assert '1 hit matched the text and resolved to a path on disk' in result.stdout
+        assert 'configs/prettierignore.txt:1' in result.stdout
+
+    def test_moves_stays_quiet_about_the_sites_the_rename_repaired(self, temp_git_repo):
+        """End to end: git supplies the new path, so a repaired site is not listed.
+
+        Moving a directory under another leaves the old path inside the new
+        one, so every reference the move repaired still matches the pattern.
+        """
+        boards = temp_git_repo / 'boards' / 'arm'
+        boards.mkdir(parents=True)
+        (boards / 'defconfig').write_text('CONFIG_ARM=y\n')
+        subprocess.run(['git', 'add', '-A'], cwd=temp_git_repo, capture_output=True, check=True)
+        subprocess.run(['git', 'commit', '-m', 'add boards'], cwd=temp_git_repo, capture_output=True, check=True)
+        (temp_git_repo / 'config').mkdir()
+        subprocess.run(['git', 'mv', 'boards', 'config/boards'], cwd=temp_git_repo, capture_output=True, check=True)
+        (temp_git_repo / 'README.md').write_text('The board is config/boards/arm/defconfig now.\n')
+        subprocess.run(['git', 'add', 'README.md'], cwd=temp_git_repo, capture_output=True, check=True)
+
+        result = run_check('--moves', cwd=temp_git_repo)
+
+        assert result.returncode == 0
+        assert 'matched the text and resolved' not in result.stdout
+
+    def test_a_pattern_run_names_the_same_sites_moves_can_prove_are_repaired(self, temp_git_repo):
+        """Typed in by hand there is no rename record, so the run says it is guessing."""
+        boards = temp_git_repo / 'config' / 'boards' / 'arm'
+        boards.mkdir(parents=True)
+        (boards / 'defconfig').write_text('CONFIG_ARM=y\n')
+        (temp_git_repo / 'README.md').write_text('The board is config/boards/arm/defconfig now.\n')
+
+        result = run_check('--pattern', 'boards/arm/defconfig', cwd=temp_git_repo)
+
+        assert result.returncode == 0
+        assert '1 hit matched the text and resolved to a path on disk' in result.stdout
+        assert 'README.md:1' in result.stdout
+
+
 class TestSweepAcrossRepos:
     """--registry asks the same question of every repo the caller lists."""
 

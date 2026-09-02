@@ -39,6 +39,22 @@ showing a tool's own report is not an invocation, however much its
 2. **Fragile to refactoring** - Variable assignments using `../` traversal
    (breaks when files move)
 
+### Set aside (never a failure)
+
+A `--pattern` hit is dropped when the path around it is on disk, because a
+substring cannot tell a stale reference from a longer correct path that ends
+the same way. `--pattern boards/arm` matching `config/boards/arm/` right after
+the move that made it correct is the case that rule exists for.
+
+Existence is weak evidence though. In a repo where the old name is still on
+disk somewhere, every mention of it resolves and every mention is dropped — so
+each dropped hit is listed with the path it resolved to, and you decide whether
+it was repaired or merely has not been cleaned up yet.
+
+`--moves` and `--moves-since` read what each path became out of git and list
+only the hits that record cannot account for. A hit spelling the new path is a
+repair the run can prove, so it says nothing about it.
+
 ## Why use it
 
 **Proactive error detection:**
@@ -373,6 +389,18 @@ Fragile to Refactoring (1):
   scripts/setup.sh:8
     SCRIPT_DIR uses relative directory traversal (../) - fragile to file moves
     → Consider dynamic root detection: git rev-parse --show-toplevel
+```
+
+**When hits were set aside:**
+
+```text
+✅ No stale references, and 1 hit set aside
+
+1 hit matched the text and resolved to a path on disk, so none was reported:
+────────────────────────────────────────────────────────────
+  configs/prettierignore.txt:16
+    Found: markdownlint.json, inside .markdownlint.json
+    → resolves to .markdownlint.json
 ```
 
 **When all valid:**

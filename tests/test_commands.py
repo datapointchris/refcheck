@@ -1,9 +1,10 @@
 """The shape of the command surface: three verbs, and bare invocation shows help.
 
-Every fleet tool spells self-update as a subcommand, and `check` is a verb for
-the same reason `learn-rules` is — both do work, and neither is a modifier of
-the other. Bare `refcheck` prints help because the scan takes flags of its own,
-which is what disqualifies a bare default from standing in for a command.
+Self-update is a subcommand rather than a flag for the same reason `check` and
+`learn-rules` are verbs: it does work of its own and modifies none of the
+others, and `--update` would read as a modifier of whichever command it sat on.
+Bare `refcheck` prints help because the scan takes flags of its own, which is
+what disqualifies a bare default from standing in for a command.
 """
 
 import re

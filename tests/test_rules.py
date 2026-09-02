@@ -28,10 +28,10 @@ class TestGetRulesPath:
     """Tests for get_rules_path function."""
 
     def test_generates_safe_path(self):
-        repo_root = Path('/Users/chris/dotfiles')
+        repo_root = Path('/Users/dev/dotfiles')
         rules_path = get_rules_path(repo_root)
 
-        assert rules_path == Path.home() / '.config/refcheck/repos/Users--chris--dotfiles/rules.json'
+        assert rules_path == Path.home() / '.config/refcheck/repos/Users--dev--dotfiles/rules.json'
 
     def test_handles_nested_paths(self):
         repo_root = Path('/home/user/projects/my-project')

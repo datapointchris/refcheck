@@ -69,10 +69,10 @@ class FileSuggestions:
     def _holds_binary_content(file_path: Path) -> bool:
         """True if the first block holds a NUL byte — the heuristic git uses.
 
-        A suffix list never keeps up. `~/dev/indy/indy.db` is 1.4 GB of SQLite
-        with no matching extension, so it was read as text and pattern-matched,
-        producing 29 of the 31 hits for one `--pattern` query. Every false
-        positive spends the credibility this tool needs to get used at all.
+        A suffix list never keeps up. A multi-gigabyte SQLite database with no
+        matching extension was read as text and pattern-matched, producing 29 of
+        the 31 hits for one `--pattern` query. Every false positive spends the
+        credibility this tool needs to get used at all.
         """
         try:
             with file_path.open('rb') as handle:

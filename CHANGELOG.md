@@ -1,6 +1,33 @@
 # CHANGELOG
 
 
+## v1.0.0 (2026-09-02)
+
+### Features
+
+- **cli**: Make the scan, self-update and rule learning subcommands
+  ([`72c3471`](https://github.com/datapointchris/refcheck/commit/72c3471f079ef37dee0111137acecde78f3aabf0))
+
+Every other fleet tool spells self-update as a subcommand. refcheck spelled it --update with --check
+  as its modifier, and --learn-rules was a second verb wearing a flag costume.
+
+Registering them turns refcheck into a command group, so the scan is now 'refcheck check' and bare
+  'refcheck' prints help. cli-design.md sanctions a bare default only where the bare action takes no
+  options of its own; the scan takes eight, which is the disqualifier that gave syncer its command
+  name too.
+
+.pre-commit-hooks.yaml runs 'refcheck check'. A consumer pins the hook id and a rev, so its entry
+  comes from the tag it names and nothing moves until it bumps.
+
+BREAKING CHANGE: bare 'refcheck' prints help instead of scanning. The scan is 'refcheck check',
+  self-update is 'refcheck update', and rule learning is 'refcheck learn-rules'.
+
+### Breaking Changes
+
+- **cli**: Bare 'refcheck' prints help instead of scanning. The scan is 'refcheck check',
+  self-update is 'refcheck update', and rule learning is 'refcheck learn-rules'.
+
+
 ## v0.7.0 (2026-09-02)
 
 ### Bug Fixes

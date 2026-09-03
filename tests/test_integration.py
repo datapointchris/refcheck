@@ -692,7 +692,7 @@ def test_pattern_ignores_a_hit_inside_a_url(tmp_path):
     Not listed as set aside either, and the two silences are different. The
     resolver guesses what a file being on disk means, so its drops are handed
     to the reader to check. A URL names no file here whatever the tree looks
-    like, so there is no judgement to hand over — and a docs repo swept for a
+    like, so there is no judgment to hand over — and a docs repo swept for a
     moved path would list every link that quotes it.
     """
     (tmp_path / 'docs').mkdir()
@@ -1012,7 +1012,7 @@ class TestSetAsideHits:
         assert [entry.target for entry in checker.set_aside] == [outside / 'pinned-versions.json']
 
     def test_a_run_with_hits_set_aside_does_not_claim_every_reference_is_valid(self, temp_git_repo):
-        """The tick is the product, so it cannot be printed over a judgement call."""
+        """The tick is the product, so it cannot be printed over a judgment call."""
         (temp_git_repo / '.markdownlint.json').write_text('{}\n')
         (temp_git_repo / 'configs').mkdir()
         (temp_git_repo / 'configs' / 'prettierignore.txt').write_text('.markdownlint.json\n')

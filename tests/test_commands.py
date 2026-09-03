@@ -12,7 +12,7 @@ import subprocess
 
 # Rich styles the help, and whether it does depends on the terminal it thinks it
 # has: a local run pipes into a non-tty and gets plain text, while CI forces
-# colour on. So `Usage: refcheck` arrives with escape sequences between the two
+# color on. So `Usage: refcheck` arrives with escape sequences between the two
 # words, and `--check` arrives with them between the dashes and the name.
 ANSI = re.compile(r'\x1b\[[0-9;]*m')
 

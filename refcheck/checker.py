@@ -26,7 +26,7 @@ class Verdict:
     The two are independent. A finding carries a message; a set-aside carries
     the pairs saying what the hit resolved to, which the run prints so the drop
     is visible. Neither is the cross-repo case, where a hit naming nothing in
-    another repo is not a judgement about a reference at all.
+    another repo is not a judgment about a reference at all.
     """
 
     message: str | None = None
@@ -743,7 +743,7 @@ class ReferenceChecker:
         resolve the token, and report it only when the path it names is inside a
         repo the caller listed and is not there.
 
-        This is the whole defence against a basename sweeping 90 repos for
+        This is the whole defense against a basename sweeping 90 repos for
         `versions.json`. Every mention that is a filename literal, a fixture
         name or a sentence in prose fails the first half, and every corrected
         reference fails the second.

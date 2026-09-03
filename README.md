@@ -210,7 +210,7 @@ A check that resolved its own subject would sweep whatever the environment
 answered at that moment, and one machine's registry lists a different set of
 repos from another's. Any JSON naming repo paths works — a bare array of entries,
 or an object holding them under `repos` beside an `exclude_paths` list, which is
-honoured:
+honored:
 
 ```json
 {

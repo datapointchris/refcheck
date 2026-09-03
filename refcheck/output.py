@@ -47,7 +47,7 @@ class SetAside:
     holding the old name anywhere every mention of it resolves and every
     mention goes. A tick over that says the rename is complete.
 
-    Carried out to the report rather than counted, because the judgement is
+    Carried out to the report rather than counted, because the judgment is
     what a reader has to check. `target` is the path that resolved, which is
     the whole reason the hit was dropped.
     """
@@ -178,7 +178,7 @@ def _print_set_aside(set_aside: list[SetAside]) -> None:
     """Say which hits the resolver dropped, and what each one resolved to.
 
     Not an error and not a warning, so nothing here fails a run. The reader is
-    being handed a judgement to check, not a defect to fix: the path is on disk
+    being handed a judgment to check, not a defect to fix: the path is on disk
     today, and whether that means the reference was repaired or that the old
     name simply has not been cleaned up yet is a question only they can answer.
 

@@ -50,6 +50,12 @@ class ReferenceChecker:
         '.pytest_cache',
         '.ruff_cache',
         '.mypy_cache',
+        # A per-session snapshot store holds what a file contained at a point in
+        # time, so a snapshot naming a path is a record and never a reference.
+        # Claude Code writes one under .claude as <hash>@vN; at 245 MB it was
+        # both the largest thing the scan read and the only source of hits when
+        # a skill's helper script was renamed.
+        'file-history',
     }
 
     DEFAULT_EXCLUDE_PATTERNS = [

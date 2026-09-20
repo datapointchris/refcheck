@@ -295,6 +295,18 @@ class TestMovesEndToEnd:
         result = run_check(cwd=temp_git_repo)
         assert result.returncode == 0
 
+    def test_a_file_history_snapshot_is_not_a_stale_reference(self, temp_git_repo):
+        """A snapshot holds what a file said at a point in time, not where it should be."""
+        self._repo_with_a_staged_move(temp_git_repo)
+        (temp_git_repo / 'deploy.yml').write_text('script: shared/helpers.sh\n')
+        history = temp_git_repo / 'file-history' / 'a-session'
+        history.mkdir(parents=True)
+        (history / 'abc123@v1').write_text('script: lib/helpers.sh\n')
+        subprocess.run(['git', 'add', '-A'], cwd=temp_git_repo, capture_output=True, check=True)
+
+        result = run_check('--moves', cwd=temp_git_repo)
+        assert result.returncode == 0
+
     def test_changelog_entries_are_not_stale_references(self, temp_git_repo):
         """A changelog names where a file was when it shipped. That is the point of it."""
         self._repo_with_a_staged_move(temp_git_repo)

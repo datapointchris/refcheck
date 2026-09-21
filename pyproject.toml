@@ -102,7 +102,6 @@ version_toml = ["pyproject.toml:project.version"]
 # and the copied block then fails on an argument that version does not accept.
 # `tf` is the tag format, so the written value keeps its `v` prefix.
 version_variables = ["README.md:rev:tf"]
-branch = "main"
 commit_message = "build(release): {version}"
 # The package name is hardcoded on purpose. python-semantic-release sets no
 # $PACKAGE_NAME, so `uv lock --upgrade-package "$PACKAGE_NAME"` silently no-ops

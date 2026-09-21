@@ -118,6 +118,11 @@ class ReferenceChecker:
         # check, so a Mac reports every `. /etc/os-release` that a script runs
         # behind a Linux guard.
         r'^/etc/',
+        # Where a deploy puts software and site data on a server. A script the
+        # repo ships to /opt/app/scripts/ sources its siblings by that path, and
+        # this machine never has it.
+        r'^/opt/',
+        r'^/srv/',
         r'/nvm\.sh$',
         r'^/lib/lib\.sh',
     ]

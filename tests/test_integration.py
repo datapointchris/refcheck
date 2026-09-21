@@ -587,6 +587,23 @@ def test_a_system_file_under_etc_is_not_a_repo_reference(tmp_path):
     assert checker.issues == []
 
 
+@pytest.mark.parametrize('deployed', ['/opt/refcheck-absent/scripts/lib.sh', '/srv/refcheck-absent/lib.sh'])
+def test_a_path_a_deploy_writes_on_a_server_is_not_a_repo_reference(tmp_path, deployed):
+    """A webhook script shipped to /opt/webhooks/scripts/ sources its sibling there.
+
+    The sibling is in the repo and the deploy copies both, so the line is
+    right on the server and missing on every workstation.
+    """
+    (tmp_path / 'scripts').mkdir()
+    (tmp_path / 'scripts' / 'lib.sh').write_text('#!/usr/bin/env bash\n')
+    (tmp_path / 'scripts' / 'deploy.sh').write_text(f'#!/usr/bin/env bash\nsource {deployed}\n. {deployed}\n')
+
+    checker = ReferenceChecker(tmp_path)
+    checker.check_source_statements()
+
+    assert checker.issues == []
+
+
 def test_pattern_ignores_hit_inside_a_path_that_exists(tmp_path):
     """A moved directory reached by a longer, correct path is not stale.
 

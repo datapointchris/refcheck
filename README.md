@@ -129,7 +129,7 @@ notice to stderr; set `NO_AUTO_UPDATE` to silence it.
 ```yaml
 repos:
   - repo: https://github.com/datapointchris/refcheck
-    rev: v0.4.1
+    rev: v2.0.2
     hooks:
       - id: refcheck
         args: [--moves]
@@ -343,7 +343,7 @@ refcheck check  # Shows warnings for SCRIPT_DIR="$(cd "$DIR/../../.." && pwd)"
 # Generate rules from git rename history (last 6 months by default)
 refcheck learn-rules
 
-# Rules are stored per-repo at ~/.config/refcheck/repos/{repo-name}/rules.json
+# Stored per checkout at ~/.config/refcheck/repos/{repo-path-with--for-slash}/rules.json
 ```
 
 Rules improve the **Possible matches** line under a broken reference; they
@@ -358,7 +358,7 @@ Create `~/.config/refcheck/config.toml` to customize behavior:
 
 ```toml
 [learn]
-time_window = "6 months"  # How far back --learn-rules analyzes git history
+time_window = "6 months"  # How far back learn-rules reads git history
 ```
 
 ## Output
@@ -492,15 +492,21 @@ Bare `refcheck` prints help. Run any command with `--help` for its flags.
 
 Automatically excludes:
 
-- **Build artifacts**: `.git`, `node_modules`, `.venv`, `__pycache__`, `site/`
+- **Build artifacts**: `.git`, `node_modules`, `.venv`, `__pycache__`, `.cache`,
+  `site/`, `*.pyc`
 - **Historical files**: `.planning/`, `.claude/metrics/`, `*.log`, `*.jsonl`,
-  `CHANGELOG.md`, and the tool caches (`.pytest_cache`, `.ruff_cache`,
-  `.mypy_cache`) — each records what a path *was*, which is what makes a
-  changelog entry naming the old location correct rather than stale
-- **Recorded data**: `fixtures/`, `testdata/` — a captured tool output names
-  every file that existed when it was taken, and is fixed by re-running the
-  tool, never by editing. `--test-mode` scans them anyway
-- **Dynamic paths**: Container paths (`/root/`, `/home/`), temp files (`/tmp/`)
+  `CHANGELOG.md`, `file-history/`, and the tool caches (`.pytest_cache`,
+  `.ruff_cache`, `.mypy_cache`) — each records what a path *was*, which is what
+  makes a changelog entry naming the old location correct rather than stale
+- **Recorded data**: `fixtures/`, `testdata/`, `docs/archive/` — a captured tool
+  output names every file that existed when it was taken, and is fixed by
+  re-running the tool, never by editing. `--test-mode` scans them anyway
+- **Dynamic paths**: anything opening with `$`, temp files (`/tmp/`), home
+  directories (`/root/`, `/home/`, `/Users/`) and machine state (`/etc/`).
+  Whether `/etc/os-release` resolves says which OS is running the check, not
+  whether the reference is good
+- **Paths on another machine**: the argument to `ssh`, and to `docker exec`,
+  `pct exec`, `lxc exec` or `kubectl exec` — that file is not in this tree
 - **Self-references**: Usage examples in scripts referencing themselves
 
 ## A repo excludes its own generated output
@@ -536,7 +542,7 @@ uv run pytest
 Tests cover config parsing, rules management, file suggestions, and end-to-end
 CLI behavior. The suite also runs as a pre-commit hook.
 
-Python 3.11+. The only runtime dependency is
+Python 3.11+. The runtime dependencies are typer and
 [pyselfupdate](https://github.com/datapointchris/pyselfupdate); everything else
 is stdlib.
 

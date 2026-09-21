@@ -78,6 +78,17 @@ class ReferenceChecker:
         # of the hits were changelog entries — the largest single source of
         # noise in the run.
         'CHANGELOG.md',
+        # coverage.py's outputs list every file measured on the last run, so a
+        # renamed module stays in them until the next run rewrites them. A hook
+        # writing .coverage.json on every commit failed --moves on each Python
+        # rename, and that report was the only hit.
+        '.coverage',
+        '.coverage.*',
+        'coverage.json',
+        'coverage.xml',
+        'coverage.lcov',
+        'htmlcov/**',
+        '**/htmlcov/**',
     ]
 
     # A fixtures directory holds recorded data, not references. A captured tool

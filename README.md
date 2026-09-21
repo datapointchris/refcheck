@@ -501,9 +501,11 @@ Automatically excludes:
 - **Build artifacts**: `.git`, `node_modules`, `.venv`, `__pycache__`, `.cache`,
   `site/`, `*.pyc`
 - **Historical files**: `.planning/`, `.claude/metrics/`, `*.log`, `*.jsonl`,
-  `CHANGELOG.md`, `file-history/`, and the tool caches (`.pytest_cache`,
-  `.ruff_cache`, `.mypy_cache`) — each records what a path *was*, which is what
-  makes a changelog entry naming the old location correct rather than stale
+  `CHANGELOG.md`, `file-history/`, the tool caches (`.pytest_cache`,
+  `.ruff_cache`, `.mypy_cache`) and coverage.py's reports (`.coverage`,
+  `.coverage.*`, `coverage.json`, `coverage.xml`, `coverage.lcov`, `htmlcov/`) —
+  each records what a path *was*, which is what makes a changelog entry naming
+  the old location correct rather than stale
 - **Recorded data**: `fixtures/`, `testdata/`, `docs/archive/` — a captured tool
   output names every file that existed when it was taken, and is fixed by
   re-running the tool, never by editing. `--test-mode` scans them anyway

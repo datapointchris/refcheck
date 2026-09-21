@@ -336,6 +336,21 @@ class TestMovesEndToEnd:
         result = run_check('--moves', cwd=temp_git_repo)
         assert result.returncode == 0
 
+    @pytest.mark.parametrize(
+        'report',
+        ['.coverage', '.coverage.json', 'coverage.json', 'coverage.xml', 'coverage.lcov', 'htmlcov/index.html', 'app/htmlcov/index.html'],
+    )
+    def test_a_coverage_report_is_not_a_stale_reference(self, temp_git_repo, report):
+        """The report still names the old path until the next test run rewrites it."""
+        self._repo_with_a_staged_move(temp_git_repo)
+        (temp_git_repo / 'deploy.yml').write_text('script: shared/helpers.sh\n')
+        subprocess.run(['git', 'add', '-A'], cwd=temp_git_repo, capture_output=True, check=True)
+        (temp_git_repo / report).parent.mkdir(parents=True, exist_ok=True)
+        (temp_git_repo / report).write_text('{"files": {"lib/helpers.sh": {}}}\n')
+
+        result = run_check('--moves', cwd=temp_git_repo)
+        assert result.returncode == 0, result.stdout
+
 
 class TestSelfReferences:
     """Test 9: Self-references in comments should be ignored."""

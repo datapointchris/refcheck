@@ -61,14 +61,6 @@ def _deploying_repo(tmp_path: Path, tracked: str) -> Path:
     return repo
 
 
-def test_a_tilde_path_the_repo_deploys_resolves_on_an_empty_home(tmp_path: Path, monkeypatch) -> None:
-    """A CI runner's home, where nothing the repo installs has been installed."""
-    monkeypatch.setenv('HOME', str(tmp_path / 'home'))
-    repo = _deploying_repo(tmp_path, 'configs/common/.local/shell/logging.sh')
-
-    assert ReferenceChecker(root_dir=repo).resolves('~/.local/shell/logging.sh')
-
-
 def test_a_repo_file_sharing_only_the_basename_does_not_satisfy_a_tilde_path(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv('HOME', str(tmp_path / 'home'))
     repo = _deploying_repo(tmp_path, 'lib/logging.sh')

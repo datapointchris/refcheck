@@ -368,6 +368,26 @@ class ReferenceChecker:
             return Path(path)
         return self.root_dir / path
 
+    def resolves(self, path: str) -> bool:
+        """Whether a referenced path is there, as a deployed path or a tracked one.
+
+        A `~/` path is also satisfied by the repo carrying the file it deploys:
+        any file whose trailing path segments are the home-relative path, as
+        `configs/common/.local/shell/logging.sh` is for
+        `~/.local/shell/logging.sh`. Without this the answer is a property of
+        the machine. A CI runner's home holds nothing the repo deploys, so every
+        such reference fails there and passes on a desk that ran the install.
+
+        A file sharing only the basename does not count. `lib/logging.sh` is a
+        different file from the one a script sources out of `~/.local/shell/`.
+        """
+        if self.anchor(path).exists():
+            return True
+        if not path.startswith('~/'):
+            return False
+        deployed = Path(path[2:]).parts
+        return any(tracked.parts[-len(deployed) :] == deployed for tracked in self._suggestions.build_file_index())
+
     def describes_another_tree(self, path: str) -> bool:
         """Check if a documented path belongs to some project other than this one.
 
@@ -1067,9 +1087,7 @@ class ReferenceChecker:
                     if documentation and self.describes_another_tree(source_path):
                         continue
 
-                    resolved = self.anchor(source_path)
-
-                    if not resolved.exists():
+                    if not self.resolves(source_path):
                         similar = self.find_similar_files(source_path)
                         self.issues.append(
                             Issue(
@@ -1119,9 +1137,7 @@ class ReferenceChecker:
                         if documentation and self.describes_another_tree(script_path):
                             continue
 
-                        resolved = self.anchor(script_path)
-
-                        if not resolved.exists():
+                        if not self.resolves(script_path):
                             similar = self.find_similar_files(script_path)
                             self.issues.append(
                                 Issue(

@@ -517,6 +517,12 @@ Automatically excludes:
   `pct exec`, `lxc exec` or `kubectl exec` — that file is not in this tree
 - **Self-references**: Usage examples in scripts referencing themselves
 
+A `~/` path is the deployed spelling, the one a script running outside the repo
+has to use. It resolves under the home directory, or where the repo tracks a
+file whose path ends in it, as `configs/common/.local/shell/logging.sh` does for
+`~/.local/shell/logging.sh`. The second is what makes the answer the same on a
+CI runner, whose home holds nothing the repo deploys.
+
 ## A repo excludes its own generated output
 
 The list above is what holds for any repository. Which of *this* repo's

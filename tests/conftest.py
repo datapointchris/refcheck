@@ -25,8 +25,11 @@ def detached_from_the_calling_git():
     Stripping the whole GIT_ prefix rather than the two known offenders is
     deliberate: GIT_WORK_TREE, GIT_OBJECT_DIRECTORY and GIT_COMMON_DIR redirect
     the same operations, and the fixtures supply every setting they need.
+
+    PRE_COMMIT_FROM_REF and PRE_COMMIT_TO_REF go too. Under a pre-push hook
+    they name the pushed range, and `--moves` then diffs refs no fixture has.
     """
-    inherited = {name: value for name, value in os.environ.items() if name.startswith('GIT_')}
+    inherited = {name: value for name, value in os.environ.items() if name.startswith(('GIT_', 'PRE_COMMIT_'))}
     for name in inherited:
         del os.environ[name]
     yield

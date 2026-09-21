@@ -2,6 +2,8 @@
 
 import subprocess
 
+import pytest
+
 from refcheck import moves
 
 
@@ -111,5 +113,39 @@ class TestMovesSince:
         found = moves.since(base, temp_git_repo)
         assert [(m.old, m.new) for m in found] == [('lib/helpers.sh', 'shared/helpers.sh')]
 
-    def test_unknown_ref_is_not_a_crash(self, temp_git_repo):
-        assert moves.since('no-such-ref', temp_git_repo) == []
+    def test_an_unknown_ref_raises_rather_than_reading_as_no_moves(self, temp_git_repo):
+        with pytest.raises(moves.UnreadableChange):
+            moves.since('no-such-ref', temp_git_repo)
+
+
+def head(repo):
+    return subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=repo, capture_output=True, text=True, check=True).stdout.strip()
+
+
+class TestMovesInThePreCommitChange:
+    """`--moves` reads whatever change pre-commit is checking."""
+
+    def test_reads_the_range_pre_commit_exports(self, temp_git_repo, monkeypatch):
+        (temp_git_repo / 'lib').mkdir()
+        (temp_git_repo / 'lib' / 'helpers.sh').write_text('echo hi\n')
+        commit(temp_git_repo, 'add helpers')
+        base = head(temp_git_repo)
+        (temp_git_repo / 'shared').mkdir()
+        git(temp_git_repo, 'mv', 'lib/helpers.sh', 'shared/helpers.sh')
+        commit(temp_git_repo, 'move helpers')
+
+        monkeypatch.setenv('PRE_COMMIT_FROM_REF', base)
+        monkeypatch.setenv('PRE_COMMIT_TO_REF', head(temp_git_repo))
+
+        found = moves.in_pre_commit_change(temp_git_repo)
+        assert [(m.old, m.new) for m in found] == [('lib/helpers.sh', 'shared/helpers.sh')]
+
+    def test_reads_the_index_when_pre_commit_names_no_range(self, temp_git_repo):
+        (temp_git_repo / 'lib').mkdir()
+        (temp_git_repo / 'lib' / 'helpers.sh').write_text('echo hi\n')
+        commit(temp_git_repo, 'add helpers')
+        (temp_git_repo / 'shared').mkdir()
+        git(temp_git_repo, 'mv', 'lib/helpers.sh', 'shared/helpers.sh')
+
+        found = moves.in_pre_commit_change(temp_git_repo)
+        assert [(m.old, m.new) for m in found] == [('lib/helpers.sh', 'shared/helpers.sh')]

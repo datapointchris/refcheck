@@ -152,7 +152,11 @@ def check(
     ] = None,
     check_moves: Annotated[
         bool,
-        typer.Option('--moves', help='Also hunt for what the staged renames and deletions left behind.', rich_help_panel='Pattern search'),
+        typer.Option(
+            '--moves',
+            help='Also hunt for what the staged renames and deletions left behind, or those in the range pre-commit names.',
+            rich_help_panel='Pattern search',
+        ),
     ] = False,
     moves_since: Annotated[
         str | None,
@@ -254,11 +258,15 @@ def check(
 
             # A bare name is asked for only when there are other repos to ask,
             # where an absolute path settles it. In this repo it stays out.
-            found = (
-                moves_module.since(moves_since, repo_root, include_bare_names=True)
-                if moves_since
-                else moves_module.staged(repo_root, include_bare_names=True)
-            )
+            try:
+                found = (
+                    moves_module.since(moves_since, repo_root, include_bare_names=True)
+                    if moves_since
+                    else moves_module.in_pre_commit_change(repo_root, include_bare_names=True)
+                )
+            except moves_module.UnreadableChange as error:
+                print(f'refcheck: git could not read the change, so no move in it was checked.\n{error}', file=sys.stderr)
+                raise typer.Exit(2) from error
             # git recorded what each path became, so a hit that resolves can be
             # tested against it rather than taken for a repair on the strength
             # of some file of that name being on disk.

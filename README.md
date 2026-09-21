@@ -143,6 +143,11 @@ is the check a move actually needs, asked at the moment fixing it is free.
 
 Add `args: [--moves, --strict]` to fail on warnings as well as errors.
 
+`pre-commit run --from-ref A --to-ref B` stages nothing, and neither does the
+pre-push stage. Both export the range as `PRE_COMMIT_FROM_REF` and
+`PRE_COMMIT_TO_REF`, and `--moves` checks the moves in that range instead of the
+index. That is how CI runs the same hook over a pushed branch.
+
 The hook scans the whole repository rather than the staged files, and this is
 deliberate: a reference breaks in the file that was *not* edited. Delete or move
 `b.sh` and the stale `source b.sh` sits in `a.sh`, which is nowhere in the
@@ -436,8 +441,9 @@ PASS All file references valid
 - `1` - Found errors, a path the run could not read, or warnings in strict mode
   (`--strict`)
 - `2` - The run was asked for something it cannot do: a directory that is not
-  there, a `--registry` that is missing or is not JSON, or `--registry` with no
-  moved path to look for
+  there, a `--registry` that is missing or is not JSON, `--registry` with no
+  moved path to look for, or a range git cannot diff, such as a base commit a
+  shallow clone never fetched
 - `128` - `--moves` or `--moves-since` outside a git repository, which is git's
   own code for it
 

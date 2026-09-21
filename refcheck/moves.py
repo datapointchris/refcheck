@@ -8,8 +8,13 @@ automatic, and it needs no stored state — unlike learned rules, which describe
 moves already reconciled and go stale between runs.
 """
 
+import os
 import subprocess
 from pathlib import Path
+
+
+class UnreadableChange(Exception):
+    """git could not diff the change, so no move in it can be known."""
 
 
 class Move:
@@ -36,7 +41,30 @@ def staged(repo_root: Path, include_bare_names: bool = False) -> list[Move]:
 
 def since(ref: str, repo_root: Path, include_bare_names: bool = False) -> list[Move]:
     """Renames and deletions between a ref and HEAD, for CI and manual runs."""
-    return _read(['git', 'diff', '--diff-filter=RD', '-M', '--name-status', ref, 'HEAD'], repo_root, include_bare_names)
+    return between(ref, 'HEAD', repo_root, include_bare_names)
+
+
+def between(from_ref: str, to_ref: str, repo_root: Path, include_bare_names: bool = False) -> list[Move]:
+    """Renames and deletions between two refs.
+
+    A shallow CI clone lacks the base commit. Reading that as no moves would
+    pass a check that never ran, so it raises UnreadableChange instead.
+    """
+    return _read(['git', 'diff', '--diff-filter=RD', '-M', '--name-status', from_ref, to_ref], repo_root, include_bare_names)
+
+
+def in_pre_commit_change(repo_root: Path, include_bare_names: bool = False) -> list[Move]:
+    """Renames and deletions in the change pre-commit is checking.
+
+    On a commit that is the index. `pre-commit run --from-ref A --to-ref B` and
+    the pre-push stage export the range as PRE_COMMIT_FROM_REF and
+    PRE_COMMIT_TO_REF and stage nothing, so the index reads empty there.
+    """
+    from_ref = os.environ.get('PRE_COMMIT_FROM_REF')
+    to_ref = os.environ.get('PRE_COMMIT_TO_REF')
+    if from_ref and to_ref:
+        return between(from_ref, to_ref, repo_root, include_bare_names)
+    return staged(repo_root, include_bare_names)
 
 
 def _read(command: list[str], repo_root: Path, include_bare_names: bool = False) -> list[Move]:
@@ -48,8 +76,8 @@ def _read(command: list[str], repo_root: Path, include_bare_names: bool = False)
             check=True,
             cwd=repo_root,
         )
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return []
+    except subprocess.CalledProcessError as error:
+        raise UnreadableChange(error.stderr.strip()) from error
 
     moves = []
     for line in result.stdout.splitlines():

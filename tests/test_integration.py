@@ -289,6 +289,25 @@ class TestMovesEndToEnd:
         result = run_check('--moves', cwd=temp_git_repo)
         assert result.returncode == 0
 
+    def test_finds_what_a_committed_rename_left_behind_in_the_pre_commit_range(self, temp_git_repo, monkeypatch):
+        self._repo_with_a_staged_move(temp_git_repo)
+        base = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=temp_git_repo, capture_output=True, text=True, check=True).stdout.strip()
+        subprocess.run(['git', 'commit', '-m', 'move helpers'], cwd=temp_git_repo, capture_output=True, check=True)
+        monkeypatch.setenv('PRE_COMMIT_FROM_REF', base)
+        monkeypatch.setenv('PRE_COMMIT_TO_REF', 'HEAD')
+
+        result = run_check('--moves', cwd=temp_git_repo)
+        assert result.returncode == 1
+        assert 'now shared/helpers.sh' in result.stdout
+
+    def test_a_ref_the_clone_lacks_exits_2_without_a_traceback(self, temp_git_repo):
+        self._repo_with_a_staged_move(temp_git_repo)
+
+        result = run_check('--moves-since', 'no-such-ref', cwd=temp_git_repo)
+        assert result.returncode == 2
+        assert 'no move in it was checked' in result.stderr
+        assert 'Traceback' not in result.stderr
+
     def test_moves_is_off_unless_asked_for(self, temp_git_repo):
         self._repo_with_a_staged_move(temp_git_repo)
 

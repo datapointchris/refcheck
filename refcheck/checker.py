@@ -1216,7 +1216,11 @@ class ReferenceChecker:
                             line_num=line_num,
                             check_type=CheckType.FRAGILE_REFACTOR,
                             message=(f'{var_name} uses relative directory traversal (../) - fragile to file moves'),
-                            suggestion=('Consider dynamic root detection: git rev-parse --show-toplevel'),
+                            # A bare `git rev-parse --show-toplevel` dies outside a repo under set -e
+                            # and resolves the wrong repo inside another, so the exported value leads.
+                            suggestion=(
+                                'Resolve the root from an exported variable first: "${REPO_DIR:-$(git rev-parse --show-toplevel)}"'
+                            ),
                         )
                     )
             except ValueError:

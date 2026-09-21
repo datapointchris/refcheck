@@ -399,7 +399,7 @@ Fragile to Refactoring (1):
 ────────────────────────────────────────────────────────────
   scripts/setup.sh:8
     SCRIPT_DIR uses relative directory traversal (../) - fragile to file moves
-    → Consider dynamic root detection: git rev-parse --show-toplevel
+    → Resolve the root from an exported variable first: "${REPO_DIR:-$(git rev-parse --show-toplevel)}"
 ```
 
 **When hits were set aside:**

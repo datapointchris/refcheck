@@ -734,7 +734,7 @@ def test_pattern_ignores_hits_inside_run_logs(tmp_path):
     Renaming a tool reported one miss against a gitignored run log, after every
     live reference had already been updated.
     """
-    (tmp_path / 'run-transcript.log').write_text('✓ oldname help\n')
+    (tmp_path / 'run-transcript.log').write_text('ran: oldname help\n')
     (tmp_path / 'docs').mkdir()
     (tmp_path / 'docs' / 'guide.md').write_text('Run oldname to archive a directory.\n')
 

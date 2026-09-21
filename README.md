@@ -365,8 +365,8 @@ time_window = "6 months"  # How far back --learn-rules analyzes git history
 
 **When errors found:**
 
-```yaml
-❌ Found 2 error(s)
+```text
+FAIL Found 2 error(s)
 
 Errors:
 
@@ -383,8 +383,8 @@ Broken Source (2):
 
 **When warnings found:**
 
-```yaml
-⚠️  Found 2 warning(s)
+```text
+WARN Found 2 warning(s)
 
 Warnings:
 
@@ -409,7 +409,7 @@ root put eleven of these above a single finding, which is the shape to expect
 rather than the exception.
 
 ```text
-✅ No stale references, and 3 hits set aside
+PASS No stale references, and 3 hits set aside
 
 3 hits matched the text and resolved to a path on disk, so none was reported:
 ────────────────────────────────────────────────────────────
@@ -427,7 +427,7 @@ rather than the exception.
 **When all valid:**
 
 ```text
-✅ All file references valid
+PASS All file references valid
 ```
 
 ## Exit codes

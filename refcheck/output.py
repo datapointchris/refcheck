@@ -11,6 +11,31 @@ if TYPE_CHECKING:
     from .sweep import SweepResult
 
 
+# The verdict word a result line opens with. Four letters each, so the
+# sentences after them line up with nothing padded anywhere.
+#
+# refcheck ships a pre-commit hook to repos whose terminal it cannot see, which
+# rules out both alternatives. An emoji needs a color font and renders at a
+# width the terminal chooses. A Nerd Font glyph is a Private Use Area codepoint,
+# so it is a tofu box wherever the font is not patched. A word also greps.
+PASS = 'PASS'
+FAIL = 'FAIL'
+WARN = 'WARN'
+HINT = 'HINT'
+
+
+def marked(marker: str, text: str) -> str:
+    """A result line under its verdict word, continuations hanging beneath it.
+
+    The gutter is derived from the marker rather than written at each call site.
+    A caller spacing its own continuation lines is a copy that has to be found
+    and re-counted the next time a marker changes length.
+    """
+    indent = ' ' * (len(marker) + 1)
+    head, *rest = text.split('\n')
+    return '\n'.join([f'{marker} {head}', *(indent + line for line in rest)])
+
+
 class CheckType(Enum):
     PATTERN = 'old_path_pattern'
     SOURCE = 'broken_source_command'
@@ -97,11 +122,12 @@ def print_results(
         # report that reads complete while carrying one of the three.
         if not issues and not warnings:
             if set_aside:
-                print(f'\n✅ No stale references{search_info}, and {_count(len(set_aside), "hit")} set aside\n')
+                clean = f'No stale references{search_info}, and {_count(len(set_aside), "hit")} set aside'
+                print(f'\n{marked(PASS, clean)}\n')
                 _print_set_aside(set_aside)
                 print()
             elif not unreadable:
-                print(f'\n✅ All file references valid{search_info}\n')
+                print(f'\n{marked(PASS, f"All file references valid{search_info}")}\n')
             if unreadable:
                 _print_unreadable(unreadable)
             return
@@ -111,11 +137,12 @@ def print_results(
         warning_count = len(warnings)
 
         if error_count > 0 and warning_count > 0:
-            print(f'\n❌ Found {error_count} error(s) and {warning_count} warning(s){search_info}\n')
+            both = f'Found {error_count} error(s) and {warning_count} warning(s){search_info}'
+            print(f'\n{marked(FAIL, both)}\n')
         elif error_count > 0:
-            print(f'\n❌ Found {error_count} error(s){search_info}\n')
+            print(f'\n{marked(FAIL, f"Found {error_count} error(s){search_info}")}\n')
         else:
-            print(f'\n⚠️  Found {warning_count} warning(s){search_info}\n')
+            print(f'\n{marked(WARN, f"Found {warning_count} warning(s){search_info}")}\n')
 
         # Print errors
         if issues:
@@ -201,7 +228,8 @@ def _print_unreadable(unreadable: list[Unreadable]) -> None:
     tree it could only partly open cannot support one. Naming what it could not
     reach is what keeps the tick honest for the files it did read.
     """
-    print(f'\n❌ {len(unreadable)} path(s) could not be read, so this scan covered less than the tree\n')
+    unread = f'{len(unreadable)} path(s) could not be read, so this scan covered less than the tree'
+    print(f'\n{marked(FAIL, unread)}\n')
     print('Unreadable:')
     print('─' * 60)
     for entry in unreadable:
@@ -224,7 +252,7 @@ def print_sweep(sweep: 'SweepResult', patterns: dict[str, str]) -> None:
     try:
         print()
         if not patterns:
-            print('✅ Nothing moved, so no repo was swept\n')
+            print(f'{marked(PASS, "Nothing moved, so no repo was swept")}\n')
             return
 
         skipped = f' (skipped {len(sweep.retired)} retired)' if sweep.retired else ''
@@ -236,11 +264,14 @@ def print_sweep(sweep: 'SweepResult', patterns: dict[str, str]) -> None:
         # a path that moved" above a repo the sweep never opened is the false
         # clean in one line.
         if sweep.issues:
-            print(f'❌ Found {len(sweep.issues)} stale reference(s) in {len(sweep.with_issues)} of {repos}{skipped}')
+            stale = f'Found {len(sweep.issues)} stale reference(s) in {len(sweep.with_issues)} of {repos}{skipped}'
+            print(marked(FAIL, stale))
         elif not sweep.unreached:
-            print(f'✅ No repo names a path that moved — {repos}, {len(patterns)} moved path(s){skipped}')
+            clean = f'No repo names a path that moved — {repos}, {len(patterns)} moved path(s){skipped}'
+            print(marked(PASS, clean))
         else:
-            print(f'❌ {repos} swept, {len(patterns)} moved path(s){skipped} — but the sweep could not read everything it was given')
+            partial = f'{repos} swept, {len(patterns)} moved path(s){skipped} — but the sweep could not read everything it was given'
+            print(marked(FAIL, partial))
 
         _print_unlisted_source(sweep)
         print()
@@ -279,7 +310,8 @@ def _print_unreached(sweep: 'SweepResult') -> None:
     unreadable = [entry for result in sweep.with_unreadable for entry in result.unreadable]
     total = len(sweep.absent) + len(sweep.unusable) + len(unreadable)
 
-    print(f'❌ {_count(total, "path")} the sweep was asked to read and could not, so this run covered less than it claims')
+    unreached = f'{_count(total, "path")} the sweep was asked to read and could not, so this run covered less than it claims'
+    print(marked(FAIL, unreached))
     print('─' * 60)
     for description in sweep.unusable:
         print(f'  {description}')
@@ -303,7 +335,8 @@ def _print_unlisted_source(sweep: 'SweepResult') -> None:
     if sweep.source_is_listed or sweep.source_root is None:
         return
 
-    print(f'⚠️  {sweep.source_root} is not in the registry, so a path that moved here can be credited to no repo.')
+    unlisted = f'{sweep.source_root} is not in the registry, so a path that moved here can be credited to no repo.'
+    print(marked(WARN, unlisted))
 
 
 def print_config(repo_config: Path | None, layers: list[tuple[str, list[str]]]) -> None:
@@ -342,5 +375,8 @@ def print_rules_hint(issues: list[Issue], rules_path: Path | None) -> None:
     if not unsuggested:
         return
 
-    print(f'\n💡 {len(unsuggested)} broken reference(s) came up with no suggestions.')
-    print("   'refcheck learn-rules' reads git's rename history to improve them.")
+    hint = (
+        f'{len(unsuggested)} broken reference(s) came up with no suggestions.\n'
+        "'refcheck learn-rules' reads git's rename history to improve them."
+    )
+    print(f'\n{marked(HINT, hint)}')

@@ -6,6 +6,9 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+from .output import PASS
+from .output import marked
+
 
 def get_repo_root(cwd: Path | None = None) -> Path | None:
     """Get git repo root, or None if not in a repo."""
@@ -150,8 +153,13 @@ def learn_rules_from_git(time_window: str = '6 months') -> None:
     with rules_path.open('w') as f:
         json.dump(rules, f, indent=2)
 
-    print(f'✅ Generated {rules_path}')
-    print(f'   Time window: {time_window}')
-    print(f'   Commits analyzed: {len(commits_analyzed)}')
-    print(f'   Directory mappings: {len(top_directory_mappings)}')
-    print(f'   File mappings: {len(file_mappings)}')
+    summary = '\n'.join(
+        [
+            f'Generated {rules_path}',
+            f'Time window: {time_window}',
+            f'Commits analyzed: {len(commits_analyzed)}',
+            f'Directory mappings: {len(top_directory_mappings)}',
+            f'File mappings: {len(file_mappings)}',
+        ]
+    )
+    print(marked(PASS, summary))

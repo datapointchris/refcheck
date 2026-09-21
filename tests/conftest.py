@@ -168,7 +168,7 @@ def test_fixtures(temp_dir):
         '#!/usr/bin/env bash\n'
         '# Examples:\n'
         '#   bash install.sh\n'
-        '#   ✅ CORRECT: bash management/run-and-summarize.sh "task install"\n'
+        '#   CORRECT: bash management/run-and-summarize.sh "task install"\n'
         '#   source shell/lib.sh\n'
         'echo "  bash install.sh"\n'
         'printf "usage: bash management/run-and-summarize.sh <command>\\n"\n'

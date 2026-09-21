@@ -96,6 +96,12 @@ docstring-code-format = true
 
 [tool.semantic_release]
 version_toml = ["pyproject.toml:project.version"]
+# The README's pre-commit example pins a rev, and a reader copies it verbatim.
+# Stamped here so the release that moves the tag moves the example with it: a
+# pin left behind eventually predates a flag the surrounding prose recommends,
+# and the copied block then fails on an argument that version does not accept.
+# `tf` is the tag format, so the written value keeps its `v` prefix.
+version_variables = ["README.md:rev:tf"]
 branch = "main"
 commit_message = "build(release): {version}"
 # The package name is hardcoded on purpose. python-semantic-release sets no

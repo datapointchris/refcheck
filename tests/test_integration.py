@@ -1458,3 +1458,72 @@ class TestAPathTheScanCouldNotRead:
 
         assert result.returncode == 2
         assert 'is not there' in result.stderr
+
+
+class TestNameSearch:
+    """--name finds a renamed tool's old name, here and across what --registry lists."""
+
+    def test_reports_the_name_in_this_tree(self, temp_dir):
+        (temp_dir / 'README.md').write_text('Use `oldtool` for this.\n')
+
+        result = run_check('--name', 'oldtool', '--desc', 'now newtool', cwd=temp_dir)
+
+        assert result.returncode == 1
+        assert 'Names oldtool' in result.stdout
+        assert 'now newtool' in result.stdout
+
+    def test_a_tree_without_it_passes(self, temp_dir):
+        (temp_dir / 'README.md').write_text('Use `newtool` for this.\n')
+
+        assert run_check('--name', 'oldtool', cwd=temp_dir).returncode == 0
+
+    def test_sweeps_a_repo_and_a_store_from_two_registries(self, tmp_path, temp_dir):
+        repo = tmp_path / 'repo'
+        store = tmp_path / 'store'
+        repo.mkdir()
+        store.mkdir()
+        (store / 'workflow.md').write_text('```bash\noldtool batch ./urls.txt\n```\n')
+        repos = tmp_path / 'repos.json'
+        stores = tmp_path / 'stores.json'
+        repos.write_text(json.dumps({'repos': [{'name': 'repo', 'path': str(repo)}]}))
+        stores.write_text(json.dumps({'stores': [{'name': 'store', 'path': str(store)}]}))
+
+        result = run_check('--name', 'oldtool', '--registry', str(repos), '--registry', str(stores), cwd=temp_dir)
+
+        assert result.returncode == 1
+        assert f'{store / "workflow.md"}:2' in result.stdout
+
+    def test_a_clean_sweep_says_what_it_looked_for(self, tmp_path, temp_dir):
+        repo = tmp_path / 'repo'
+        repo.mkdir()
+        (tmp_path / 'repos.json').write_text(json.dumps({'repos': [{'name': 'repo', 'path': str(repo)}]}))
+
+        result = run_check('--name', 'oldtool', '--registry', str(tmp_path / 'repos.json'), cwd=temp_dir)
+
+        assert result.returncode == 0
+        assert 'No other repo names oldtool — 1 repo, old name oldtool' in result.stdout
+
+    @pytest.mark.parametrize('name', ['old/tool', 'old tool', ''])
+    def test_refuses_anything_that_is_not_one_word(self, temp_dir, name):
+        result = run_check('--name', name, cwd=temp_dir)
+
+        assert result.returncode == 2
+        assert '--pattern' in result.stderr
+
+
+class TestOneQuestionPerRun:
+    """Two questions in one run would answer the first and tick for both."""
+
+    @pytest.mark.parametrize(
+        'flags',
+        [
+            ['--pattern', 'old/', '--moves'],
+            ['--pattern', 'old/', '--name', 'oldtool'],
+            ['--name', 'oldtool', '--moves-since', 'HEAD'],
+        ],
+    )
+    def test_two_questions_are_a_usage_error(self, temp_git_repo, flags):
+        result = run_check(*flags, cwd=temp_git_repo)
+
+        assert result.returncode == 2
+        assert 'pass one per run' in result.stderr

@@ -141,14 +141,7 @@ def across_repos(
     if not patterns:
         return sweep
 
-    live = []
-    for repo in registry.repos:
-        if not repo.is_swept:
-            sweep.retired.append(repo)
-        elif not repo.is_on_disk:
-            sweep.absent.append(repo)
-        else:
-            live.append(repo)
+    live = _partition(registry, sweep)
 
     # Which repos are walked and which can own a gone path are different
     # questions, and only the first one is about where a fix would land. A live
@@ -166,18 +159,78 @@ def across_repos(
     paths = homes_by_name(registry)
 
     for repo in live:
-        config = load_config(repo.path)
-        config.exclude = [*config.exclude, *flag_excludes]
-        checker = ReferenceChecker(
-            root_dir=repo.path,
-            search_path=repo.path,
-            skip_docs=skip_docs,
-            file_type=file_type,
-            test_mode=test_mode,
-            warn_fragile=False,
-            config=config,
-        )
+        checker = _checker_for(repo, skip_docs, file_type, test_mode, flag_excludes)
         checker.check_patterns_across_repos(patterns, homes, paths)
         sweep.results.append(RepoResult(repo=repo, issues=checker.issues, unreadable=checker.unreadable))
 
     return sweep
+
+
+def names_across_repos(
+    registry: Registry,
+    names: dict[str, str],
+    skip_docs: bool = False,
+    file_type: str | None = None,
+    test_mode: bool = False,
+    flag_excludes: Sequence[str] = (),
+    source_root: Path | None = None,
+) -> SweepResult:
+    """Ask every listed repo where it still names a tool that was renamed.
+
+    The other half of a rename. A moved path is something git recorded and a
+    resolver can test, while a renamed tool is a word left in prose, commands and
+    paths across every repo and store that ever mentioned it. Neither the renaming
+    repo nor a path check can see those, so the sweep reads them where they are.
+
+    Nothing is credited to an owner, because a name is stale wherever it stands.
+    The repo the run started in is left out of the walk: the local run already
+    reported it, and walking it again here would print every finding twice.
+    """
+    sweep = SweepResult(unusable=list(registry.unusable))
+
+    if not names:
+        return sweep
+
+    started_in = Path(os.path.realpath(source_root)) if source_root is not None else None
+    for repo in _partition(registry, sweep):
+        if started_in is not None and Path(os.path.realpath(repo.path)) == started_in:
+            continue
+        checker = _checker_for(repo, skip_docs, file_type, test_mode, flag_excludes)
+        checker.check_names(names)
+        sweep.results.append(RepoResult(repo=repo, issues=checker.issues, unreadable=checker.unreadable))
+
+    return sweep
+
+
+def _partition(registry: Registry, sweep: SweepResult) -> list[Repo]:
+    """The repos to walk, with the retired and the absent recorded on the sweep."""
+    live = []
+    for repo in registry.repos:
+        if not repo.is_swept:
+            sweep.retired.append(repo)
+        elif not repo.is_on_disk:
+            sweep.absent.append(repo)
+        else:
+            live.append(repo)
+    return live
+
+
+def _checker_for(
+    repo: Repo,
+    skip_docs: bool,
+    file_type: str | None,
+    test_mode: bool,
+    flag_excludes: Sequence[str],
+) -> ReferenceChecker:
+    """A checker rooted at one listed repo, reading that repo's own exclusions."""
+    config = load_config(repo.path)
+    config.exclude = [*config.exclude, *flag_excludes]
+    return ReferenceChecker(
+        root_dir=repo.path,
+        search_path=repo.path,
+        skip_docs=skip_docs,
+        file_type=file_type,
+        test_mode=test_mode,
+        warn_fragile=False,
+        config=config,
+    )

@@ -127,6 +127,52 @@ class TestRefusals:
         assert registry.load(path).unusable == []
 
 
+class TestAStoresDeclaration:
+    """Content directories are declared beside the repos, under their own key."""
+
+    def test_reads_an_object_holding_stores(self, temp_dir):
+        path = write(temp_dir / 'stores.json', {'purpose': 'x', 'stores': [{'name': 'notes', 'path': str(temp_dir / 'notes')}]})
+
+        assert [repo.name for repo in registry.load(path).repos] == ['notes']
+
+    def test_an_unset_xdg_variable_takes_the_spec_default(self, temp_dir, monkeypatch):
+        """Left literal, `$XDG_DATA_HOME/x` names a relative path no machine holds."""
+        monkeypatch.setenv('HOME', str(temp_dir))
+        monkeypatch.delenv('XDG_DATA_HOME', raising=False)
+        path = write(temp_dir / 'stores.json', {'stores': [{'name': 'lib', 'path': '$XDG_DATA_HOME/lib'}]})
+
+        assert registry.load(path).repos[0].path == temp_dir / '.local' / 'share' / 'lib'
+
+    def test_a_set_xdg_variable_wins_over_the_default(self, temp_dir, monkeypatch):
+        monkeypatch.setenv('XDG_DATA_HOME', str(temp_dir / 'data'))
+        path = write(temp_dir / 'stores.json', {'stores': [{'name': 'lib', 'path': '${XDG_DATA_HOME}/lib'}]})
+
+        assert registry.load(path).repos[0].path == temp_dir / 'data' / 'lib'
+
+
+class TestSeveralRegistries:
+    def test_a_directory_both_list_is_kept_once_under_its_first_name(self, temp_dir):
+        (temp_dir / 'shared').mkdir()
+        repos = write(temp_dir / 'repos.json', {'repos': [{'name': 'shared-repo', 'path': str(temp_dir / 'shared')}]})
+        stores = write(temp_dir / 'stores.json', {'stores': [{'name': 'shared-store', 'path': str(temp_dir / 'shared')}]})
+
+        listed = registry.load_all([repos, stores])
+
+        assert [repo.name for repo in listed.repos] == ['shared-repo']
+
+    def test_every_file_contributes_its_entries(self, temp_dir):
+        repos = write(temp_dir / 'repos.json', {'repos': [{'name': 'a', 'path': str(temp_dir / 'a')}]})
+        stores = write(temp_dir / 'stores.json', {'stores': [{'name': 'b', 'path': str(temp_dir / 'b')}]})
+
+        assert [repo.name for repo in registry.load_all([repos, stores]).repos] == ['a', 'b']
+
+    def test_an_unusable_entry_names_the_file_it_came_from(self, temp_dir):
+        repos = write(temp_dir / 'repos.json', {'repos': [{'name': 'a', 'path': str(temp_dir / 'a')}]})
+        stores = write(temp_dir / 'stores.json', {'stores': [{'name': 'b', 'path': str(temp_dir / 'b')}, {'name': 'c'}]})
+
+        assert registry.load_all([repos, stores]).unusable == [f'{stores}: c names no path']
+
+
 class TestWhatIsSwept:
     def test_retired_is_left_out(self, temp_dir):
         assert not registry.Repo(name='a', path=temp_dir, status='retired').is_swept

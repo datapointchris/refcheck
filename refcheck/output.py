@@ -38,6 +38,7 @@ def marked(marker: str, text: str) -> str:
 
 class CheckType(Enum):
     PATTERN = 'old_path_pattern'
+    NAME = 'old_name'
     SOURCE = 'broken_source_command'
     SCRIPT = 'broken_bash_command'
     FRAGILE_CWD = 'fragile_cwd_path'
@@ -237,7 +238,7 @@ def _print_unreadable(unreadable: list[Unreadable]) -> None:
         print(f'    {entry.reason}')
 
 
-def print_sweep(sweep: 'SweepResult', patterns: dict[str, str]) -> None:
+def print_sweep(sweep: 'SweepResult', patterns: dict[str, str], by_name: bool = False) -> None:
     """Print a cross-repo sweep, grouped by the repo each finding sits in.
 
     Paths are printed absolute rather than repo-relative. Every other refcheck
@@ -248,6 +249,9 @@ def print_sweep(sweep: 'SweepResult', patterns: dict[str, str]) -> None:
     What was not swept is printed too. A registry naming a path this machine
     does not hold is drift of its own, and a sweep reporting a clean 60 repos
     when the caller expected 90 is the false clean this tool exists to avoid.
+
+    `by_name` says the sweep looked for old names rather than moved paths, which
+    changes only what the count line says was looked for.
     """
     try:
         print()
@@ -258,6 +262,13 @@ def print_sweep(sweep: 'SweepResult', patterns: dict[str, str]) -> None:
         skipped = f' (skipped {len(sweep.retired)} retired)' if sweep.retired else ''
 
         repos = _count(sweep.scanned, 'repo')
+        if by_name:
+            looked_for = ', '.join(patterns)
+            clean_claim = f'No other repo names {looked_for}'
+            asked = f'old name {looked_for}'
+        else:
+            clean_claim = 'No repo names a path that moved'
+            asked = f'{len(patterns)} moved path(s)'
 
         # The tick is a claim about every repo the caller named, so a run that
         # could not read one of them has no tick to print. Saying "no repo names
@@ -267,10 +278,10 @@ def print_sweep(sweep: 'SweepResult', patterns: dict[str, str]) -> None:
             stale = f'Found {len(sweep.issues)} stale reference(s) in {len(sweep.with_issues)} of {repos}{skipped}'
             print(marked(FAIL, stale))
         elif not sweep.unreached:
-            clean = f'No repo names a path that moved — {repos}, {len(patterns)} moved path(s){skipped}'
+            clean = f'{clean_claim} — {repos}, {asked}{skipped}'
             print(marked(PASS, clean))
         else:
-            partial = f'{repos} swept, {len(patterns)} moved path(s){skipped} — but the sweep could not read everything it was given'
+            partial = f'{repos} swept, {asked}{skipped} — but the sweep could not read everything it was given'
             print(marked(FAIL, partial))
 
         _print_unlisted_source(sweep)

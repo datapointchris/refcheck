@@ -171,6 +171,7 @@ class TestAToolAndItsSubcommand:
             'my-forge status',
             'forge.status',
             'the forge status-line, via /usr/bin/reforge status',
+            'forge --json status',
         ],
     )
     def test_other_uses_of_either_word_stay_silent(self, line):
@@ -210,6 +211,33 @@ class TestAToolAndItsFlag:
     def test_the_corrected_call_and_other_flags_stay_silent(self, line):
         for kind in LineKind:
             assert not FLAG.names_it(line, kind)
+
+    @pytest.mark.parametrize(
+        ('line', 'kind'),
+        [
+            ('tool --json --legacy', LineKind.SHELL),
+            ('tool -v --legacy', LineKind.SHELL),
+            ('Run `tool --json --legacy` first.', LineKind.PROSE),
+            ('args: ["tool", "--json", "--legacy"]', LineKind.ANOTHER_LANGUAGE),
+        ],
+    )
+    def test_a_removed_flag_is_named_after_a_kept_one(self, line, kind):
+        assert NameShapes.of('tool --legacy').names_it(line, kind)
+
+    def test_a_word_before_the_flag_is_a_subcommand_and_stays_silent(self):
+        for kind in LineKind:
+            assert not NameShapes.of('tool --legacy').names_it('tool check --json --legacy', kind)
+
+    @pytest.mark.parametrize(
+        ('line', 'kind'),
+        [
+            ('refcheck check --strict src/', LineKind.SHELL),
+            ('refcheck check --no-warn --strict', LineKind.SHELL),
+            ('["refcheck", "check", "--strict"]', LineKind.ANOTHER_LANGUAGE),
+        ],
+    )
+    def test_a_subcommands_own_flag_is_named(self, line, kind):
+        assert NameShapes.of('refcheck check --strict').names_it(line, kind)
 
 
 class TestCheckNames:

@@ -204,7 +204,7 @@ refcheck check --strict
 | A file or directory moved, was renamed or was deleted | `--moves`, `--moves-since <base>`, or `--pattern "old/path/"` | The pre-commit hook, with `args: [--moves]`, for this repo. You, with `--moves-since <base> --registry`, for every other repo and for the old filename |
 | A tool was renamed or removed | `--name oldtool` | You, when the change lands |
 | A subcommand was renamed, moved to another tool, or removed | `--name "tool oldsub"`, once per subcommand | You, when the change lands |
-| A flag moved under a subcommand, was renamed, or was removed | `--name "tool --oldflag"`, once per flag | You, when the change lands |
+| A flag moved under a subcommand, was renamed, or was removed | `--name "tool --oldflag"`, or `--name "tool sub --oldflag"` for a subcommand's flag, once per flag | You, when the change lands |
 
 Add `--registry` once per registry to ask every repo and store it lists, not
 just this one.
@@ -309,11 +309,22 @@ refcheck check --name "tool --pattern" --desc "Now tool check --pattern" \
   --registry ~/.config/repos.json --registry ~/.config/stores.json
 ```
 
-The flag has to follow the tool directly, which is what tells the old call from
-the corrected one: `tool check --pattern` is not matched. A line holding several
-moved flags is reported by whichever comes first. A positional argument that
-moved, such as `tool src/` becoming `tool check src/`, names nothing a shape can
-match, so it is left for you to find.
+Other flags may stand before it, so a removed flag is found behind the ones the
+tool kept: `tool --json --legacy`. A word between the tool and the flag that is
+not itself a flag is taken for a subcommand, so `tool check --pattern`, the
+corrected call, is not matched. A flag after a value or a positional argument,
+as in `tool --type md --oldflag` or `tool sub src/ --oldflag`, is not matched
+either, because nothing tells the value from a subcommand.
+
+A subcommand's own flag, renamed or removed, is named with the subcommand:
+
+```bash
+refcheck check --name "tool check --strict" --desc "Now tool check --fail-on-warning"
+```
+
+A positional argument that moved, such as `tool src/` becoming
+`tool check src/`, names nothing a shape can match, so it is left for you to
+find.
 
 ### After moving files, in the repos that name them
 

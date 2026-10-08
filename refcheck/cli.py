@@ -76,9 +76,10 @@ CHECK_EPILOG = '\n\n'.join(
             'listed repo holds a file of that name.\n'
             'Renamed or removed a tool: --name oldtool.\n'
             'Renamed, moved or removed a subcommand: --name "tool oldsub", once per subcommand.\n'
-            'Moved a flag under a subcommand, or removed it: --name "tool --oldflag", once per flag.\n'
-            'Add --registry once per registry to ask every repo and store, not just this one. A tool '
-            'or a subcommand is not a file git moves, so a pre-commit hook never asks --name for you: '
+            'Moved a flag under a subcommand, renamed or removed it: --name "tool --oldflag", or '
+            '--name "tool sub --oldflag" for a subcommand\'s flag, once per flag.\n'
+            'Add --registry once per registry to ask every repo and store, not just this one. A tool, '
+            'a subcommand or a flag is not a file git moves, so a pre-commit hook never asks --name for you: '
             'run it when the change lands.'
         ),
         '[b]Excluding a repo of its own generated output[/b]',
@@ -124,9 +125,12 @@ CHECK_EPILOG = '\n\n'.join(
             'tool --json oldsub, is not matched.'
         ),
         (
-            'A tool and a flag, "tool --oldflag", take the same shapes, so the flag has to follow the tool '
-            'directly. After the flag moved under a subcommand, "tool sub --oldflag" is the corrected '
-            'call and is not matched.'
+            'A tool and a flag, "tool --oldflag", take the same shapes, and other flags may stand before '
+            'it: tool --json --oldflag. A word between the tool and the flag that is not itself a flag '
+            'is taken for a subcommand, so "tool sub --oldflag", the corrected call, is not matched; '
+            'name a subcommand\'s own flag as "tool sub --oldflag". A flag after a value or a positional '
+            'argument, as in tool --type md --oldflag or tool sub src/ --oldflag, is not matched, because '
+            'nothing tells the value from a subcommand.'
         ),
         (
             'The bare word in a sentence is not one, because nothing tells the tool from the English word '
@@ -309,9 +313,10 @@ def check(
         if not NAME_WORD.fullmatch(first) or not all(NAME_WORD.fullmatch(word) or FLAG_WORD.fullmatch(word) for word in rest):
             path_hint = ' For a path, use --pattern.' if '/' in name else ''
             print(
-                f"refcheck: --name takes a tool's name ('oldtool'), a tool and its subcommand ('tool oldsub') "
-                f"or a tool and its flag ('tool --oldflag'), each word letters, digits, '.', '_' or '-', and "
-                f'{name!r} is none of them.{path_hint}',
+                "refcheck: --name takes a tool's name, then optionally its subcommand or one of its flags: "
+                "'oldtool', 'tool oldsub' or 'tool --oldflag'. A name is letters, digits, '.', '_' or '-', "
+                "and a flag is '-' or '--' and then letters, digits, '_' or '-'. "
+                f'{name!r} is not one of those.{path_hint}',
                 file=sys.stderr,
             )
             raise typer.Exit(2)

@@ -173,7 +173,7 @@ def names_across_repos(
     file_type: str | None = None,
     test_mode: bool = False,
     flag_excludes: Sequence[str] = (),
-    source_root: Path | None = None,
+    already_scanned: Path | None = None,
 ) -> SweepResult:
     """Ask every listed repo where it still names a tool that was renamed.
 
@@ -183,19 +183,28 @@ def names_across_repos(
     repo nor a path check can see those, so the sweep reads them where they are.
 
     Nothing is credited to an owner, because a name is stale wherever it stands.
-    The repo the run started in is left out of the walk: the local run already
-    reported it, and walking it again here would print every finding twice.
+
+    `already_scanned` is the tree the local run read, and the sweep reads none of
+    it again, which would print every finding twice. It reads everything else,
+    including the rest of a repo the local run was narrowed inside: a narrowed
+    run that skipped its whole starting repo here would tick over files nobody
+    read.
     """
     sweep = SweepResult(unusable=list(registry.unusable))
 
     if not names:
         return sweep
 
-    started_in = Path(os.path.realpath(source_root)) if source_root is not None else None
+    scanned = Path(os.path.realpath(already_scanned)) if already_scanned is not None else None
     for repo in _partition(registry, sweep):
-        if started_in is not None and Path(os.path.realpath(repo.path)) == started_in:
-            continue
-        checker = _checker_for(repo, skip_docs, file_type, test_mode, flag_excludes)
+        home = Path(os.path.realpath(repo.path))
+        skip: list[str] = []
+        if scanned is not None and scanned.is_relative_to(home):
+            if scanned == home:
+                continue
+            inside = scanned.relative_to(home).as_posix()
+            skip = [inside, f'{inside}/**']
+        checker = _checker_for(repo, skip_docs, file_type, test_mode, [*flag_excludes, *skip])
         checker.check_names(names)
         sweep.results.append(RepoResult(repo=repo, issues=checker.issues, unreadable=checker.unreadable))
 

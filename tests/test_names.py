@@ -7,19 +7,19 @@ nobody would write in prose would pass every test below whatever the matcher did
 import pytest
 
 from refcheck.checker import ReferenceChecker
+from refcheck.names import LineKind
 from refcheck.names import NameShapes
 
 SHAPES = NameShapes.of('relate')
 
 
-class TestShapesThatNameTheTool:
+class TestShapesThatNameTheToolOnAnyLine:
     @pytest.mark.parametrize(
         'line',
         [
             'Use `relate` for this.',
             "`relate`'s eval reaches its own tables",
             'Run `relate check --json` first.',
-            "subprocess.run(['relate', 'batch'])",
             'tool = "relate"',
             'cd ~/tools/relate',
             'Set in src/relate/storage.py',
@@ -27,102 +27,144 @@ class TestShapesThatNameTheTool:
             'from relate.storage import open_db',
             'relate/main.py holds the CLI',
             'docs_url: "https://github.com/someone/relate"',
+            '| **relate** | SQLite | CLI |',
+            '| SQLite | relate | CLI |',
         ],
     )
-    def test_in_any_file(self, line):
-        assert SHAPES.names_it(line, runs_as_shell=False)
+    def test_in_prose(self, line):
+        assert SHAPES.names_it(line, LineKind.PROSE)
+
+
+class TestShapesThatNameTheToolInCode:
+    @pytest.mark.parametrize(
+        'line',
+        [
+            'import relate',
+            'from relate import storage',
+            '  - name: relate',
+            'tool = relate',
+            'see_also: [indy, relate, doit]',
+            'forge exec -F relate,nomad -- <cmd>',
+            'forge exec -F nomad,relate -- <cmd>',
+            '  relate     SQLite · CLI     content synthesis',
+        ],
+    )
+    def test_in_another_language(self, line):
+        assert SHAPES.names_it(line, LineKind.ANOTHER_LANGUAGE)
 
     @pytest.mark.parametrize(
         'line',
         [
             'relate batch ./urls.txt',
-            '  relate status',
             '$ relate deltas',
             'cat urls | relate batch -',
             'out=$(relate show 3)',
-            'make && relate resume',
+            'uv tool install relate',
+            'command -v relate >/dev/null',
+            'which relate',
+            'sudo relate check',
+            'if relate check; then',
+            'for f in *; do relate "$f"; done',
+            'RELATE=1 relate go',
+            'exec relate',
+            'nohup relate six &',
+            'xargs relate < list',
             "rg -e '\\b(indy|relate|syncer)\\b'",
-            'relate',
         ],
     )
-    def test_in_command_position_on_a_shell_line(self, line):
-        assert SHAPES.names_it(line, runs_as_shell=True)
+    def test_on_a_shell_line(self, line):
+        assert SHAPES.names_it(line, LineKind.SHELL)
 
 
-class TestTheWordInASentenceStaysSilent:
+class TestTheWordStaysSilent:
     @pytest.mark.parametrize(
         'line',
         [
             'How do the pieces relate across repos?',
+            'relate across repos, and how they share state.',
             'These correlate closely.',
             'it relates to the earlier rule',
             '`digest relate` grades a saved analysis',
             'the relate-ish helpers',
             'a sentence ending on relate.',
             'myrelate/config is another tool',
+            'Example: relate',
         ],
     )
-    def test_on_any_line(self, line):
-        assert not SHAPES.names_it(line, runs_as_shell=True)
+    def test_in_prose(self, line):
+        assert not SHAPES.names_it(line, LineKind.PROSE)
 
-    def test_a_line_opening_on_the_word_is_a_sentence_in_prose(self):
-        """A wrapped paragraph puts any word at the start of a line."""
-        assert not SHAPES.names_it('relate across repos, and how they share state.', runs_as_shell=False)
+    @pytest.mark.parametrize(
+        'line',
+        [
+            '    relate them to each other later.',
+            '  relate records across tables.',
+            'relate to one another is the question.',
+            '# how the parts relate',
+            'across indy, relate, syncer and dectl',
+        ],
+    )
+    def test_in_another_language(self, line):
+        assert not SHAPES.names_it(line, LineKind.ANOTHER_LANGUAGE)
 
-    def test_a_subcommand_named_after_the_old_tool_is_not_command_position(self):
-        assert not SHAPES.names_it('digest relate 42', runs_as_shell=True)
-
-
-class TestWhichLinesAShellWouldRun:
-    """Command position is only asked of a shell line, so the classification is half the rule."""
-
-    def kinds(self, temp_dir, name, text):
-        path = temp_dir / name
-        path.write_text(text)
-        checker = ReferenceChecker(root_dir=temp_dir)
-        return [(line.strip(), kind.value) for _, line, kind in checker.classified_lines(path, checker.lines_of(path))]
-
-    def test_markdown_prose_is_prose_and_a_shell_fence_is_shell(self, temp_dir):
-        text = 'relate across repos\n\n```bash\nrelate batch x\n```\n\n```yaml\nrelate: x\n```\n'
-
-        assert self.kinds(temp_dir, 'doc.md', text) == [
-            ('relate across repos', 'prose'),
-            ('', 'prose'),
-            ('relate batch x', 'shell'),
-            ('', 'prose'),
-            ('relate: x', 'another language'),
-        ]
-
-    def test_a_script_is_shell_throughout(self, temp_dir):
-        assert self.kinds(temp_dir, 'run.sh', 'relate batch x\n') == [('relate batch x', 'shell')]
-
-    def test_a_text_file_is_prose_throughout(self, temp_dir):
-        assert self.kinds(temp_dir, 'notes.txt', 'relate across repos\n') == [('relate across repos', 'prose')]
+    @pytest.mark.parametrize(
+        'line',
+        [
+            'make build  # so the parts relate',
+            '# relate the two before running',
+            'digest related --json',
+        ],
+    )
+    def test_on_a_shell_line_in_a_comment_or_a_longer_word(self, line):
+        assert not SHAPES.names_it(line, LineKind.SHELL)
 
 
 class TestCheckNames:
-    def test_reports_each_line_once_with_the_description(self, temp_dir):
+    def found(self, temp_dir, files, **options):
+        for name, text in files.items():
+            (temp_dir / name).write_text(text)
+        checker = ReferenceChecker(root_dir=temp_dir, **options)
+        checker.check_names({'relate': 'now digest'})
+        return [(str(issue.file), issue.line_num) for issue in checker.issues]
+
+    def test_a_row_carries_the_line_it_found(self, temp_dir):
         (temp_dir / 'README.md').write_text('Use `relate` here, `relate` there.\nHow do these relate?\n')
         checker = ReferenceChecker(root_dir=temp_dir)
 
         checker.check_names({'relate': 'now digest'})
 
-        assert [(str(issue.file), issue.line_num, issue.message, issue.suggestion) for issue in checker.issues] == [
-            ('README.md', 1, 'Names relate', 'now digest'),
+        assert [(str(i.file), i.line_num, i.message, i.suggestion) for i in checker.issues] == [
+            ('README.md', 1, 'Found: Use `relate` here, `relate` there.', 'now digest'),
         ]
 
-    def test_a_shell_fence_reports_command_position_and_prose_does_not(self, temp_dir):
-        (temp_dir / 'guide.md').write_text('relate across repos\n\n```bash\nrelate batch x\n```\n')
+    def test_no_description_leaves_no_suggestion(self, temp_dir):
+        (temp_dir / 'README.md').write_text('Use `relate`.\n')
         checker = ReferenceChecker(root_dir=temp_dir)
 
-        checker.check_names({'relate': 'now digest'})
+        checker.check_names({'relate': ''})
 
-        assert [issue.line_num for issue in checker.issues] == [4]
+        assert checker.issues[0].suggestion is None
+
+    def test_a_shell_fence_reports_a_command_and_prose_does_not(self, temp_dir):
+        assert self.found(temp_dir, {'guide.md': 'relate across repos\n\n```bash\nrelate batch x\n```\n'}) == [('guide.md', 4)]
+
+    def test_a_script_reports_a_command_and_a_text_file_does_not(self, temp_dir):
+        files = {'run.sh': 'relate batch x\n', 'notes.txt': 'relate across repos\n', 'doc.md': '```yaml\nrelate: x\n```\n'}
+
+        assert self.found(temp_dir, files) == [('run.sh', 1)]
+
+    def test_an_extensionless_script_is_shell_by_its_shebang(self, temp_dir):
+        files = {'deploy': '#!/usr/bin/env bash\nrelate batch x\n', 'COMMIT_TEMPLATE': 'relate to the existing behavior.\n'}
+
+        assert self.found(temp_dir, files) == [('deploy', 2)]
+
+    def test_python_and_yaml_prose_is_not_a_command(self, temp_dir):
+        files = {
+            'model.py': 'def f():\n    """Load both.\n\n    relate them to each other later.\n    """\n',
+            'config.yaml': 'description: >\n  relate records across tables.\n',
+        }
+
+        assert self.found(temp_dir, files) == []
 
     def test_skip_docs_leaves_markdown_out(self, temp_dir):
-        (temp_dir / 'README.md').write_text('Use `relate`.\n')
-        checker = ReferenceChecker(root_dir=temp_dir, skip_docs=True)
-
-        checker.check_names({'relate': 'now digest'})
-
-        assert checker.issues == []
+        assert self.found(temp_dir, {'README.md': 'Use `relate`.\n'}, skip_docs=True) == []

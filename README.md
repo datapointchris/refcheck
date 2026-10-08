@@ -213,30 +213,44 @@ refcheck check --name oldtool --desc "Now newtool" \
   --registry ~/.config/repos.json --registry ~/.config/stores.json
 ```
 
-Matching the bare word would bury the references in English whenever the old
-name is also a word: `relate`, swept that way across one documentation set, was
-47 hits of which 8 named the tool. So a hit counts only in a shape a sentence
-using the word does not take:
+Matching the bare word buries the references in English whenever the old name
+is also a word, because most lines holding it use the word. So a hit counts only
+in a shape that kind of line does not take when it means the word:
 
-| Shape | Example |
-| --- | --- |
-| A code span opening on it | `` `oldtool` ``, `` `oldtool check` ``, `` `oldtool`'s `` |
-| A quoted literal holding only it | `"oldtool"`, `['oldtool', 'batch']` |
-| A path segment | `~/tools/oldtool`, `src/oldtool/main.py`, `oldtool.db`, `oldtool.storage` |
-| Command position, on a line a shell would run | `oldtool batch`, `x \| oldtool`, `$(oldtool)`, `(indy\|oldtool\|syncer)` |
+| Line | Shape | Example |
+| --- | --- | --- |
+| Any | A code span opening on it | `` `oldtool` ``, `` `oldtool check` ``, `` `oldtool`'s `` |
+| Any | A quoted literal holding only it | `"oldtool"`, `['oldtool', 'batch']` |
+| Any | A path segment | `~/tools/oldtool`, `src/oldtool/main.py`, `oldtool.db`, `oldtool.storage` |
+| Any | Bold, or a table cell, holding only it | `**oldtool**`, `\| oldtool \|` |
+| Code or config | An import, or a value that is only it | `import oldtool`, `name: oldtool` |
+| Code or config | A list item | `[indy, oldtool]`, `-F oldtool,nomad` |
+| Code or config | A line opening on it in aligned columns | `oldtool     SQLite · CLI` |
+| Shell | The whole word, outside a comment | `oldtool batch`, `uv tool install oldtool`, `if oldtool check; then` |
 
-A shell line is one in a script, or in a markdown fence tagged as shell or
-untagged. In prose a line opening on the word is a wrapped sentence, so command
-position is not asked of it.
+A shell line is one in a `.sh`, `.bash`, `.zsh` or `.ksh` file, an extensionless
+file whose shebang names a shell, or a markdown fence tagged as shell or
+untagged. Prose is markdown outside its fences and `.txt`, `.rst`, `.adoc`,
+`.org`, `.html` and `.tex`. Every other file is code or config, which is what
+keeps a docstring opening on the word from reading as a command.
 
 What no shape reaches is the name in running prose — "across indy, oldtool and
 syncer". Nothing on the line tells the tool from the word, so that one is left
-for you to find. The renamed tool's own repo names its former name on purpose,
-in migration code and its history, and is reported like any other: read those
-hits rather than fixing them.
+for you to find.
 
-The repo the run starts in is checked locally and left out of the sweep, so
-nothing in it is printed twice.
+Two kinds of hit are correct and reported anyway, because nothing on the line
+says so. The renamed tool's own repo names its former name on purpose, in
+migration code and its history. And where the old name lives on as a
+subcommand or a key of the tool that absorbed it — `newtool oldtool` — every
+mention of that live name is reported too. Read both rather than fixing them,
+and add a `[scan] exclude` to that repo's `.refcheck.toml` to quiet them.
+
+Each row prints the line it was found on, so a hit can be judged without
+opening the file.
+
+The tree the local run read is left out of the sweep, so nothing in it is
+printed twice. A run narrowed to one directory still sweeps the rest of its
+repo when the registry lists that repo.
 
 ### After moving files, in the repos that name them
 
@@ -338,8 +352,8 @@ Every filter narrows the sweep as well as the local run — `--type`, `--skip-do
 
 `--registry` also takes `--pattern`, `--moves` and `--name`, and needs one of
 them: validating another repo's `source` statements is that repo's own run, so a
-registry with nothing to look for exits 2 rather than walking 90 repos to ask
-them nothing.
+registry with nothing to look for exits 2 rather than walking every listed repo
+to ask it nothing.
 
 `--pattern`, `--name` and `--moves` each ask a different question, and a run
 asks one. Passing two exits 2, because answering the first would print a tick

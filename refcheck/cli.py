@@ -90,10 +90,16 @@ CHECK_EPILOG = '\n\n'.join(
         ),
         '[b]What --name counts as a use of the name[/b]',
         (
-            'A code span opening on it, a quoted literal holding only it, a path segment such as '
-            '~/tools/oldtool or oldtool.db, and command position on a line a shell would run. The bare '
-            'word in a sentence is not one, because nothing tells the tool from the English word it may '
-            'also be — so a name in running prose is left for you to find.'
+            'On any line: a code span opening on it, a quoted literal, bold or a table cell holding only '
+            'it, and a path segment such as ~/tools/oldtool or oldtool.db. On a line of code or config, '
+            'also an import, a value that is only it, a list item, and a line opening on it in aligned '
+            'columns. On a line a shell would run, the whole word outside a comment.'
+        ),
+        (
+            'The bare word in a sentence is not one, because nothing tells the tool from the English word '
+            'it may also be — so a name in running prose is left for you to find. A subcommand that kept '
+            'the old name in the tool that absorbed it is reported too: read those hits, and exclude them '
+            f'in that repo’s {REPO_CONFIG_NAME}.'
         ),
     ]
 )
@@ -282,7 +288,7 @@ def check(
         checker.check_pattern(pattern, desc)
         sweep_patterns = {pattern: desc or f'Old pattern: {pattern}'}
     elif name:
-        sweep_patterns = {name: desc or f'Old name: {name}'}
+        sweep_patterns = {name: desc or ''}
         checker.check_names(sweep_patterns)
     else:
         checker.run_all_checks()
@@ -324,7 +330,7 @@ def check(
     )
 
     swept = (
-        _sweep_other_repos(registry, sweep_patterns, bool(name), skip_docs, file_type, test_mode, flag_patterns, root_dir)
+        _sweep_other_repos(registry, sweep_patterns, bool(name), skip_docs, file_type, test_mode, flag_patterns, root_dir, search_path)
         if registry
         else None
     )
@@ -361,6 +367,7 @@ def _sweep_other_repos(
     test_mode: bool,
     flag_excludes: list[str],
     source_root: Path,
+    scanned_here: Path,
 ) -> sweep_module.SweepResult:
     """Ask every repo the registries list what a move or a rename left behind."""
     try:
@@ -369,16 +376,26 @@ def _sweep_other_repos(
         print(f'refcheck: {error}', file=sys.stderr)
         raise typer.Exit(2) from error
 
-    sweep_across = sweep_module.names_across_repos if by_name else sweep_module.across_repos
-    swept = sweep_across(
-        listed,
-        patterns,
-        skip_docs=skip_docs,
-        file_type=file_type,
-        test_mode=test_mode,
-        flag_excludes=flag_excludes,
-        source_root=source_root,
-    )
+    if by_name:
+        swept = sweep_module.names_across_repos(
+            listed,
+            patterns,
+            skip_docs=skip_docs,
+            file_type=file_type,
+            test_mode=test_mode,
+            flag_excludes=flag_excludes,
+            already_scanned=scanned_here,
+        )
+    else:
+        swept = sweep_module.across_repos(
+            listed,
+            patterns,
+            skip_docs=skip_docs,
+            file_type=file_type,
+            test_mode=test_mode,
+            flag_excludes=flag_excludes,
+            source_root=source_root,
+        )
     print_sweep(swept, patterns, by_name=by_name)
     return swept
 

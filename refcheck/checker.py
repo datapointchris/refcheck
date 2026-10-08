@@ -3,14 +3,13 @@
 import os
 import re
 from collections.abc import Callable
-from collections.abc import Iterable
 from collections.abc import Iterator
 from dataclasses import dataclass
 from dataclasses import field
-from enum import Enum
 from pathlib import Path
 
 from .config import Config
+from .names import LineKind
 from .names import NameShapes
 from .output import CheckType
 from .output import Issue
@@ -19,14 +18,6 @@ from .output import Unreadable
 from .output import Warning
 from .rules import load_rules
 from .suggestions import FileSuggestions
-
-
-class LineKind(Enum):
-    """What a line of a scanned file holds, as far as a reference check cares."""
-
-    PROSE = 'prose'
-    SHELL = 'shell'
-    ANOTHER_LANGUAGE = 'another language'
 
 
 @dataclass(frozen=True)
@@ -317,7 +308,7 @@ class ReferenceChecker:
         language = info.strip('{}.').lower()
         return not language or language in self.SHELL_FENCE_LANGUAGES
 
-    def lines_a_shell_could_run(self, file_path: Path, lines: Iterable[str]) -> Iterator[tuple[int, str]]:
+    def lines_a_shell_could_run(self, file_path: Path, lines: list[str]) -> Iterator[tuple[int, str]]:
         """The numbered lines of a file, less the fenced blocks holding another language.
 
         Markdown quotes other languages constantly, and a tool's own output is
@@ -334,15 +325,39 @@ class ReferenceChecker:
         Fences are a markdown construct, so every line of any other file is
         yielded as it is read.
         """
+        if file_path.suffix != '.md':
+            yield from enumerate(lines, 1)
+            return
+
         for line_num, line, kind in self.classified_lines(file_path, lines):
             if kind is not LineKind.ANOTHER_LANGUAGE:
                 yield line_num, line
 
-    # Files holding sentences rather than commands. A line opening on a word in
-    # one is a wrapped sentence, never an invocation.
-    PROSE_SUFFIXES = frozenset({'.md', '.txt', '.rst'})
+    # Files holding sentences rather than commands or code.
+    PROSE_SUFFIXES = frozenset({'.md', '.txt', '.rst', '.adoc', '.org', '.html', '.htm', '.tex'})
 
-    def classified_lines(self, file_path: Path, lines: Iterable[str]) -> Iterator[tuple[int, str, 'LineKind']]:
+    SHELL_SUFFIXES = frozenset({'.sh', '.bash', '.zsh', '.ksh'})
+
+    # A shebang naming a shell, through env or directly.
+    SHELL_SHEBANG = re.compile(r'^#!\s*\S*?(?:/env\s+)?(?:\S*/)?(?:ba|z|k|da)?sh\b')
+
+    def kind_of_file(self, file_path: Path, first_line: str) -> LineKind:
+        """What kind of text a whole file holds, outside markdown's fences.
+
+        Shell is what the file declares, by its suffix or its shebang, and never
+        the fallback. Defaulting to shell reads a Python docstring opening on a
+        word as a command, and the same YAML is then shell in a file and another
+        language inside a fence tagged yaml.
+        """
+        if file_path.suffix in self.PROSE_SUFFIXES:
+            return LineKind.PROSE
+        if file_path.suffix in self.SHELL_SUFFIXES:
+            return LineKind.SHELL
+        if not file_path.suffix and self.SHELL_SHEBANG.match(first_line):
+            return LineKind.SHELL
+        return LineKind.ANOTHER_LANGUAGE
+
+    def classified_lines(self, file_path: Path, lines: list[str]) -> Iterator[tuple[int, str, LineKind]]:
         """Every numbered line of a file, with what kind of text it is.
 
         The one fence parser, so the two questions asked of a markdown line —
@@ -350,7 +365,7 @@ class ReferenceChecker:
         a block opens or closes. Fence markers are not yielded at all.
         """
         if file_path.suffix != '.md':
-            kind = LineKind.PROSE if file_path.suffix in self.PROSE_SUFFIXES else LineKind.SHELL
+            kind = self.kind_of_file(file_path, lines[0] if lines else '')
             for line_num, line in enumerate(lines, 1):
                 yield line_num, line, kind
             return
@@ -918,16 +933,29 @@ class ReferenceChecker:
 
             for line_num, line, kind in self.classified_lines(file_path, lines):
                 for shape, description in shapes:
-                    if shape.names_it(line, runs_as_shell=kind is LineKind.SHELL):
+                    if shape.names_it(line, kind):
                         self.issues.append(
                             Issue(
                                 file=rel_path,
                                 line_num=line_num,
                                 check_type=CheckType.NAME,
-                                message=f'Names {shape.name}',
-                                suggestion=description,
+                                message=f'Found: {self._evidence(line)}',
+                                suggestion=description or None,
                             )
                         )
+
+    EVIDENCE_WIDTH = 100
+
+    @classmethod
+    def _evidence(cls, line: str) -> str:
+        """The line a name was found on, as the reader needs it to judge the hit.
+
+        A row saying only that the name was found leaves every hit to be opened
+        by hand, and the hits a reader is told to read rather than fix are the
+        ones that most need reading.
+        """
+        text = line.strip()
+        return text if len(text) <= cls.EVIDENCE_WIDTH else f'{text[: cls.EVIDENCE_WIDTH - 1]}…'
 
     def check_patterns_across_repos(self, patterns: dict[str, str], repo_homes: dict[Path, str], repo_paths: dict[str, Path]):
         """Check this tree for paths that moved in one of the other repos.

@@ -60,12 +60,10 @@ class Registry:
 def load(registry_path: Path) -> Registry:
     """Every repo the registry lists, minus the paths it excludes itself.
 
-    Three shapes are accepted because three are in use: a bare array of entries,
-    an object holding them under `repos` alongside the machine's search and
-    exclude paths, and an object holding them under `stores`, which is how a
-    declaration of content directories lists them. `exclude_paths` is the
-    registry's own declaration of what it keeps but does not own — third-party
-    clones read for reference — so it is applied here rather than left to a flag.
+    A registry is a bare array of entries, or an object holding them under
+    `repos` or `stores`. `exclude_paths` is the registry's own declaration of
+    what it keeps but does not own — third-party clones read for reference — so
+    it is applied here rather than left to a flag.
     """
     try:
         document = json.loads(registry_path.read_text(encoding='utf-8'))

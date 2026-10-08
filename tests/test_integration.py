@@ -1469,7 +1469,7 @@ class TestNameSearch:
         result = run_check('--name', 'oldtool', '--desc', 'now newtool', cwd=temp_dir)
 
         assert result.returncode == 1
-        assert 'Names oldtool' in result.stdout
+        assert 'Found: Use `oldtool` for this.' in result.stdout
         assert 'now newtool' in result.stdout
 
     def test_a_tree_without_it_passes(self, temp_dir):
@@ -1527,3 +1527,19 @@ class TestOneQuestionPerRun:
 
         assert result.returncode == 2
         assert 'pass one per run' in result.stderr
+
+
+def test_a_name_run_narrowed_to_a_directory_still_sweeps_the_rest_of_its_repo(tmp_path):
+    repo = tmp_path / 'repo'
+    (repo / 'docs').mkdir(parents=True)
+    (repo / 'bin').mkdir()
+    (repo / 'docs' / 'guide.md').write_text('Use `oldtool` here.\n')
+    (repo / 'bin' / 'run.sh').write_text('oldtool batch\n')
+    (tmp_path / 'repos.json').write_text(json.dumps({'repos': [{'name': 'repo', 'path': str(repo)}]}))
+
+    result = run_check('docs', '--name', 'oldtool', '--registry', str(tmp_path / 'repos.json'), cwd=repo)
+
+    assert result.returncode == 1
+    assert 'docs/guide.md:1' in result.stdout
+    assert f'{repo / "bin" / "run.sh"}:1' in result.stdout
+    assert result.stdout.count('guide.md') == 1

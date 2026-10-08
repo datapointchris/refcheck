@@ -32,6 +32,7 @@ class RepoResult:
     repo: Repo
     issues: list[Issue] = field(default_factory=list)
     unreadable: list[Unreadable] = field(default_factory=list)
+    filenames: set[str] = field(default_factory=set)
 
 
 @dataclass
@@ -51,6 +52,16 @@ class SweepResult:
     unusable: list[str] = field(default_factory=list)
     source_root: Path | None = None
     source_is_listed: bool = True
+
+    @property
+    def filenames(self) -> set[str]:
+        """Every filename a swept repo still holds.
+
+        A filename still on disk names that file, so a citation of it is not
+        stale evidence of anything. `main.go` leaving one repo is not news to
+        the others.
+        """
+        return {name for result in self.results for name in result.filenames}
 
     @property
     def scanned(self) -> int:
@@ -161,7 +172,7 @@ def across_repos(
     for repo in live:
         checker = _checker_for(repo, skip_docs, file_type, test_mode, flag_excludes)
         checker.check_patterns_across_repos(patterns, homes, paths)
-        sweep.results.append(RepoResult(repo=repo, issues=checker.issues, unreadable=checker.unreadable))
+        sweep.results.append(RepoResult(repo=repo, issues=checker.issues, unreadable=checker.unreadable, filenames=checker.filenames()))
 
     return sweep
 
@@ -209,19 +220,6 @@ def names_across_repos(
         sweep.results.append(RepoResult(repo=repo, issues=checker.issues, unreadable=checker.unreadable))
 
     return sweep
-
-
-def filenames_in_use(registry: Registry, flag_excludes: Sequence[str] = ()) -> set[str]:
-    """Every filename some listed repo still holds.
-
-    A filename still on disk names that file, so a citation of it is not stale
-    evidence of anything. `main.go` leaving one repo is not news to the others.
-    """
-    in_use: set[str] = set()
-    for repo in registry.repos:
-        if repo.is_swept and repo.is_on_disk:
-            in_use |= _checker_for(repo, False, None, False, flag_excludes).filenames()
-    return in_use
 
 
 def _partition(registry: Registry, sweep: SweepResult) -> list[Repo]:

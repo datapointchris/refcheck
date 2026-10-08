@@ -254,6 +254,7 @@ class ReferenceChecker:
         self.warnings: list[Warning] = []
         self.unreadable: list[Unreadable] = []
         self.set_aside: list[SetAside] = []
+        self._found_files: dict[str | None, list[Path]] = {}
         self.exclude_dirs = self.DEFAULT_EXCLUDES.copy()
         self.exclude_patterns = self.DEFAULT_EXCLUDE_PATTERNS.copy()
         self._rules: dict | None = None
@@ -603,8 +604,14 @@ class ReferenceChecker:
     def find_files(self, suffix: str | None = None) -> list[Path]:
         """Every file under the search path, minus the exclusions.
 
-        Sorted so two runs over the same tree report in the same order.
+        Sorted so two runs over the same tree report in the same order. The tree
+        is walked once per suffix, since several checks in one run ask for it.
         """
+        if suffix not in self._found_files:
+            self._found_files[suffix] = self._walk_files(suffix)
+        return list(self._found_files[suffix])
+
+    def _walk_files(self, suffix: str | None) -> list[Path]:
         files: list[Path] = []
         search_root = self.search_path
 

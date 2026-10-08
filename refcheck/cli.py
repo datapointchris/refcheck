@@ -321,6 +321,7 @@ def check(
 
     listed = _load_registries(registry) if registry else None
     sweep_patterns: dict[str, str] = {}
+    found: list[moves_module.Move] = []
     gone_filenames: dict[str, str] = {}
     filenames_still_held: list[str] = []
 
@@ -359,16 +360,24 @@ def check(
             )
             sweep_patterns = {move.old: move.description for move in found}
 
-            # A filename the change took out of use is cited bare as often as by
-            # path. It is asked only across a registry, and only once no file on
-            # the machine still has it, because until then the citation names
-            # something real.
-            candidates = moves_module.old_filenames(found) if listed else {}
-            if listed and candidates:
-                in_use = checker.filenames() | sweep_module.filenames_in_use(listed, flag_patterns)
-                gone_filenames = {old: became for old, became in candidates.items() if old not in in_use}
-                filenames_still_held = sorted(set(candidates) - set(gone_filenames))
-                checker.check_names(gone_filenames)
+    sweeps = []
+    if listed:
+        by_name = bool(name)
+        swept = _sweep_other_repos(listed, sweep_patterns, by_name, skip_docs, file_type, test_mode, flag_patterns, root_dir, search_path)
+        sweeps.append((swept, sweep_patterns, by_name))
+
+        # A filename the change took out of use is cited bare as often as by
+        # path. It is asked only once no file on the machine still has it,
+        # because until then the citation names something real.
+        candidates = moves_module.old_filenames(found)
+        if candidates:
+            in_use = checker.filenames() | swept.filenames
+            gone_filenames = {old: became for old, became in candidates.items() if old not in in_use}
+            filenames_still_held = sorted(set(candidates) - set(gone_filenames))
+            checker.check_names(gone_filenames)
+        if gone_filenames:
+            named = _sweep_other_repos(listed, gone_filenames, True, skip_docs, file_type, test_mode, flag_patterns, root_dir, search_path)
+            sweeps.append((named, gone_filenames, True))
 
     print_results(
         checker.issues,
@@ -380,25 +389,18 @@ def check(
         checker.set_aside,
     )
 
-    sweeps = []
-    if listed:
-        sweeps.append(
-            _sweep_other_repos(listed, sweep_patterns, bool(name), skip_docs, file_type, test_mode, flag_patterns, root_dir, search_path)
-        )
-        if filenames_still_held:
+    for index, (result, looked_for, names_mode) in enumerate(sweeps):
+        print_sweep(result, looked_for, by_name=names_mode)
+        if index == 0 and filenames_still_held:
             print(f'Not asked as old filenames, because a file on this machine still has the name: {", ".join(filenames_still_held)}\n')
-        if gone_filenames:
-            sweeps.append(
-                _sweep_other_repos(listed, gone_filenames, True, skip_docs, file_type, test_mode, flag_patterns, root_dir, search_path)
-            )
 
     notify(UPDATE_CONFIG)
 
     # A path the run was handed and could not read fails it, the same as a
     # finding. Both mean the tick would be a lie, and the tick is the product.
-    unreached = bool(checker.unreadable) or any(swept.unreached for swept in sweeps)
+    unreached = bool(checker.unreadable) or any(result.unreached for result, _, _ in sweeps)
 
-    if checker.issues or any(swept.issues for swept in sweeps) or unreached or (checker.strict and checker.warnings):
+    if checker.issues or any(result.issues for result, _, _ in sweeps) or unreached or (checker.strict and checker.warnings):
         raise typer.Exit(1)
     raise typer.Exit(0)
 
@@ -434,7 +436,7 @@ def _sweep_other_repos(
     source_root: Path,
     scanned_here: Path,
 ) -> sweep_module.SweepResult:
-    """Ask every repo the registries list what a move or a rename left behind."""
+    """Ask every repo the registries list what a move or a rename left behind, printing nothing."""
     if by_name:
         swept = sweep_module.names_across_repos(
             listed,
@@ -455,7 +457,6 @@ def _sweep_other_repos(
             flag_excludes=flag_excludes,
             source_root=source_root,
         )
-    print_sweep(swept, patterns, by_name=by_name)
     return swept
 
 

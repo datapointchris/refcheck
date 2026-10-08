@@ -7,6 +7,8 @@ silent gets its own test, beside the ones that must fire.
 """
 
 import os
+import shutil
+from pathlib import Path
 
 import pytest
 
@@ -627,6 +629,43 @@ class TestAnExcludedSubtreeIsNotACoverageGap:
             os.chmod(blocked, 0o755)
 
         assert result.unreached
+
+
+class TestAPathGoneBeforeItIsReadIsNotACoverageGap:
+    """A tree with live processes in it churns, and what is gone holds nothing to miss."""
+
+    def test_a_file_deleted_between_the_walk_and_the_read_does_not_fail_the_run(self, two_repos, monkeypatch):
+        upstream, consumer = two_repos
+        ending = consumer / 'session.md'
+        ending.write_text('a session that ends mid-sweep\n')
+        read_text = Path.read_text
+
+        def read_after_it_ends(self, *args, **kwargs):
+            if self == ending:
+                self.unlink(missing_ok=True)
+            return read_text(self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, 'read_text', read_after_it_ends)
+        result = sweep.across_repos(repos_for(upstream, consumer), {'versions.json': 'x'})
+
+        assert not result.unreached
+
+    def test_a_directory_deleted_after_it_was_queued_does_not_fail_the_run(self, two_repos, monkeypatch):
+        upstream, consumer = two_repos
+        ending = consumer / 'build-tmp'
+        ending.mkdir()
+        (ending / 'notes.md').write_text('scratch\n')
+        iterdir = Path.iterdir
+
+        def list_after_it_is_removed(self):
+            if self == ending:
+                shutil.rmtree(self, ignore_errors=True)
+            return iterdir(self)
+
+        monkeypatch.setattr(Path, 'iterdir', list_after_it_is_removed)
+        result = sweep.across_repos(repos_for(upstream, consumer), {'versions.json': 'x'})
+
+        assert not result.unreached
 
 
 class TestARenamedToolAcrossRepos:

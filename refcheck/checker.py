@@ -551,9 +551,16 @@ class ReferenceChecker:
         A refusal is recorded and a file that is not text is not. The bytes
         arrived in the second case, so no reference was missed, and naming
         every binary file is the noise that buries the real findings.
+
+        A file deleted between the walk and the read is not recorded either.
+        Nothing is left in it to miss, and a tree with live processes in it
+        churns: a session registry under `~/.claude/sessions/` lasts as long as
+        its session, and one ending mid-sweep failed a run that missed nothing.
         """
         try:
             return file_path.read_text(encoding='utf-8').splitlines(keepends=True)
+        except FileNotFoundError:
+            return None
         except OSError as error:
             self.note_unreadable(file_path, error)
             return None
@@ -576,12 +583,17 @@ class ReferenceChecker:
         Iterative rather than recursive so a deep tree cannot exhaust the
         stack, and a symlinked directory is not followed — descending one would
         report the same files twice and can loop.
+
+        A directory deleted after it was queued holds nothing to miss, so it is
+        skipped rather than recorded, the same as a file `lines_of` finds gone.
         """
         stack = [root]
         while stack:
             directory = stack.pop()
             try:
                 entries = sorted(directory.iterdir())
+            except FileNotFoundError:
+                continue
             except OSError as error:
                 self.note_unreadable(directory, error)
                 continue

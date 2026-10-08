@@ -60,11 +60,10 @@ class Registry:
 def load(registry_path: Path) -> Registry:
     """Every repo the registry lists, minus the paths it excludes itself.
 
-    Two shapes are accepted because two are in use: a bare array of entries, and
-    an object holding them under `repos` alongside the machine's search and
-    exclude paths. `exclude_paths` is the registry's own declaration of what it
-    keeps but does not own — third-party clones read for reference — so it is
-    applied here rather than left to a flag.
+    A registry is a bare array of entries, or an object holding them under
+    `repos` or `stores`. `exclude_paths` is the registry's own declaration of
+    what it keeps but does not own — third-party clones read for reference — so
+    it is applied here rather than left to a flag.
     """
     try:
         document = json.loads(registry_path.read_text(encoding='utf-8'))
@@ -74,7 +73,7 @@ def load(registry_path: Path) -> Registry:
         raise RegistryError(f'{registry_path} is not valid JSON: {error}') from error
 
     if isinstance(document, dict):
-        entries = document.get('repos')
+        entries = document.get('repos', document.get('stores'))
         excluded = [_expand(path) for path in document.get('exclude_paths', [])]
     else:
         entries = document
@@ -103,5 +102,50 @@ def load(registry_path: Path) -> Registry:
     return Registry(repos=repos, unusable=unusable)
 
 
+def load_all(registry_paths: list[Path]) -> Registry:
+    """Every repo the named registries list between them, each directory once.
+
+    A machine declares its repos in one file and its content directories in
+    another, and a rename reaches both. Merging here rather than at the call site
+    keeps one directory from being walked twice when both files list it, which
+    would report every finding in it twice. The first listing of a directory wins,
+    so its name is the one the report uses.
+
+    An unusable entry is prefixed with its file once there is more than one, since
+    `entry 3 names no path` is otherwise ambiguous between them.
+    """
+    if len(registry_paths) == 1:
+        return load(registry_paths[0])
+
+    repos: list[Repo] = []
+    unusable: list[str] = []
+    seen: set[Path] = set()
+    for registry_path in registry_paths:
+        listed = load(registry_path)
+        unusable.extend(f'{registry_path}: {description}' for description in listed.unusable)
+        for repo in listed.repos:
+            physical = Path(os.path.realpath(repo.path))
+            if physical not in seen:
+                seen.add(physical)
+                repos.append(repo)
+
+    return Registry(repos=repos, unusable=unusable)
+
+
+# The defaults the XDG base-directory spec gives each variable when it is unset.
+# A registry spelling `$XDG_DATA_HOME/...` means that directory on every machine,
+# and expandvars leaves an unset variable as literal text, which names a relative
+# path nothing holds.
+XDG_DEFAULTS = {
+    'XDG_CONFIG_HOME': '~/.config',
+    'XDG_DATA_HOME': '~/.local/share',
+    'XDG_STATE_HOME': '~/.local/state',
+    'XDG_CACHE_HOME': '~/.cache',
+}
+
+
 def _expand(path: str) -> Path:
+    for variable, default in XDG_DEFAULTS.items():
+        if not os.environ.get(variable):
+            path = path.replace(f'${{{variable}}}', default).replace(f'${variable}', default)
     return Path(os.path.expandvars(os.path.expanduser(path)))

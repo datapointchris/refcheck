@@ -3,13 +3,14 @@
 import os
 import re
 from collections.abc import Callable
-from collections.abc import Iterable
 from collections.abc import Iterator
 from dataclasses import dataclass
 from dataclasses import field
 from pathlib import Path
 
 from .config import Config
+from .names import LineKind
+from .names import NameShapes
 from .output import CheckType
 from .output import Issue
 from .output import SetAside
@@ -78,6 +79,14 @@ class ReferenceChecker:
         # of the hits were changelog entries — the largest single source of
         # noise in the run.
         'CHANGELOG.md',
+        # A backup is a copy of what a file said when it was taken, the same
+        # record a changelog is. Sweeping a renamed tool's old name across a
+        # harness directory, every hit in its timestamped config backups named
+        # the tool correctly for the day each was written.
+        '*.bak',
+        '*.backup',
+        '*.backup.*',
+        '*.orig',
         # coverage.py's outputs list every file measured on the last run, so a
         # renamed module stays in them until the next run rewrites them. A hook
         # writing .coverage.json on every commit failed --moves on each Python
@@ -299,7 +308,7 @@ class ReferenceChecker:
         language = info.strip('{}.').lower()
         return not language or language in self.SHELL_FENCE_LANGUAGES
 
-    def lines_a_shell_could_run(self, file_path: Path, lines: Iterable[str]) -> Iterator[tuple[int, str]]:
+    def lines_a_shell_could_run(self, file_path: Path, lines: list[str]) -> Iterator[tuple[int, str]]:
         """The numbered lines of a file, less the fenced blocks holding another language.
 
         Markdown quotes other languages constantly, and a tool's own output is
@@ -320,6 +329,47 @@ class ReferenceChecker:
             yield from enumerate(lines, 1)
             return
 
+        for line_num, line, kind in self.classified_lines(file_path, lines):
+            if kind is not LineKind.ANOTHER_LANGUAGE:
+                yield line_num, line
+
+    # Files holding sentences rather than commands or code.
+    PROSE_SUFFIXES = frozenset({'.md', '.txt', '.rst', '.adoc', '.org', '.html', '.htm', '.tex'})
+
+    SHELL_SUFFIXES = frozenset({'.sh', '.bash', '.zsh', '.ksh'})
+
+    # A shebang naming a shell, through env or directly.
+    SHELL_SHEBANG = re.compile(r'^#!\s*\S*?(?:/env\s+)?(?:\S*/)?(?:ba|z|k|da)?sh\b')
+
+    def kind_of_file(self, file_path: Path, first_line: str) -> LineKind:
+        """What kind of text a whole file holds, outside markdown's fences.
+
+        Shell is what the file declares, by its suffix or its shebang, and never
+        the fallback. Defaulting to shell reads a Python docstring opening on a
+        word as a command, and the same YAML is then shell in a file and another
+        language inside a fence tagged yaml.
+        """
+        if file_path.suffix in self.PROSE_SUFFIXES:
+            return LineKind.PROSE
+        if file_path.suffix in self.SHELL_SUFFIXES:
+            return LineKind.SHELL
+        if not file_path.suffix and self.SHELL_SHEBANG.match(first_line):
+            return LineKind.SHELL
+        return LineKind.ANOTHER_LANGUAGE
+
+    def classified_lines(self, file_path: Path, lines: list[str]) -> Iterator[tuple[int, str, LineKind]]:
+        """Every numbered line of a file, with what kind of text it is.
+
+        The one fence parser, so the two questions asked of a markdown line —
+        could a shell run it, and is it a sentence — cannot disagree about where
+        a block opens or closes. Fence markers are not yielded at all.
+        """
+        if file_path.suffix != '.md':
+            kind = self.kind_of_file(file_path, lines[0] if lines else '')
+            for line_num, line in enumerate(lines, 1):
+                yield line_num, line, kind
+            return
+
         fence = ''
         holds_shell = False
 
@@ -331,8 +381,8 @@ class ReferenceChecker:
                 closer = line.strip()
                 if len(closer) >= len(fence) and set(closer) == {fence[0]}:
                     fence = ''
-                elif holds_shell:
-                    yield line_num, line
+                else:
+                    yield line_num, line, LineKind.SHELL if holds_shell else LineKind.ANOTHER_LANGUAGE
                 continue
 
             opener = self.FENCE_DELIMITER.match(line)
@@ -341,7 +391,7 @@ class ReferenceChecker:
                 holds_shell = self.fence_reads_as_shell(opener.group(2))
                 continue
 
-            yield line_num, line
+            yield line_num, line, LineKind.PROSE
 
     def anchor(self, path: str) -> Path:
         """Where a referenced path actually lives, absolute.
@@ -855,6 +905,57 @@ class ReferenceChecker:
             return Verdict(set_aside=hits)
 
         self.set_aside.extend(self._scan_for_patterns(patterns, stale))
+
+    def check_names(self, names: dict[str, str]) -> None:
+        """Report every line holding an old name in a shape that refers to the thing.
+
+        A name is not a path, so nothing resolves and nothing is set aside: the
+        shape is the whole judgment, and `NameShapes` carries why each one counts.
+        The rule is the same in this repo and in any other, because a renamed
+        tool is stale wherever it is still named.
+        """
+        shapes = [(NameShapes.of(name), description) for name, description in names.items()]
+        if not shapes:
+            return
+
+        for file_path in self.find_files():
+            if self.skip_docs and file_path.suffix == '.md':
+                continue
+
+            lines = self.lines_of(file_path)
+            if lines is None:
+                continue
+
+            try:
+                rel_path = file_path.relative_to(self.root_dir)
+            except ValueError:
+                continue
+
+            for line_num, line, kind in self.classified_lines(file_path, lines):
+                for shape, description in shapes:
+                    if shape.names_it(line, kind):
+                        self.issues.append(
+                            Issue(
+                                file=rel_path,
+                                line_num=line_num,
+                                check_type=CheckType.NAME,
+                                message=f'Found: {self._evidence(line)}',
+                                suggestion=description or None,
+                            )
+                        )
+
+    EVIDENCE_WIDTH = 100
+
+    @classmethod
+    def _evidence(cls, line: str) -> str:
+        """The line a name was found on, as the reader needs it to judge the hit.
+
+        A row saying only that the name was found leaves every hit to be opened
+        by hand, and the hits a reader is told to read rather than fix are the
+        ones that most need reading.
+        """
+        text = line.strip()
+        return text if len(text) <= cls.EVIDENCE_WIDTH else f'{text[: cls.EVIDENCE_WIDTH - 1]}…'
 
     def check_patterns_across_repos(self, patterns: dict[str, str], repo_homes: dict[Path, str], repo_paths: dict[str, Path]):
         """Check this tree for paths that moved in one of the other repos.

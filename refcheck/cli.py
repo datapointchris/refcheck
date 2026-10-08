@@ -31,8 +31,9 @@ HELP = (
 )
 
 CHECK_HELP = (
-    'Validate every file reference in the tree. Give it a directory to narrow the search, or --pattern '
-    'to ask the one question a move leaves behind: what still points at the old name?'
+    'Validate every file reference in the tree. Give it a directory to narrow the search, --pattern '
+    'to ask the one question a move leaves behind — what still points at the old path? — or --name to '
+    'ask what a rename leaves behind: where is the old name of a tool still used as one?'
 )
 
 EPILOG = '\n\n'.join(
@@ -47,6 +48,10 @@ EPILOG = '\n\n'.join(
         (
             '[b]refcheck check --moves-since origin/main --registry <repos.json>[/b] — and of every other '
             'repo the registry lists, which is where a rename breaks something you cannot see'
+        ),
+        (
+            '[b]refcheck check --name oldtool --desc "now newtool" --registry <repos.json> --registry <stores.json>[/b] '
+            '— after renaming a tool, every place in every listed repo and store that still names it'
         ),
         '[b]refcheck check --show-config[/b] — every exclusion in force, and the layer that set it',
         "[b]refcheck learn-rules[/b] — derive pattern rules from git's own rename history",
@@ -82,6 +87,19 @@ CHECK_EPILOG = '\n\n'.join(
             'reference was repaired or that the old name is simply still there is yours to say, so each '
             'one is listed with the path it resolved to. --moves knows what each path became and lists '
             'only the hits that record cannot account for.'
+        ),
+        '[b]What --name counts as a use of the name[/b]',
+        (
+            'On any line: a code span opening on it, a quoted literal, bold or a table cell holding only '
+            'it, and a path segment such as ~/tools/oldtool or oldtool.db. On a line of code or config, '
+            'also an import, a value that is only it, a list item, and a line opening on it in aligned '
+            'columns. On a line a shell would run, the whole word outside a comment.'
+        ),
+        (
+            'The bare word in a sentence is not one, because nothing tells the tool from the English word '
+            'it may also be — so a name in running prose is left for you to find. A subcommand that kept '
+            'the old name in the tool that absorbed it is reported too: read those hits, and exclude them '
+            f'in that repo’s {REPO_CONFIG_NAME}.'
         ),
     ]
 )
@@ -162,11 +180,19 @@ def check(
         str | None,
         typer.Option('--moves-since', help='The same, for every move between REF and HEAD.', rich_help_panel='Pattern search'),
     ] = None,
+    name: Annotated[
+        str | None,
+        typer.Option(
+            '--name',
+            help="A renamed tool's old name, reported wherever it is still used as one, e.g. 'oldtool'.",
+            rich_help_panel='Pattern search',
+        ),
+    ] = None,
     registry: Annotated[
-        Path | None,
+        list[Path] | None,
         typer.Option(
             '--registry',
-            help='Ask the same of every repo this registry lists, not just this one.',
+            help='Ask the same of every repo or store this registry lists, not just this one. Repeatable.',
             rich_help_panel='Pattern search',
         ),
     ] = None,
@@ -224,11 +250,25 @@ def check(
     # The sweep needs old paths to look for, and the source/bash checks are not
     # one: validating another repo's references is that repo's own run. Saying
     # so beats parsing into a walk of 90 repos that asks them nothing.
-    if registry is not None and not (pattern or check_moves or moves_since):
+    if registry and not (pattern or check_moves or moves_since or name):
         print(
-            '--registry sweeps other repos for paths that moved, so it needs --moves, --moves-since or --pattern to say which.',
+            '--registry sweeps other repos for what a move or a rename left behind, '
+            'so it needs --moves, --moves-since, --pattern or --name to say what.',
             file=sys.stderr,
         )
+        raise typer.Exit(2)
+
+    # Each of these is its own question, and a run answers one. Taking two would
+    # answer the first and print a tick the caller reads as covering both.
+    asked = [flag for flag, given in (('--pattern', pattern), ('--name', name), ('--moves', check_moves or moves_since)) if given]
+    if len(asked) > 1:
+        print(f'refcheck: {" and ".join(asked)} each ask a different question, so pass one per run.', file=sys.stderr)
+        raise typer.Exit(2)
+
+    # A name is one word. Anything with a separator in it is a path, which
+    # --pattern resolves and --name would only match as text.
+    if name is not None and (not name or '/' in name or any(char.isspace() for char in name)):
+        print(f'refcheck: --name takes a single word, and {name!r} is not one. For a path, use --pattern.', file=sys.stderr)
         raise typer.Exit(2)
 
     checker = ReferenceChecker(
@@ -247,6 +287,9 @@ def check(
     if pattern:
         checker.check_pattern(pattern, desc)
         sweep_patterns = {pattern: desc or f'Old pattern: {pattern}'}
+    elif name:
+        sweep_patterns = {name: desc or ''}
+        checker.check_names(sweep_patterns)
     else:
         checker.run_all_checks()
 
@@ -287,8 +330,8 @@ def check(
     )
 
     swept = (
-        _sweep_other_repos(registry, sweep_patterns, skip_docs, file_type, test_mode, flag_patterns, root_dir)
-        if registry is not None
+        _sweep_other_repos(registry, sweep_patterns, bool(name), skip_docs, file_type, test_mode, flag_patterns, root_dir, search_path)
+        if registry
         else None
     )
 
@@ -316,31 +359,44 @@ add_update_command(app, UPDATE_CONFIG)
 
 
 def _sweep_other_repos(
-    registry: Path,
+    registries: list[Path],
     patterns: dict[str, str],
+    by_name: bool,
     skip_docs: bool,
     file_type: str | None,
     test_mode: bool,
     flag_excludes: list[str],
     source_root: Path,
+    scanned_here: Path,
 ) -> sweep_module.SweepResult:
-    """Ask every repo the registry lists what still points at a path that moved."""
+    """Ask every repo the registries list what a move or a rename left behind."""
     try:
-        listed = registry_module.load(registry)
+        listed = registry_module.load_all(registries)
     except registry_module.RegistryError as error:
         print(f'refcheck: {error}', file=sys.stderr)
         raise typer.Exit(2) from error
 
-    swept = sweep_module.across_repos(
-        listed,
-        patterns,
-        skip_docs=skip_docs,
-        file_type=file_type,
-        test_mode=test_mode,
-        flag_excludes=flag_excludes,
-        source_root=source_root,
-    )
-    print_sweep(swept, patterns)
+    if by_name:
+        swept = sweep_module.names_across_repos(
+            listed,
+            patterns,
+            skip_docs=skip_docs,
+            file_type=file_type,
+            test_mode=test_mode,
+            flag_excludes=flag_excludes,
+            already_scanned=scanned_here,
+        )
+    else:
+        swept = sweep_module.across_repos(
+            listed,
+            patterns,
+            skip_docs=skip_docs,
+            file_type=file_type,
+            test_mode=test_mode,
+            flag_excludes=flag_excludes,
+            source_root=source_root,
+        )
+    print_sweep(swept, patterns, by_name=by_name)
     return swept
 
 

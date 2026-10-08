@@ -627,3 +627,47 @@ class TestAnExcludedSubtreeIsNotACoverageGap:
             os.chmod(blocked, 0o755)
 
         assert result.unreached
+
+
+class TestARenamedToolAcrossRepos:
+    """A name is stale wherever it stands, so nothing is credited to an owner."""
+
+    def test_reports_the_old_name_in_another_repo(self, two_repos):
+        upstream, consumer = two_repos
+        (consumer / 'README.md').write_text('Run `oldtool batch` nightly.\n')
+
+        result = sweep.names_across_repos(repos_for(upstream, consumer), {'oldtool': 'now newtool'})
+
+        assert names(result) == ['consumer:README.md']
+        assert result.issues[0].message == 'Found: Run `oldtool batch` nightly.'
+        assert result.issues[0].suggestion == 'now newtool'
+
+    def test_the_repo_the_run_read_whole_is_not_walked_twice(self, two_repos):
+        upstream, consumer = two_repos
+        (upstream / 'README.md').write_text('Run `oldtool batch` nightly.\n')
+
+        result = sweep.names_across_repos(repos_for(upstream, consumer), {'oldtool': 'x'}, already_scanned=upstream)
+
+        assert names(result) == []
+        assert [r.repo.name for r in result.results] == ['consumer']
+
+    def test_a_run_narrowed_inside_a_repo_still_sweeps_the_rest_of_it(self, two_repos):
+        """Skipping the whole starting repo would tick over the files the local run never read."""
+        upstream, consumer = two_repos
+        (upstream / 'docs').mkdir()
+        (upstream / 'bin').mkdir()
+        (upstream / 'docs' / 'guide.md').write_text('Run `oldtool batch`.\n')
+        (upstream / 'bin' / 'run.sh').write_text('oldtool batch\n')
+
+        result = sweep.names_across_repos(repos_for(upstream, consumer), {'oldtool': 'x'}, already_scanned=upstream / 'docs')
+
+        assert names(result) == ['upstream:bin/run.sh']
+
+    def test_a_listed_directory_that_is_not_here_fails_the_sweep(self, two_repos, temp_dir):
+        upstream, consumer = two_repos
+        gone = Repo(name='gone', path=temp_dir / 'gone', status='')
+
+        result = sweep.names_across_repos(listing(*repos_for(upstream, consumer).repos, gone), {'oldtool': 'x'})
+
+        assert result.absent == [gone]
+        assert result.unreached

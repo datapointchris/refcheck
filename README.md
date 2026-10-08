@@ -172,6 +172,9 @@ refcheck check --type sh apps/
 # Skip documentation files
 refcheck check --skip-docs
 
+# Find a renamed tool's old name, wherever it is still used as one
+refcheck check --name oldtool --desc "Now newtool"
+
 # Combine filters
 refcheck check --pattern "FooClass" --type py --skip-docs src/
 
@@ -200,6 +203,55 @@ path, so the answer covers markdown, YAML, Dockerfiles and code alike. Paths
 that came back, and bare filenames with no directory, are skipped — the first is
 not stale and the second is too generic to be evidence.
 
+### After renaming a tool
+
+A renamed tool leaves its old name in prose, commands and paths, and none of
+those is a path git recorded moving. `--name` finds them:
+
+```bash
+refcheck check --name oldtool --desc "Now newtool" \
+  --registry ~/.config/repos.json --registry ~/.config/stores.json
+```
+
+Matching the bare word buries the references in English whenever the old name
+is also a word, because most lines holding it use the word. So a hit counts only
+in a shape that kind of line does not take when it means the word:
+
+| Line | Shape | Example |
+| --- | --- | --- |
+| Any | A code span opening on it | `` `oldtool` ``, `` `oldtool check` ``, `` `oldtool`'s `` |
+| Any | A quoted literal holding only it | `"oldtool"`, `['oldtool', 'batch']` |
+| Any | A path segment | `~/tools/oldtool`, `src/oldtool/main.py`, `oldtool.db`, `oldtool.storage` |
+| Any | Bold, or a table cell, holding only it | `**oldtool**`, `\| oldtool \|` |
+| Code or config | An import, or a value that is only it | `import oldtool`, `name: oldtool` |
+| Code or config | A list item | `[indy, oldtool]`, `-F oldtool,nomad` |
+| Code or config | A line opening on it in aligned columns | `oldtool     SQLite · CLI` |
+| Shell | The whole word, outside a comment | `oldtool batch`, `uv tool install oldtool`, `if oldtool check; then` |
+
+A shell line is one in a `.sh`, `.bash`, `.zsh` or `.ksh` file, an extensionless
+file whose shebang names a shell, or a markdown fence tagged as shell or
+untagged. Prose is markdown outside its fences and `.txt`, `.rst`, `.adoc`,
+`.org`, `.html` and `.tex`. Every other file is code or config, which is what
+keeps a docstring opening on the word from reading as a command.
+
+What no shape reaches is the name in running prose — "across indy, oldtool and
+syncer". Nothing on the line tells the tool from the word, so that one is left
+for you to find.
+
+Two kinds of hit are correct and reported anyway, because nothing on the line
+says so. The renamed tool's own repo names its former name on purpose, in
+migration code and its history. And where the old name lives on as a
+subcommand or a key of the tool that absorbed it — `newtool oldtool` — every
+mention of that live name is reported too. Read both rather than fixing them,
+and add a `[scan] exclude` to that repo's `.refcheck.toml` to quiet them.
+
+Each row prints the line it was found on, so a hit can be judged without
+opening the file.
+
+The tree the local run read is left out of the sweep, so nothing in it is
+printed twice. A run narrowed to one directory still sweeps the rest of its
+repo when the registry lists that repo.
+
 ### After moving files, in the repos that name them
 
 A rename is answerable in the repo that made it and unanswerable everywhere
@@ -214,8 +266,8 @@ The registry is named at the call site and refcheck never goes looking for one.
 A check that resolved its own subject would sweep whatever the environment
 answered at that moment, and one machine's registry lists a different set of
 repos from another's. Any JSON naming repo paths works — a bare array of entries,
-or an object holding them under `repos` beside an `exclude_paths` list, which is
-honored:
+an object holding them under `stores`, or an object holding them under `repos`
+beside an `exclude_paths` list, which is honored:
 
 ```json
 {
@@ -226,6 +278,12 @@ honored:
   ]
 }
 ```
+
+`--registry` repeats. A machine that declares its repos in one file and its
+content directories in another passes both, and a directory both list is walked
+once, under the name the first file gives it. An unset `$XDG_DATA_HOME`,
+`$XDG_CONFIG_HOME`, `$XDG_STATE_HOME` or `$XDG_CACHE_HOME` in a path takes the
+base-directory spec's default rather than staying literal text.
 
 **A reference from one repo into another either spells a location or names the
 repo.** Code spells it — an absolute path, a `~`, or a variable holding one.
@@ -292,10 +350,14 @@ Every filter narrows the sweep as well as the local run — `--type`, `--skip-do
 `--test-mode` and `--exclude` all reach all of it. Each repo still reads its own
 `.refcheck.toml`, with `--exclude` added on top.
 
-`--registry` also takes `--pattern` and `--moves`, and needs one of the three:
-validating another repo's `source` statements is that repo's own run, so a
-registry with no moved path to look for exits 2 rather than walking 90 repos to
-ask them nothing.
+`--registry` also takes `--pattern`, `--moves` and `--name`, and needs one of
+them: validating another repo's `source` statements is that repo's own run, so a
+registry with nothing to look for exits 2 rather than walking every listed repo
+to ask it nothing.
+
+`--pattern`, `--name` and `--moves` each ask a different question, and a run
+asks one. Passing two exits 2, because answering the first would print a tick
+the caller reads as covering both.
 
 One sweep of 90 repos costs about 14 seconds for six moved paths — roughly 12
 for the walk and a quarter-second per extra pattern. A run with nothing to look
@@ -441,9 +503,10 @@ PASS All file references valid
 - `1` - Found errors, a path the run could not read, or warnings in strict mode
   (`--strict`)
 - `2` - The run was asked for something it cannot do: a directory that is not
-  there, a `--registry` that is missing or is not JSON, `--registry` with no
-  moved path to look for, or a range git cannot diff, such as a base commit a
-  shallow clone never fetched
+  there, a `--registry` that is missing or is not JSON, `--registry` with
+  nothing to look for, two of `--pattern`, `--name` and `--moves` in one run, a
+  `--name` that is not a single word, or a range git cannot diff, such as a base
+  commit a shallow clone never fetched
 - `128` - `--moves` or `--moves-since` outside a git repository, which is git's
   own code for it
 
@@ -480,10 +543,11 @@ Bare `refcheck` prints help. Run any command with `--help` for its flags.
 | --- | --- | --- |
 | `path` | Directory to check (positional) | `refcheck check install/` |
 | `--pattern PATTERN` | Find old pattern | `--pattern "old/"` |
-| `--desc DESC` | Description for pattern | `--desc "Now new/"` |
+| `--name NAME` | Find a renamed tool's old name where it is used as one | `--name oldtool` |
+| `--desc DESC` | What the pattern or name became | `--desc "Now new/"` |
 | `--moves` | Check what staged renames and deletions left behind | `--moves` |
 | `--moves-since REF` | The same, for every move between REF and HEAD | `--moves-since origin/main` |
-| `--registry PATH` | Ask the same of every repo the registry lists | `--registry ~/.config/repos.json` |
+| `--registry PATH` | Ask the same of every repo or store the registry lists (repeatable) | `--registry ~/.config/repos.json` |
 | `--type, -t TYPE` | Filter by file type | `--type sh` |
 | `--skip-docs` | Skip markdown files, for both reference and pattern checks | `--skip-docs` |
 | `--strict` | Treat warnings as errors (exit 1) | `--strict` |
@@ -501,7 +565,8 @@ Automatically excludes:
 - **Build artifacts**: `.git`, `node_modules`, `.venv`, `__pycache__`, `.cache`,
   `site/`, `*.pyc`
 - **Historical files**: `.planning/`, `.claude/metrics/`, `*.log`, `*.jsonl`,
-  `CHANGELOG.md`, `file-history/`, the tool caches (`.pytest_cache`,
+  `CHANGELOG.md`, backups (`*.bak`, `*.backup`, `*.backup.*`, `*.orig`),
+  `file-history/`, the tool caches (`.pytest_cache`,
   `.ruff_cache`, `.mypy_cache`) and coverage.py's reports (`.coverage`,
   `.coverage.*`, `coverage.json`, `coverage.xml`, `coverage.lcov`, `htmlcov/`) —
   each records what a path *was*, which is what makes a changelog entry naming
@@ -566,8 +631,9 @@ Modular structure:
 - `config.py` - Config dataclass, TOML loading
 - `checker.py` - ReferenceChecker class (core logic)
 - `moves.py` - Renames and deletions read from git
-- `registry.py` - The repos on this machine, read from a registry the caller names
-- `sweep.py` - The move sweep, run across those repos rather than one
+- `names.py` - The shapes in which an old name is a reference rather than a word
+- `registry.py` - The repos and stores on this machine, read from registries the caller names
+- `sweep.py` - The move and name sweeps, run across those repos rather than one
 - `rules.py` - Rules loading/learning from git
 - `suggestions.py` - File similarity matching
 - `output.py` - Result formatting

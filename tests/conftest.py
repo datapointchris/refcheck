@@ -1,5 +1,6 @@
 """Shared fixtures for refcheck tests."""
 
+import datetime as dt
 import json
 import os
 import subprocess
@@ -217,15 +218,13 @@ def config_dir(temp_dir, monkeypatch):
 @pytest.fixture
 def rules_file(config_dir):
     """Create a rules file for testing."""
-    from datetime import datetime
-
     repos_dir = config_dir / 'repos' / 'test-repo'
     repos_dir.mkdir(parents=True)
     rules_path = repos_dir / 'rules.json'
 
     rules = {
         '_metadata': {
-            'generated': datetime.now().isoformat()[:19],
+            'generated': dt.datetime.now().isoformat()[:19],
             'time_window': '6 months',
             'commits_analyzed': 10,
         },

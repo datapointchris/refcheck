@@ -1,9 +1,9 @@
 """Rules loading and learning from git history."""
 
+import datetime as dt
 import json
 import subprocess
 import sys
-from datetime import datetime
 from pathlib import Path
 
 from .output import PASS
@@ -142,7 +142,7 @@ def learn_rules_from_git(time_window: str = '6 months') -> None:
     top_directory_mappings = {k: v[0] for k, v in sorted_dirs[:20]}
     rules = {
         '_metadata': {
-            'generated': datetime.now().isoformat()[:19],
+            'generated': dt.datetime.now().isoformat()[:19],
             'time_window': time_window,
             'commits_analyzed': len(commits_analyzed),
         },

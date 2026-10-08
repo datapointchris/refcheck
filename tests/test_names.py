@@ -178,6 +178,40 @@ class TestAToolAndItsSubcommand:
             assert not COMMAND.names_it(line, kind)
 
 
+FLAG = NameShapes.of('refcheck --pattern')
+
+
+class TestAToolAndItsFlag:
+    """A root flag that moved under a subcommand, called the old way."""
+
+    @pytest.mark.parametrize(
+        ('line', 'kind'),
+        [
+            ('''      - cmd: "refcheck --pattern 'old/path/' --desc 'Now new/path/'"''', LineKind.ANOTHER_LANGUAGE),
+            ('  `refcheck --pattern "<old>" --desc "<new>"` sweeps one that is not.', LineKind.PROSE),
+            ('refcheck --pattern=old/ --no-warn', LineKind.SHELL),
+            ('subprocess.run(["refcheck", "--pattern", old])', LineKind.ANOTHER_LANGUAGE),
+            ('~/.local/bin/refcheck --pattern old/', LineKind.SHELL),
+        ],
+    )
+    def test_the_old_call_is_named(self, line, kind):
+        assert FLAG.names_it(line, kind)
+
+    @pytest.mark.parametrize(
+        'line',
+        [
+            'refcheck check --pattern old/',
+            '`refcheck check --pattern "<old>"` sweeps one that is not.',
+            'refcheck --pattern-file list.txt',
+            'refcheck --patterns',
+            'subprocess.run(["refcheck", "check", "--pattern", old])',
+        ],
+    )
+    def test_the_corrected_call_and_other_flags_stay_silent(self, line):
+        for kind in LineKind:
+            assert not FLAG.names_it(line, kind)
+
+
 class TestCheckNames:
     def found(self, temp_dir, files, **options):
         for name, text in files.items():

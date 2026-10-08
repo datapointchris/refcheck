@@ -27,6 +27,10 @@ does an installed path ahead of the tool (/usr/bin/forge brief). In prose the
 phrase may be English (`learning plan`), so it counts only in a single name's
 shapes: a code span, a quoted literal, bold or a table cell. On every line it also
 counts as consecutive quoted items of an argument list, `["forge", "brief"]`.
+
+A word after the first may be a flag, as in `refcheck --pattern`, for a flag that
+moved under a subcommand or went away. It takes the same shapes, so the flag
+has to follow the tool directly: `refcheck check --pattern` is not matched.
 """
 
 import re
@@ -34,6 +38,9 @@ from dataclasses import dataclass
 from enum import Enum
 
 NAME_WORD = re.compile(r'\w[\w.-]*')
+
+# A word after the first may also be a flag, as in `tool --oldflag`.
+FLAG_WORD = re.compile(r'--?\w[\w-]*')
 
 
 class LineKind(Enum):

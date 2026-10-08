@@ -1523,8 +1523,17 @@ class TestNameSearch:
         assert result.returncode == 0
         assert 'No other repo names forge status — 1 repo, old name forge status' in result.stdout
 
-    @pytest.mark.parametrize('name', ['old/tool', 'tool old/sub', '', '   ', 'tool $sub'])
-    def test_refuses_anything_that_is_not_a_tool_or_a_subcommand(self, temp_dir, name):
+    def test_reports_a_flag_called_where_it_no_longer_is(self, temp_dir):
+        (temp_dir / 'registry.yml').write_text('      - cmd: "refcheck --pattern old/"\n      - cmd: "refcheck check --pattern old/"\n')
+
+        result = run_check('--name', 'refcheck --pattern', '--desc', 'now refcheck check --pattern', cwd=temp_dir)
+
+        assert result.returncode == 1
+        assert 'registry.yml:1' in result.stdout
+        assert 'registry.yml:2' not in result.stdout
+
+    @pytest.mark.parametrize('name', ['old/tool', 'tool old/sub', '', '   ', 'tool $sub', '--flag tool', 'tool ---x', 'tool -'])
+    def test_refuses_anything_that_is_not_a_tool_a_subcommand_or_a_flag(self, temp_dir, name):
         result = run_check('--name', name, cwd=temp_dir)
 
         assert result.returncode == 2

@@ -14,6 +14,7 @@ from . import sweep as sweep_module
 from .checker import ReferenceChecker
 from .config import REPO_CONFIG_NAME
 from .config import load_config
+from .names import FLAG_WORD
 from .names import NAME_WORD
 from .output import print_config
 from .output import print_results
@@ -34,8 +35,8 @@ HELP = (
 CHECK_HELP = (
     'Validate every file reference in the tree. Give it a directory to narrow the search, --pattern '
     'to ask the one question a move leaves behind — what still points at the old path? — or --name to '
-    'ask what a rename or a removal leaves behind: where is a tool or a subcommand that is gone still '
-    'named? "Which flag answers which change", below, maps each kind of change to its flag.'
+    'ask what a rename or a removal leaves behind: where is a tool, a subcommand or a flag that is gone '
+    'still named? "Which flag answers which change", below, maps each kind of change to its flag.'
 )
 
 EPILOG = '\n\n'.join(
@@ -75,6 +76,7 @@ CHECK_EPILOG = '\n\n'.join(
             'listed repo holds a file of that name.\n'
             'Renamed or removed a tool: --name oldtool.\n'
             'Renamed, moved or removed a subcommand: --name "tool oldsub", once per subcommand.\n'
+            'Moved a flag under a subcommand, or removed it: --name "tool --oldflag", once per flag.\n'
             'Add --registry once per registry to ask every repo and store, not just this one. A tool '
             'or a subcommand is not a file git moves, so a pre-commit hook never asks --name for you: '
             'run it when the change lands.'
@@ -120,6 +122,11 @@ CHECK_EPILOG = '\n\n'.join(
             'span, a quoted literal, bold, or a table cell. On every line they also count as '
             'consecutive quoted items of an argument list: ["tool", "oldsub"]. A flag between them, '
             'tool --json oldsub, is not matched.'
+        ),
+        (
+            'A tool and a flag, "tool --oldflag", take the same shapes, so the flag has to follow the tool '
+            'directly. After the flag moved under a subcommand, "tool sub --oldflag" is the corrected '
+            'call and is not matched.'
         ),
         (
             'The bare word in a sentence is not one, because nothing tells the tool from the English word '
@@ -211,8 +218,8 @@ def check(
         typer.Option(
             '--name',
             help=(
-                "A tool's old name, or a tool and its old subcommand, reported wherever it is still "
-                "named, e.g. 'oldtool' or 'tool oldsub'. One per run."
+                "A tool's old name, or a tool and its old subcommand or flag, reported wherever it is "
+                "still named, e.g. 'oldtool', 'tool oldsub' or 'tool --oldflag'. One per run."
             ),
             rich_help_panel='Pattern search',
         ),
@@ -294,15 +301,17 @@ def check(
         print(f'refcheck: {" and ".join(asked)} each ask a different question, so pass one per run.', file=sys.stderr)
         raise typer.Exit(2)
 
-    # A name is one word or several, each of word characters, dots and hyphens.
-    # A slash makes it a path, which --pattern resolves and --name would only
-    # match as text.
+    # A name is one word or several, each of word characters, dots and hyphens,
+    # and any word after the first may be a flag. A slash makes it a path, which
+    # --pattern resolves and --name would only match as text.
     if name is not None:
-        if not name.split() or not all(NAME_WORD.fullmatch(word) for word in name.split()):
+        first, *rest = name.split() or ['']
+        if not NAME_WORD.fullmatch(first) or not all(NAME_WORD.fullmatch(word) or FLAG_WORD.fullmatch(word) for word in rest):
             path_hint = ' For a path, use --pattern.' if '/' in name else ''
             print(
-                f"refcheck: --name takes a tool's name ('oldtool') or a tool and its subcommand "
-                f"('tool oldsub'), each word letters, digits, '.', '_' or '-', and {name!r} is neither.{path_hint}",
+                f"refcheck: --name takes a tool's name ('oldtool'), a tool and its subcommand ('tool oldsub') "
+                f"or a tool and its flag ('tool --oldflag'), each word letters, digits, '.', '_' or '-', and "
+                f'{name!r} is none of them.{path_hint}',
                 file=sys.stderr,
             )
             raise typer.Exit(2)

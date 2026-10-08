@@ -1,5 +1,6 @@
 """Command-line interface for refcheck."""
 
+import re
 import sys
 from pathlib import Path
 from typing import Annotated
@@ -30,10 +31,13 @@ HELP = (
     'with --help to see what comes next.'
 )
 
+NAME_WORD = re.compile(r'\w[\w.-]*')
+
 CHECK_HELP = (
     'Validate every file reference in the tree. Give it a directory to narrow the search, --pattern '
     'to ask the one question a move leaves behind — what still points at the old path? — or --name to '
-    'ask what a rename leaves behind: where is the old name of a tool still used as one?'
+    'ask what a rename or a removal leaves behind: where is a tool or a subcommand that is gone still '
+    'named? "Which flag answers which change", below, maps each kind of change to its flag.'
 )
 
 EPILOG = '\n\n'.join(
@@ -53,6 +57,10 @@ EPILOG = '\n\n'.join(
             '[b]refcheck check --name oldtool --desc "now newtool" --registry <repos.json> --registry <stores.json>[/b] '
             '— after renaming a tool, every place in every listed repo and store that still names it'
         ),
+        (
+            '[b]refcheck check --name "tool oldsub" --desc "now newtool sub" --registry <repos.json> --registry <stores.json>[/b] '
+            '— after renaming, moving or removing a subcommand, every caller and every mention of it'
+        ),
         '[b]refcheck check --show-config[/b] — every exclusion in force, and the layer that set it',
         "[b]refcheck learn-rules[/b] — derive pattern rules from git's own rename history",
         '[b]refcheck update[/b] — install the latest release',
@@ -61,6 +69,16 @@ EPILOG = '\n\n'.join(
 
 CHECK_EPILOG = '\n\n'.join(
     [
+        '[b]Which flag answers which change[/b]',
+        (
+            'Moved, renamed or deleted a file or directory: --moves before committing, --moves-since '
+            '<base> over a branch, or --pattern "old/path/" by hand.\n'
+            'Renamed or removed a tool: --name oldtool.\n'
+            'Renamed, moved or removed a subcommand: --name "tool oldsub", once per subcommand.\n'
+            'Add --registry once per registry to ask every repo and store, not just this one. A tool '
+            'or a subcommand is not a file git moves, so a pre-commit hook never asks --name for you: '
+            'run it when the change lands.'
+        ),
         '[b]Excluding a repo of its own generated output[/b]',
         (
             'refcheck excludes what is true of any repository — logs, changelogs, tool caches. '
@@ -94,6 +112,11 @@ CHECK_EPILOG = '\n\n'.join(
             'it, and a path segment such as ~/tools/oldtool or oldtool.db. On a line of code or config, '
             'also an import, a value that is only it, a list item, and a line opening on it in aligned '
             'columns. On a line a shell would run, the whole word outside a comment.'
+        ),
+        (
+            'A tool and its subcommand, "tool oldsub", count as the two words in order on any line, '
+            'prose and comments included, and as consecutive quoted items of an argument list: '
+            '["tool", "oldsub"]. A flag between them, tool --json oldsub, is not matched.'
         ),
         (
             'The bare word in a sentence is not one, because nothing tells the tool from the English word '
@@ -184,7 +207,10 @@ def check(
         str | None,
         typer.Option(
             '--name',
-            help="A renamed tool's old name, reported wherever it is still used as one, e.g. 'oldtool'.",
+            help=(
+                "A tool's old name, or a tool and its old subcommand, reported wherever it is still "
+                "named, e.g. 'oldtool' or 'tool oldsub'. One per run."
+            ),
             rich_help_panel='Pattern search',
         ),
     ] = None,
@@ -265,11 +291,17 @@ def check(
         print(f'refcheck: {" and ".join(asked)} each ask a different question, so pass one per run.', file=sys.stderr)
         raise typer.Exit(2)
 
-    # A name is one word. Anything with a separator in it is a path, which
-    # --pattern resolves and --name would only match as text.
-    if name is not None and (not name or '/' in name or any(char.isspace() for char in name)):
-        print(f'refcheck: --name takes a single word, and {name!r} is not one. For a path, use --pattern.', file=sys.stderr)
-        raise typer.Exit(2)
+    # A name is a tool, or a tool and its subcommand. Anything with a slash in
+    # it is a path, which --pattern resolves and --name would only match as text.
+    if name is not None:
+        if not name.split() or not all(NAME_WORD.fullmatch(word) for word in name.split()):
+            print(
+                f"refcheck: --name takes a tool's name ('oldtool') or a tool and its subcommand "
+                f"('tool oldsub'), and {name!r} is neither. For a path, use --pattern.",
+                file=sys.stderr,
+            )
+            raise typer.Exit(2)
+        name = ' '.join(name.split())
 
     checker = ReferenceChecker(
         root_dir=root_dir,

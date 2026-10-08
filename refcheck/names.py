@@ -20,6 +20,11 @@ that text of that kind does not take when it means the English word:
 What none of them reaches is the name in running prose, as in "across indy, relate
 and syncer". Nothing on such a line tells the tool from the verb, so it is left to
 a reader.
+
+A name of several words is a tool and its subcommand, as in `forge brief`. Two
+words in that order are not English on any line, so the phrase counts wherever it
+stands, prose and comments included. It also counts as consecutive quoted items
+of an argument list, `["forge", "brief"]`, which is how code runs it.
 """
 
 import re
@@ -43,9 +48,13 @@ class NameShapes:
     anywhere: re.Pattern
     in_code: re.Pattern
     in_shell: re.Pattern
+    first_word: str
 
     @classmethod
     def of(cls, name: str) -> 'NameShapes':
+        words = name.split()
+        if len(words) > 1:
+            return cls.of_command(words)
         word = re.escape(name)
         alone = rf'(?<![\w./$-]){word}(?![\w-])'
         anywhere = re.compile(
@@ -72,11 +81,27 @@ class NameShapes:
             re.VERBOSE,
         )
         in_shell = re.compile(alone)
-        return cls(name=name, anywhere=anywhere, in_code=in_code, in_shell=in_shell)
+        return cls(name=name, anywhere=anywhere, in_code=in_code, in_shell=in_shell, first_word=name)
+
+    @classmethod
+    def of_command(cls, words: list[str]) -> 'NameShapes':
+        """The shapes for a tool and its subcommand, `forge brief`."""
+        escaped = [re.escape(word) for word in words]
+        joined = r'\s+'.join(escaped)
+        phrase = rf'(?<![\w./$-]){joined}(?![\w-])'
+        argv = r'\s*,\s*'.join(rf'(?P<q{index}>["\']){word}(?P=q{index})' for index, word in enumerate(escaped))
+        never = re.compile(r'(?!)')
+        return cls(
+            name=' '.join(words),
+            anywhere=re.compile(f'{phrase}|{argv}'),
+            in_code=never,
+            in_shell=never,
+            first_word=words[0],
+        )
 
     def names_it(self, line: str, kind: LineKind) -> bool:
         """Whether this line refers to the thing the name named."""
-        if self.name not in line:
+        if self.first_word not in line:
             return False
         if self.anywhere.search(line):
             return True

@@ -119,6 +119,45 @@ class TestTheWordStaysSilent:
         assert not SHAPES.names_it(line, LineKind.SHELL)
 
 
+COMMAND = NameShapes.of('forge status')
+
+
+class TestAToolAndItsSubcommand:
+    @pytest.mark.parametrize(
+        ('line', 'kind'),
+        [
+            ('1. forge status — project descriptions, planning state', LineKind.ANOTHER_LANGUAGE),
+            ("        logger.warning(f'forge status failed: {e}')", LineKind.ANOTHER_LANGUAGE),
+            ("            ['forge', 'status'],", LineKind.ANOTHER_LANGUAGE),
+            ('{Name: "repos", Command: []string{"forge", "status", "--json"}},', LineKind.ANOTHER_LANGUAGE),
+            ('For where each project stands: `forge status`.', LineKind.PROSE),
+            ('They were one tool, and forge status swept the portfolio.', LineKind.PROSE),
+            ('forge  status --json | jq .', LineKind.SHELL),
+            ('make all  # then forge status', LineKind.SHELL),
+        ],
+    )
+    def test_is_named_on_every_kind_of_line(self, line, kind):
+        assert COMMAND.names_it(line, kind)
+
+    @pytest.mark.parametrize(
+        'line',
+        [
+            'forge reports its status per repo',
+            'the forge status-line widget',
+            'reforge status',
+            'forge statuses',
+            '`forge` is the tool',
+            'status: forge',
+        ],
+    )
+    def test_other_uses_of_either_word_stay_silent(self, line):
+        for kind in LineKind:
+            assert not COMMAND.names_it(line, kind)
+
+    def test_whitespace_between_the_words_is_one_name(self):
+        assert NameShapes.of('forge   status').name == 'forge status'
+
+
 class TestCheckNames:
     def found(self, temp_dir, files, **options):
         for name, text in files.items():

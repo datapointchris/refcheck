@@ -364,7 +364,7 @@ reports the one reference that had genuinely broken.
 | ``The reader is `store/versions.json` ``, naming a listed repo | reported |
 | `versions_file: ~/…/store/pinned-versions.json`, the corrected path | silent |
 | ``The reader is `store/pinned-versions.json` ``, the corrected citation | silent |
-| `PINS = "versions.json"`, a filename literal | silent |
+| `PINS = "versions.json"`, a filename literal | silent while a listed repo holds a `versions.json`, reported once none does |
 | `The pins live in versions.json`, prose | silent |
 | `store renamed versions.json last week`, a bare repo name | silent |
 | `docs/versions.json`, where this repo holds that file | silent |
@@ -380,10 +380,19 @@ in every listed repo. A row there reads `→ now cross-platform.yml`.
 
 It asks only when no file in this tree or any listed repo still has that name.
 Until then the citation names something real: `main.go` leaving one repo is not
-news to the others. The run prints the filenames it left out for that reason. A
-move that keeps the filename, `docs/setup.md` to `setup.md`, asks nothing more.
-So the filename literal two rows up is reported only once no listed repo holds a
-`versions.json`.
+news to the others. That walk ignores a repo's `[scan] exclude` and `--type`,
+because an excluded file is still a file. It skips the default exclusions, such
+as `node_modules` and `.venv`, because a dependency's `ci.yml` is not the one a
+citation names. The run prints the filenames it left out for that
+reason. A move that keeps the filename, `docs/setup.md` to `setup.md`, asks
+nothing more.
+
+A path the path check can resolve is left to it: `/srv/ci.yml`, `~/x/ci.yml`,
+or a URL ending in `ci.yml`. A path nothing here can resolve is asked, so
+`c="$d/.github/workflows/ci.yml"` in a shell snippet is reported. A line the
+path check already reported is not reported twice. A dotfile
+such as `.markdownlint.yaml` is asked like any other. A filename no shape can
+match, one with a space in it, is named in a "Not asked" line.
 
 Retired repos are not walked, because a finding in one is not going to be fixed.
 Dormant ones are swept — dormant work gets picked up, and a reference that broke

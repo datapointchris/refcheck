@@ -913,11 +913,42 @@ class ReferenceChecker:
 
         self.set_aside.extend(self._scan_for_patterns(patterns, stale))
 
-    def filenames(self) -> set[str]:
-        """The name of every file this run would read."""
-        return {file_path.name for file_path in self.find_files()}
+    def check_filenames(self, filenames: dict[str, str]) -> None:
+        """Report every line citing an old filename, as `check_names` does a tool.
 
-    def check_names(self, names: dict[str, str]) -> None:
+        A path the path check resolves is its to judge, and so is a URL, so
+        both are blanked before the shapes run. What is left is a filename
+        alone or behind a directory nothing here can resolve: `$d/ci.yml`. A
+        line the path check already reported is not reported again.
+        """
+        reported = {(issue.file, issue.line_num) for issue in self.issues}
+        before = len(self.issues)
+        self.check_names(filenames, shapes_of=NameShapes.of_filename, unjudged=self._without_resolvable_paths)
+        self.issues[before:] = [issue for issue in self.issues[before:] if (issue.file, issue.line_num) not in reported]
+
+    PATH_TOKEN = re.compile(r'[\w./~${}-]+')
+
+    @classmethod
+    def _without_resolvable_paths(cls, line: str) -> str:
+        """The line with every resolvable path blanked to spaces.
+
+        A URL is among them: `:` ends a token, so what follows `https:` is a
+        `//` path, and that reads as absolute.
+        """
+
+        def blank(token: re.Match) -> str:
+            text = token.group()
+            owned = '/' in text and cls._on_this_filesystem(text.rstrip('.')) is not None
+            return ' ' * len(text) if owned else text
+
+        return cls.PATH_TOKEN.sub(blank, line)
+
+    def check_names(
+        self,
+        names: dict[str, str],
+        shapes_of: Callable[[str], NameShapes] = NameShapes.of,
+        unjudged: Callable[[str], str] = str,
+    ) -> None:
         """Report every line holding an old name in a shape that refers to the thing.
 
         A name is not a path, so nothing resolves and nothing is set aside: the
@@ -925,7 +956,7 @@ class ReferenceChecker:
         The rule is the same in this repo and in any other, because a renamed
         tool is stale wherever it is still named.
         """
-        shapes = [(NameShapes.of(name), description) for name, description in names.items()]
+        shapes = [(shapes_of(name), description) for name, description in names.items()]
         if not shapes:
             return
 
@@ -943,8 +974,12 @@ class ReferenceChecker:
                 continue
 
             for line_num, line, kind in self.classified_lines(file_path, lines):
-                for shape, description in shapes:
-                    if shape.names_it(line, kind):
+                present = [(shape, description) for shape, description in shapes if shape.first_word in line]
+                if not present:
+                    continue
+                asked = unjudged(line)
+                for shape, description in present:
+                    if shape.names_it(asked, kind):
                         self.issues.append(
                             Issue(
                                 file=rel_path,

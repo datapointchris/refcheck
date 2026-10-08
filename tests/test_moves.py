@@ -157,10 +157,11 @@ class TestOldFilenames:
     @pytest.mark.parametrize(
         ('old', 'new', 'expected'),
         [
-            ('.github/workflows/ci.yml', '.github/workflows/cross-platform.yml', {'ci.yml': 'now cross-platform.yml'}),
-            ('scripts/old-deploy.sh', None, {'old-deploy.sh': 'deleted in this change'}),
-            ('docs/README.md', 'README.md', {}),
-            ('notes/a file.md', 'notes/b.md', {}),
+            ('.github/workflows/ci.yml', '.github/workflows/cross-platform.yml', ({'ci.yml': 'now cross-platform.yml'}, [])),
+            ('scripts/old-deploy.sh', None, ({'old-deploy.sh': 'deleted in this change'}, [])),
+            ('.markdownlint.yaml', '.markdownlint.yml', ({'.markdownlint.yaml': 'now .markdownlint.yml'}, [])),
+            ('docs/README.md', 'README.md', ({}, [])),
+            ('notes/a file.md', 'notes/b.md', ({}, ['a file.md'])),
         ],
     )
     def test_a_move_takes_a_filename_out_of_use_only_by_changing_it(self, old, new, expected):

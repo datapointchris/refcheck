@@ -9,11 +9,10 @@ moves already reconciled and go stale between runs.
 """
 
 import os
+import re
 import subprocess
 from pathlib import Path
 from pathlib import PurePosixPath
-
-from .names import NAME_WORD
 
 
 class UnreadableChange(Exception):
@@ -37,22 +36,32 @@ class Move:
         return '/' not in self.old
 
 
-def old_filenames(moves: list[Move]) -> dict[str, str]:
+FILENAME = re.compile(r'\.?\w[\w.-]*')
+
+
+def old_filenames(moves: list[Move]) -> tuple[dict[str, str], list[str]]:
     """The filenames these moves took out of use, each with what it became.
 
     A rename that keeps the filename leaves it naming the same file, so only a
     deletion or a rename to a different filename counts. Prose cites a file by
     its name alone as often as by its path, as in "a hand-written `ci.yml`", and
     no path check reads that.
+
+    The second value is the filenames no shape can match, such as one holding
+    a space, so the run can say it did not ask them.
     """
     found: dict[str, str] = {}
+    unmatchable: list[str] = []
     for move in moves:
         old = PurePosixPath(move.old).name
         new = PurePosixPath(move.new).name if move.new else None
-        if old == new or not NAME_WORD.fullmatch(old):
+        if old == new:
+            continue
+        if not FILENAME.fullmatch(old):
+            unmatchable.append(old)
             continue
         found.setdefault(old, f'now {new}' if new else 'deleted in this change')
-    return found
+    return found, sorted(set(unmatchable))
 
 
 def staged(repo_root: Path, include_bare_names: bool = False) -> list[Move]:

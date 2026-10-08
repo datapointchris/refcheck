@@ -71,8 +71,8 @@ CHECK_EPILOG = '\n\n'.join(
         (
             'Moved, renamed or deleted a file or directory: --moves before committing, --moves-since '
             '<base> over a branch, or --pattern "old/path/" by hand. With --registry, --moves also asks '
-            'where a filename the change took out of use is still cited, once no file on the machine '
-            'has that name.\n'
+            'where a filename the change took out of use is still cited, once neither this tree nor any '
+            'listed repo holds a file of that name.\n'
             'Renamed or removed a tool: --name oldtool.\n'
             'Renamed, moved or removed a subcommand: --name "tool oldsub", once per subcommand.\n'
             'Add --registry once per registry to ask every repo and store, not just this one. A tool '
@@ -324,6 +324,7 @@ def check(
     found: list[moves_module.Move] = []
     gone_filenames: dict[str, str] = {}
     filenames_still_held: list[str] = []
+    unmatchable: list[str] = []
 
     if pattern:
         checker.check_pattern(pattern, desc)
@@ -360,24 +361,22 @@ def check(
             )
             sweep_patterns = {move.old: move.description for move in found}
 
-    sweeps = []
+    swept = None
     if listed:
-        by_name = bool(name)
-        swept = _sweep_other_repos(listed, sweep_patterns, by_name, skip_docs, file_type, test_mode, flag_patterns, root_dir, search_path)
-        sweeps.append((swept, sweep_patterns, by_name))
-
-        # A filename the change took out of use is cited bare as often as by
-        # path. It is asked only once no file on the machine still has it,
-        # because until then the citation names something real.
-        candidates = moves_module.old_filenames(found)
+        # A filename the change took out of use is cited alone as often as by
+        # path. It is asked only once neither this tree nor any listed repo
+        # holds a file of that name, because until then the citation names
+        # something real.
+        candidates, unmatchable = moves_module.old_filenames(found)
         if candidates:
-            in_use = checker.filenames() | swept.filenames
-            gone_filenames = {old: became for old, became in candidates.items() if old not in in_use}
+            roots = [get_repo_root(root_dir) or root_dir, *(repo.path for repo in listed.repos if repo.is_on_disk)]
+            held = sweep_module.held_filenames(roots)
+            gone_filenames = {old: became for old, became in candidates.items() if old not in held}
             filenames_still_held = sorted(set(candidates) - set(gone_filenames))
-            checker.check_names(gone_filenames)
-        if gone_filenames:
-            named = _sweep_other_repos(listed, gone_filenames, True, skip_docs, file_type, test_mode, flag_patterns, root_dir, search_path)
-            sweeps.append((named, gone_filenames, True))
+            checker.check_filenames(gone_filenames)
+        swept = _sweep_other_repos(
+            listed, sweep_patterns, bool(name), skip_docs, file_type, test_mode, flag_patterns, root_dir, search_path, gone_filenames
+        )
 
     print_results(
         checker.issues,
@@ -389,18 +388,22 @@ def check(
         checker.set_aside,
     )
 
-    for index, (result, looked_for, names_mode) in enumerate(sweeps):
-        print_sweep(result, looked_for, by_name=names_mode)
-        if index == 0 and filenames_still_held:
-            print(f'Not asked as old filenames, because a file on this machine still has the name: {", ".join(filenames_still_held)}\n')
+    if swept is not None:
+        print_sweep(swept, sweep_patterns, by_name=bool(name), filenames=gone_filenames)
+        if filenames_still_held:
+            print(f'Not asked as old filenames, because this tree or a listed repo still holds one: {", ".join(filenames_still_held)}')
+        if unmatchable:
+            print(f'Not asked as old filenames, because no shape can match them: {", ".join(unmatchable)}')
+        if filenames_still_held or unmatchable:
+            print()
 
     notify(UPDATE_CONFIG)
 
     # A path the run was handed and could not read fails it, the same as a
     # finding. Both mean the tick would be a lie, and the tick is the product.
-    unreached = bool(checker.unreadable) or any(result.unreached for result, _, _ in sweeps)
+    unreached = bool(checker.unreadable) or bool(swept and swept.unreached)
 
-    if checker.issues or any(result.issues for result, _, _ in sweeps) or unreached or (checker.strict and checker.warnings):
+    if checker.issues or (swept and swept.issues) or unreached or (checker.strict and checker.warnings):
         raise typer.Exit(1)
     raise typer.Exit(0)
 
@@ -435,6 +438,7 @@ def _sweep_other_repos(
     flag_excludes: list[str],
     source_root: Path,
     scanned_here: Path,
+    filenames: dict[str, str],
 ) -> sweep_module.SweepResult:
     """Ask every repo the registries list what a move or a rename left behind, printing nothing."""
     if by_name:
@@ -456,6 +460,8 @@ def _sweep_other_repos(
             test_mode=test_mode,
             flag_excludes=flag_excludes,
             source_root=source_root,
+            filenames=filenames,
+            already_scanned=scanned_here,
         )
     return swept
 

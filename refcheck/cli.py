@@ -114,9 +114,12 @@ CHECK_EPILOG = '\n\n'.join(
             'columns. On a line a shell would run, the whole word outside a comment.'
         ),
         (
-            'A tool and its subcommand, "tool oldsub", count as the two words in order on any line, '
-            'prose and comments included, and as consecutive quoted items of an argument list: '
-            '["tool", "oldsub"]. A flag between them, tool --json oldsub, is not matched.'
+            'A tool and its subcommand, "tool oldsub", count as the words in order on a line of code, '
+            'config or shell, comments included, with or without an installed path ahead of the tool '
+            '(/usr/bin/tool oldsub). In prose they count in the shapes a single name takes: a code '
+            'span, a quoted literal, bold, or a table cell. On every line they also count as '
+            'consecutive quoted items of an argument list: ["tool", "oldsub"]. A flag between them, '
+            'tool --json oldsub, is not matched.'
         ),
         (
             'The bare word in a sentence is not one, because nothing tells the tool from the English word '
@@ -291,13 +294,15 @@ def check(
         print(f'refcheck: {" and ".join(asked)} each ask a different question, so pass one per run.', file=sys.stderr)
         raise typer.Exit(2)
 
-    # A name is a tool, or a tool and its subcommand. Anything with a slash in
-    # it is a path, which --pattern resolves and --name would only match as text.
+    # A name is one word or several, each of word characters, dots and hyphens.
+    # A slash makes it a path, which --pattern resolves and --name would only
+    # match as text.
     if name is not None:
         if not name.split() or not all(NAME_WORD.fullmatch(word) for word in name.split()):
+            path_hint = ' For a path, use --pattern.' if '/' in name else ''
             print(
                 f"refcheck: --name takes a tool's name ('oldtool') or a tool and its subcommand "
-                f"('tool oldsub'), and {name!r} is neither. For a path, use --pattern.",
+                f"('tool oldsub'), each word letters, digits, '.', '_' or '-', and {name!r} is neither.{path_hint}",
                 file=sys.stderr,
             )
             raise typer.Exit(2)

@@ -131,13 +131,33 @@ class TestAToolAndItsSubcommand:
             ("            ['forge', 'status'],", LineKind.ANOTHER_LANGUAGE),
             ('{Name: "repos", Command: []string{"forge", "status", "--json"}},', LineKind.ANOTHER_LANGUAGE),
             ('For where each project stands: `forge status`.', LineKind.PROSE),
-            ('They were one tool, and forge status swept the portfolio.', LineKind.PROSE),
+            ('Run `~/go/bin/forge status --json` first.', LineKind.PROSE),
+            ('the old command was "forge status"', LineKind.PROSE),
+            ('| **forge status** | removed |', LineKind.PROSE),
+            ('| forge status | removed |', LineKind.PROSE),
             ('forge  status --json | jq .', LineKind.SHELL),
             ('make all  # then forge status', LineKind.SHELL),
+            ('ExecStart=/usr/bin/forge status', LineKind.ANOTHER_LANGUAGE),
+            ('*/5 * * * * ~/go/bin/forge status', LineKind.ANOTHER_LANGUAGE),
+            ('exec.Command("/usr/bin/forge", "status")', LineKind.ANOTHER_LANGUAGE),
+            ('"$HOME/go/bin/forge" status --json', LineKind.SHELL),
+            ('/usr/bin/forge status', LineKind.SHELL),
+            ('./bin/forge status', LineKind.SHELL),
         ],
     )
     def test_is_named_on_every_kind_of_line(self, line, kind):
         assert COMMAND.names_it(line, kind)
+
+    @pytest.mark.parametrize(
+        ('name', 'line'),
+        [
+            ('forge status', 'They were one tool, and forge status swept the portfolio.'),
+            ('learning plan', 'Two books on the topic are not in my learning plan yet.'),
+            ('fleet hosts', 'The fleet hosts a dozen services.'),
+        ],
+    )
+    def test_the_phrase_in_running_prose_stays_silent(self, name, line):
+        assert not NameShapes.of(name).names_it(line, LineKind.PROSE)
 
     @pytest.mark.parametrize(
         'line',
@@ -148,14 +168,14 @@ class TestAToolAndItsSubcommand:
             'forge statuses',
             '`forge` is the tool',
             'status: forge',
+            'my-forge status',
+            'forge.status',
+            'the forge status-line, via /usr/bin/reforge status',
         ],
     )
     def test_other_uses_of_either_word_stay_silent(self, line):
         for kind in LineKind:
             assert not COMMAND.names_it(line, kind)
-
-    def test_whitespace_between_the_words_is_one_name(self):
-        assert NameShapes.of('forge   status').name == 'forge status'
 
 
 class TestCheckNames:

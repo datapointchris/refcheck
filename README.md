@@ -203,9 +203,7 @@ refcheck check --strict
 | A subcommand was renamed, moved to another tool, or removed | `--name "tool oldsub"`, once per subcommand | You, when the change lands |
 
 Add `--registry` once per registry to ask every repo and store it lists, not
-just this one. A tool or a subcommand is not a file git moves, so no hook can
-see that one went away. A run asks one question, so two removed subcommands
-take two runs.
+just this one.
 
 ### After moving files
 
@@ -282,17 +280,19 @@ refcheck check --name "tool oldsub" --desc "Now newtool sub" \
   --registry ~/.config/repos.json --registry ~/.config/stores.json
 ```
 
-Two words in that order are not English, so the phrase counts on every kind of
-line, prose and comments included:
+A subcommand can also be an English phrase — `learning plan`, `fleet hosts` — so
+which shapes count depends on the line, as they do for a single name:
 
-| Shape | Example |
-| --- | --- |
-| The words in order, any whitespace between | `tool oldsub --json`, `` `tool oldsub` ``, `f'tool oldsub failed: {e}'` |
-| Consecutive quoted items of an argument list | `["tool", "oldsub"]`, `[]string{"tool", "oldsub", "--json"}` |
+| Line | Shape | Example |
+| --- | --- | --- |
+| Code, config or shell | The words in order, comments included, with or without an installed path ahead of the tool | `tool oldsub --json`, `f'tool oldsub failed: {e}'`, `ExecStart=/usr/bin/tool oldsub`, `"$HOME/go/bin/tool" oldsub` |
+| Any | Consecutive quoted items of an argument list | `["tool", "oldsub"]`, `exec.Command("/usr/bin/tool", "oldsub")` |
+| Any | A code span opening on it, a quoted literal, bold or a table cell holding only it | `` `tool oldsub` ``, `"tool oldsub"`, `**tool oldsub**` |
 
-A flag between the two, `tool --json oldsub`, is not matched, and neither is a
-caller that passes the tool and its arguments in separate fields. A line
-mentioning `tool` or `oldsub` alone is never reported.
+The phrase in a sentence of prose is not reported. A flag between the two,
+`tool --json oldsub`, is not matched, and neither is a caller that passes the
+tool and its arguments in separate fields. A line mentioning `tool` or `oldsub`
+alone is never reported.
 
 ### After moving files, in the repos that name them
 

@@ -21,10 +21,12 @@ What none of them reaches is the name in running prose, as in "across indy, rela
 and syncer". Nothing on such a line tells the tool from the verb, so it is left to
 a reader.
 
-A name of several words is a tool and its subcommand, as in `forge brief`. Two
-words in that order are not English on any line, so the phrase counts wherever it
-stands, prose and comments included. It also counts as consecutive quoted items
-of an argument list, `["forge", "brief"]`, which is how code runs it.
+A name of several words is a tool and its subcommand, as in `forge brief`. On a
+line of code, config or shell, the words in order count, comments included, and so
+does an installed path ahead of the tool (/usr/bin/forge brief). In prose the
+phrase may be English (`learning plan`), so it counts only in a single name's
+shapes: a code span, a quoted literal, bold or a table cell. On every line it also
+counts as consecutive quoted items of an argument list, `["forge", "brief"]`.
 """
 
 import re
@@ -44,7 +46,6 @@ class LineKind(Enum):
 class NameShapes:
     """The compiled shapes for one name, one pattern per kind of line."""
 
-    name: str
     anywhere: re.Pattern
     in_code: re.Pattern
     in_shell: re.Pattern
@@ -81,23 +82,28 @@ class NameShapes:
             re.VERBOSE,
         )
         in_shell = re.compile(alone)
-        return cls(name=name, anywhere=anywhere, in_code=in_code, in_shell=in_shell, first_word=name)
+        return cls(anywhere=anywhere, in_code=in_code, in_shell=in_shell, first_word=name)
 
     @classmethod
     def of_command(cls, words: list[str]) -> 'NameShapes':
         """The shapes for a tool and its subcommand, `forge brief`."""
-        escaped = [re.escape(word) for word in words]
-        joined = r'\s+'.join(escaped)
-        phrase = rf'(?<![\w./$-]){joined}(?![\w-])'
-        argv = r'\s*,\s*'.join(rf'(?P<q{index}>["\']){word}(?P=q{index})' for index, word in enumerate(escaped))
-        never = re.compile(r'(?!)')
-        return cls(
-            name=' '.join(words),
-            anywhere=re.compile(f'{phrase}|{argv}'),
-            in_code=never,
-            in_shell=never,
-            first_word=words[0],
+        tool, *rest = (re.escape(word) for word in words)
+        tail = ''.join(rf'\s+{word}' for word in rest) + r'(?![\w-])'
+        installed = r'(?:[\w.~${}/-]*/)?'
+        quoted_installed = r'(?:[^"\'\s]*/)?'
+        argv = r'\s*,\s*'.join([rf'["\']{quoted_installed}{tool}["\']', *(rf'["\']{word}["\']' for word in rest)])
+        anywhere = re.compile(
+            rf"""
+              `{installed}{tool}{tail}                  # opens a code span
+            | (?P<quote>["']){tool}{tail}(?P=quote)     # is the whole of a quoted literal
+            | \*\*{tool}{tail}\*\*                      # bold holding only it
+            | \|\s*{tool}{tail}\s*\|                    # a table cell holding only it
+            | {argv}                                    # consecutive items of an argument list
+            """,
+            re.VERBOSE,
         )
+        in_code = re.compile(rf'(?<![\w.$-]){tool}["\']?{tail}')
+        return cls(anywhere=anywhere, in_code=in_code, in_shell=re.compile(r'(?!)'), first_word=words[0])
 
     def names_it(self, line: str, kind: LineKind) -> bool:
         """Whether this line refers to the thing the name named."""

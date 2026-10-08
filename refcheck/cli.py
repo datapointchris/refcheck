@@ -1,6 +1,5 @@
 """Command-line interface for refcheck."""
 
-import re
 import sys
 from pathlib import Path
 from typing import Annotated
@@ -15,6 +14,7 @@ from . import sweep as sweep_module
 from .checker import ReferenceChecker
 from .config import REPO_CONFIG_NAME
 from .config import load_config
+from .names import NAME_WORD
 from .output import print_config
 from .output import print_results
 from .output import print_sweep
@@ -30,8 +30,6 @@ HELP = (
     'rather than a changeset, and infers the repo from the directory you run it in. Run any command '
     'with --help to see what comes next.'
 )
-
-NAME_WORD = re.compile(r'\w[\w.-]*')
 
 CHECK_HELP = (
     'Validate every file reference in the tree. Give it a directory to narrow the search, --pattern '
@@ -72,7 +70,9 @@ CHECK_EPILOG = '\n\n'.join(
         '[b]Which flag answers which change[/b]',
         (
             'Moved, renamed or deleted a file or directory: --moves before committing, --moves-since '
-            '<base> over a branch, or --pattern "old/path/" by hand.\n'
+            '<base> over a branch, or --pattern "old/path/" by hand. With --registry, --moves also asks '
+            'where a filename the change took out of use is still cited, once no file on the machine '
+            'has that name.\n'
             'Renamed or removed a tool: --name oldtool.\n'
             'Renamed, moved or removed a subcommand: --name "tool oldsub", once per subcommand.\n'
             'Add --registry once per registry to ask every repo and store, not just this one. A tool '
@@ -319,7 +319,10 @@ def check(
         config=config,
     )
 
+    listed = _load_registries(registry) if registry else None
     sweep_patterns: dict[str, str] = {}
+    gone_filenames: dict[str, str] = {}
+    filenames_still_held: list[str] = []
 
     if pattern:
         checker.check_pattern(pattern, desc)
@@ -356,6 +359,17 @@ def check(
             )
             sweep_patterns = {move.old: move.description for move in found}
 
+            # A filename the change took out of use is cited bare as often as by
+            # path. It is asked only across a registry, and only once no file on
+            # the machine still has it, because until then the citation names
+            # something real.
+            candidates = moves_module.old_filenames(found) if listed else {}
+            if listed and candidates:
+                in_use = checker.filenames() | sweep_module.filenames_in_use(listed, flag_patterns)
+                gone_filenames = {old: became for old, became in candidates.items() if old not in in_use}
+                filenames_still_held = sorted(set(candidates) - set(gone_filenames))
+                checker.check_names(gone_filenames)
+
     print_results(
         checker.issues,
         checker.warnings,
@@ -366,19 +380,25 @@ def check(
         checker.set_aside,
     )
 
-    swept = (
-        _sweep_other_repos(registry, sweep_patterns, bool(name), skip_docs, file_type, test_mode, flag_patterns, root_dir, search_path)
-        if registry
-        else None
-    )
+    sweeps = []
+    if listed:
+        sweeps.append(
+            _sweep_other_repos(listed, sweep_patterns, bool(name), skip_docs, file_type, test_mode, flag_patterns, root_dir, search_path)
+        )
+        if filenames_still_held:
+            print(f'Not asked as old filenames, because a file on this machine still has the name: {", ".join(filenames_still_held)}\n')
+        if gone_filenames:
+            sweeps.append(
+                _sweep_other_repos(listed, gone_filenames, True, skip_docs, file_type, test_mode, flag_patterns, root_dir, search_path)
+            )
 
     notify(UPDATE_CONFIG)
 
     # A path the run was handed and could not read fails it, the same as a
     # finding. Both mean the tick would be a lie, and the tick is the product.
-    unreached = bool(checker.unreadable) or bool(swept and swept.unreached)
+    unreached = bool(checker.unreadable) or any(swept.unreached for swept in sweeps)
 
-    if checker.issues or (swept and swept.issues) or unreached or (checker.strict and checker.warnings):
+    if checker.issues or any(swept.issues for swept in sweeps) or unreached or (checker.strict and checker.warnings):
         raise typer.Exit(1)
     raise typer.Exit(0)
 
@@ -395,8 +415,16 @@ def learn_rules():
 add_update_command(app, UPDATE_CONFIG)
 
 
+def _load_registries(registries: list[Path]) -> registry_module.Registry:
+    try:
+        return registry_module.load_all(registries)
+    except registry_module.RegistryError as error:
+        print(f'refcheck: {error}', file=sys.stderr)
+        raise typer.Exit(2) from error
+
+
 def _sweep_other_repos(
-    registries: list[Path],
+    listed: registry_module.Registry,
     patterns: dict[str, str],
     by_name: bool,
     skip_docs: bool,
@@ -407,12 +435,6 @@ def _sweep_other_repos(
     scanned_here: Path,
 ) -> sweep_module.SweepResult:
     """Ask every repo the registries list what a move or a rename left behind."""
-    try:
-        listed = registry_module.load_all(registries)
-    except registry_module.RegistryError as error:
-        print(f'refcheck: {error}', file=sys.stderr)
-        raise typer.Exit(2) from error
-
     if by_name:
         swept = sweep_module.names_across_repos(
             listed,

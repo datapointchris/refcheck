@@ -211,6 +211,19 @@ def names_across_repos(
     return sweep
 
 
+def filenames_in_use(registry: Registry, flag_excludes: Sequence[str] = ()) -> set[str]:
+    """Every filename some listed repo still holds.
+
+    A filename still on disk names that file, so a citation of it is not stale
+    evidence of anything. `main.go` leaving one repo is not news to the others.
+    """
+    in_use: set[str] = set()
+    for repo in registry.repos:
+        if repo.is_swept and repo.is_on_disk:
+            in_use |= _checker_for(repo, False, None, False, flag_excludes).filenames()
+    return in_use
+
+
 def _partition(registry: Registry, sweep: SweepResult) -> list[Repo]:
     """The repos to walk, with the retired and the absent recorded on the sweep."""
     live = []

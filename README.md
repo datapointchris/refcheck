@@ -198,7 +198,7 @@ refcheck check --strict
 
 | What changed | Run | Who runs it |
 | --- | --- | --- |
-| A file or directory moved, was renamed or was deleted | `--moves`, `--moves-since <base>`, or `--pattern "old/path/"` | The pre-commit hook, with `args: [--moves]` |
+| A file or directory moved, was renamed or was deleted | `--moves`, `--moves-since <base>`, or `--pattern "old/path/"` | The pre-commit hook, with `args: [--moves]`, for this repo. You, with `--moves-since <base> --registry`, for every other repo and for the old filename |
 | A tool was renamed or removed | `--name oldtool` | You, when the change lands |
 | A subcommand was renamed, moved to another tool, or removed | `--name "tool oldsub"`, once per subcommand | You, when the change lands |
 
@@ -370,6 +370,20 @@ reports the one reference that had genuinely broken.
 | `docs/versions.json`, where this repo holds that file | silent |
 | `/srv/versions.json`, inside no listed repo | silent |
 | `$UNSET_VAR/versions.json`, nothing to expand | silent |
+
+**A filename the change took out of use is asked about too, once nothing holds
+it.** Prose cites a file by its name alone as often as by its path — "a
+hand-written `ci.yml`" — and no path check reads that. So when a move deletes a
+file, or renames it to a different filename, `--moves` with `--registry` also
+runs the [`--name` shapes](#after-renaming-a-tool) for the old filename, here and
+in every listed repo. A row there reads `→ now cross-platform.yml`.
+
+It asks only when no file in this tree or any listed repo still has that name.
+Until then the citation names something real: `main.go` leaving one repo is not
+news to the others. The run prints the filenames it left out for that reason. A
+move that keeps the filename, `docs/setup.md` to `setup.md`, asks nothing more.
+So the filename literal two rows up is reported only once no listed repo holds a
+`versions.json`.
 
 Retired repos are not walked, because a finding in one is not going to be fixed.
 Dormant ones are swept — dormant work gets picked up, and a reference that broke

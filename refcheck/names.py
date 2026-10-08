@@ -33,6 +33,8 @@ import re
 from dataclasses import dataclass
 from enum import Enum
 
+NAME_WORD = re.compile(r'\w[\w.-]*')
+
 
 class LineKind(Enum):
     """What a line of a scanned file holds, as far as a reference check cares."""

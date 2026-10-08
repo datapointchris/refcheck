@@ -1563,3 +1563,80 @@ def test_a_name_run_narrowed_to_a_directory_still_sweeps_the_rest_of_its_repo(tm
     assert 'docs/guide.md:1' in result.stdout
     assert f'{repo / "bin" / "run.sh"}:1' in result.stdout
     assert result.stdout.count('guide.md') == 1
+
+
+class TestOldFilenamesAcrossRepos:
+    """--moves with --registry also asks where a filename the change took out of use is still cited."""
+
+    def rename_workflow(self, repo):
+        workflows = repo / '.github' / 'workflows'
+        workflows.mkdir(parents=True)
+        (workflows / 'ci.yml').write_text('name: CI\n')
+        subprocess.run(['git', 'add', '-A'], cwd=repo, capture_output=True, check=True)
+        subprocess.run(['git', 'commit', '-m', 'add'], cwd=repo, capture_output=True, check=True)
+        subprocess.run(
+            ['git', 'mv', '.github/workflows/ci.yml', '.github/workflows/cross-platform.yml'],
+            cwd=repo,
+            capture_output=True,
+            check=True,
+        )
+
+    def registry_at(self, path, *roots):
+        path.write_text(json.dumps({'stores': [{'name': root.name, 'path': str(root)} for root in roots]}))
+        return path
+
+    def test_reports_a_store_citing_the_old_filename(self, tmp_path, temp_git_repo):
+        store = tmp_path / 'store'
+        store.mkdir()
+        (store / 'ci.md').write_text('A hand-written `ci.yml` declares its own title.\n')
+        self.rename_workflow(temp_git_repo)
+
+        result = run_check('--moves', '--registry', str(self.registry_at(tmp_path / 'r.json', temp_git_repo, store)), cwd=temp_git_repo)
+
+        assert result.returncode == 1
+        assert f'{store / "ci.md"}:1' in result.stdout
+        assert 'now cross-platform.yml' in result.stdout
+
+    def test_reports_the_renaming_repo_citing_its_own_old_filename(self, tmp_path, temp_git_repo):
+        (temp_git_repo / 'release.yml').write_text('  # re-run: `ci.yml` and the generated `validate.yml` are BOTH named CI\n')
+        self.rename_workflow(temp_git_repo)
+
+        result = run_check('--moves', '--registry', str(self.registry_at(tmp_path / 'r.json', temp_git_repo)), cwd=temp_git_repo)
+
+        assert result.returncode == 1
+        assert 'release.yml:1' in result.stdout
+
+    def test_leaves_a_filename_another_repo_still_holds(self, tmp_path, temp_git_repo):
+        other = tmp_path / 'other'
+        (other / '.github' / 'workflows').mkdir(parents=True)
+        (other / '.github' / 'workflows' / 'ci.yml').write_text('name: Bespoke\n')
+        (other / 'README.md').write_text('Its own `ci.yml` builds the image.\n')
+        self.rename_workflow(temp_git_repo)
+
+        result = run_check('--moves', '--registry', str(self.registry_at(tmp_path / 'r.json', temp_git_repo, other)), cwd=temp_git_repo)
+
+        assert result.returncode == 0
+        assert 'a file on this machine still has the name: ci.yml' in result.stdout
+
+    def test_a_move_that_keeps_the_filename_asks_nothing_more(self, tmp_path, temp_git_repo):
+        store = tmp_path / 'store'
+        store.mkdir()
+        (store / 'guide.md').write_text('See `setup.md` first.\n')
+        (temp_git_repo / 'docs').mkdir()
+        (temp_git_repo / 'docs' / 'setup.md').write_text('# Setup\n')
+        subprocess.run(['git', 'add', '-A'], cwd=temp_git_repo, capture_output=True, check=True)
+        subprocess.run(['git', 'commit', '-m', 'add'], cwd=temp_git_repo, capture_output=True, check=True)
+        subprocess.run(['git', 'mv', 'docs/setup.md', 'setup.md'], cwd=temp_git_repo, capture_output=True, check=True)
+
+        result = run_check('--moves', '--registry', str(self.registry_at(tmp_path / 'r.json', temp_git_repo, store)), cwd=temp_git_repo)
+
+        assert result.returncode == 0
+        assert 'old name' not in result.stdout
+
+    def test_without_a_registry_the_filename_is_not_asked(self, temp_git_repo):
+        (temp_git_repo / 'notes.md').write_text('A hand-written `ci.yml` declares its own title.\n')
+        self.rename_workflow(temp_git_repo)
+
+        result = run_check('--moves', cwd=temp_git_repo)
+
+        assert result.returncode == 0

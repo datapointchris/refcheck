@@ -906,6 +906,10 @@ class ReferenceChecker:
 
         self.set_aside.extend(self._scan_for_patterns(patterns, stale))
 
+    def filenames(self) -> set[str]:
+        """The name of every file this run would read."""
+        return {file_path.name for file_path in self.find_files()}
+
     def check_names(self, names: dict[str, str]) -> None:
         """Report every line holding an old name in a shape that refers to the thing.
 

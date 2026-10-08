@@ -27,6 +27,11 @@ does an installed path ahead of the tool (/usr/bin/forge brief). In prose the
 phrase may be English (`learning plan`), so it counts only in a single name's
 shapes: a code span, a quoted literal, bold or a table cell. On every line it also
 counts as consecutive quoted items of an argument list, `["forge", "brief"]`.
+
+A word after the first may be a flag, as in `refcheck --pattern`, for a flag that
+moved under a subcommand or went away. Other flags may stand before it. A word
+between the tool and the flag that is not itself a flag is taken for a
+subcommand, so `refcheck check --pattern`, the corrected call, is not matched.
 """
 
 import re
@@ -34,6 +39,9 @@ from dataclasses import dataclass
 from enum import Enum
 
 NAME_WORD = re.compile(r'\w[\w.-]*')
+
+# A word after the first may also be a flag, as in `tool --oldflag`.
+FLAG_WORD = re.compile(r'--?\w[\w-]*')
 
 
 class LineKind(Enum):
@@ -104,12 +112,24 @@ class NameShapes:
 
     @classmethod
     def of_command(cls, words: list[str]) -> 'NameShapes':
-        """The shapes for a tool and its subcommand, `forge brief`."""
-        tool, *rest = (re.escape(word) for word in words)
-        tail = ''.join(rf'\s+{word}' for word in rest) + r'(?![\w-])'
+        """The shapes for a name of several words: a tool and its subcommand, `forge brief`,
+        or a tool and its flag, `refcheck --pattern`.
+
+        Other flags may stand before a flag word, since a tool that drops one flag
+        keeps the rest: `tool --json --legacy`. A word that is not a flag may not,
+        because it is read as a subcommand, and `tool sub --legacy` is the
+        corrected call.
+        """
+        tool = re.escape(words[0])
+        rest = [(re.escape(word), bool(FLAG_WORD.fullmatch(word))) for word in words[1:]]
+        kept = r'(?:\s+-[\w-]+)*'
+        argv_kept = r'(?:\s*,\s*["\']-[\w-]+["\'])*'
+        tail = ''.join(rf'{kept if is_flag else ""}\s+{word}' for word, is_flag in rest) + r'(?![\w-])'
         installed = r'(?:[\w.~${}/-]*/)?'
         quoted_installed = r'(?:[^"\'\s]*/)?'
-        argv = r'\s*,\s*'.join([rf'["\']{quoted_installed}{tool}["\']', *(rf'["\']{word}["\']' for word in rest)])
+        argv = rf'["\']{quoted_installed}{tool}["\']' + ''.join(
+            rf'{argv_kept if is_flag else ""}\s*,\s*["\']{word}["\']' for word, is_flag in rest
+        )
         anywhere = re.compile(
             rf"""
               `{installed}{tool}{tail}                  # opens a code span

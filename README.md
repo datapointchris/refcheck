@@ -143,6 +143,10 @@ is the check a move actually needs, asked at the moment fixing it is free.
 
 Add `args: [--moves, --strict]` to fail on warnings as well as errors.
 
+A renamed tool or a removed subcommand is not a file git moves, so the hook
+never sees one. Run `--name` by hand when that change lands, per
+[Which flag answers which change](#which-flag-answers-which-change).
+
 `pre-commit run --from-ref A --to-ref B` stages nothing, and neither does the
 pre-push stage. Both export the range as `PRE_COMMIT_FROM_REF` and
 `PRE_COMMIT_TO_REF`, and `--moves` checks the moves in that range instead of the
@@ -175,6 +179,9 @@ refcheck check --skip-docs
 # Find a renamed tool's old name, wherever it is still used as one
 refcheck check --name oldtool --desc "Now newtool"
 
+# Find a renamed, moved or removed subcommand, wherever it is still named
+refcheck check --name "tool oldsub" --desc "Now newtool sub"
+
 # Combine filters
 refcheck check --pattern "FooClass" --type py --skip-docs src/
 
@@ -186,6 +193,17 @@ refcheck check --strict
 ```
 
 ## Common workflows
+
+### Which flag answers which change
+
+| What changed | Run | Who runs it |
+| --- | --- | --- |
+| A file or directory moved, was renamed or was deleted | `--moves`, `--moves-since <base>`, or `--pattern "old/path/"` | The pre-commit hook, with `args: [--moves]` |
+| A tool was renamed or removed | `--name oldtool` | You, when the change lands |
+| A subcommand was renamed, moved to another tool, or removed | `--name "tool oldsub"`, once per subcommand | You, when the change lands |
+
+Add `--registry` once per registry to ask every repo and store it lists, not
+just this one.
 
 ### After moving files
 
@@ -250,7 +268,31 @@ opening the file.
 
 The tree the local run read is left out of the sweep, so nothing in it is
 printed twice. A run narrowed to one directory still sweeps the rest of its
-repo when the registry lists that repo.
+repo when the registry lists that repo. Both hold for a subcommand too.
+
+### After renaming, moving or removing a subcommand
+
+A subcommand that went away strands its callers in other repos. A caller in
+code spells it as an argument list, which a text search for the phrase misses:
+
+```bash
+refcheck check --name "tool oldsub" --desc "Now newtool sub" \
+  --registry ~/.config/repos.json --registry ~/.config/stores.json
+```
+
+A subcommand can also be an English phrase — `learning plan`, `fleet hosts` — so
+which shapes count depends on the line, as they do for a single name:
+
+| Line | Shape | Example |
+| --- | --- | --- |
+| Code, config or shell | The words in order, comments included, with or without an installed path ahead of the tool | `tool oldsub --json`, `f'tool oldsub failed: {e}'`, `ExecStart=/usr/bin/tool oldsub`, `"$HOME/go/bin/tool" oldsub` |
+| Any | Consecutive quoted items of an argument list | `["tool", "oldsub"]`, `exec.Command("/usr/bin/tool", "oldsub")` |
+| Any | A code span opening on it, a quoted literal, bold or a table cell holding only it | `` `tool oldsub` ``, `"tool oldsub"`, `**tool oldsub**` |
+
+The phrase in a sentence of prose is not reported. A flag between the two,
+`tool --json oldsub`, is not matched, and neither is a caller that passes the
+tool and its arguments in separate fields. A line mentioning `tool` or `oldsub`
+alone is never reported.
 
 ### After moving files, in the repos that name them
 
@@ -505,7 +547,8 @@ PASS All file references valid
 - `2` - The run was asked for something it cannot do: a directory that is not
   there, a `--registry` that is missing or is not JSON, `--registry` with
   nothing to look for, two of `--pattern`, `--name` and `--moves` in one run, a
-  `--name` that is not a single word, or a range git cannot diff, such as a base
+  `--name` that is neither a tool nor a tool and its subcommand, or a range git
+  cannot diff, such as a base
   commit a shallow clone never fetched
 - `128` - `--moves` or `--moves-since` outside a git repository, which is git's
   own code for it
@@ -543,7 +586,7 @@ Bare `refcheck` prints help. Run any command with `--help` for its flags.
 | --- | --- | --- |
 | `path` | Directory to check (positional) | `refcheck check install/` |
 | `--pattern PATTERN` | Find old pattern | `--pattern "old/"` |
-| `--name NAME` | Find a renamed tool's old name where it is used as one | `--name oldtool` |
+| `--name NAME` | Find a tool, or a tool and its subcommand, that is gone but still named | `--name oldtool`, `--name "tool oldsub"` |
 | `--desc DESC` | What the pattern or name became | `--desc "Now new/"` |
 | `--moves` | Check what staged renames and deletions left behind | `--moves` |
 | `--moves-since REF` | The same, for every move between REF and HEAD | `--moves-since origin/main` |

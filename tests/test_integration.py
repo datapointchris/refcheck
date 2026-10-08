@@ -1503,12 +1503,32 @@ class TestNameSearch:
         assert result.returncode == 0
         assert 'No other repo names oldtool — 1 repo, old name oldtool' in result.stdout
 
-    @pytest.mark.parametrize('name', ['old/tool', 'old tool', ''])
-    def test_refuses_anything_that_is_not_one_word(self, temp_dir, name):
+    def test_reports_a_subcommand_where_code_runs_it_and_prose_names_it(self, temp_dir):
+        (temp_dir / 'probe.go').write_text('var probes = []string{"forge", "status", "--json"}\n')
+        (temp_dir / 'notes.md').write_text('The brief came from `forge status`, which my status plan names.\n')
+
+        result = run_check('--name', 'forge status', '--desc', 'now fleet status', cwd=temp_dir)
+
+        assert result.returncode == 1
+        assert 'probe.go:1' in result.stdout
+        assert 'notes.md:1' in result.stdout
+
+    def test_a_clean_sweep_names_the_subcommand_with_its_spaces_collapsed(self, tmp_path, temp_dir):
+        repo = tmp_path / 'repo'
+        repo.mkdir()
+        (tmp_path / 'repos.json').write_text(json.dumps({'repos': [{'name': 'repo', 'path': str(repo)}]}))
+
+        result = run_check('--name', 'forge   status', '--registry', str(tmp_path / 'repos.json'), cwd=temp_dir)
+
+        assert result.returncode == 0
+        assert 'No other repo names forge status — 1 repo, old name forge status' in result.stdout
+
+    @pytest.mark.parametrize('name', ['old/tool', 'tool old/sub', '', '   ', 'tool $sub'])
+    def test_refuses_anything_that_is_not_a_tool_or_a_subcommand(self, temp_dir, name):
         result = run_check('--name', name, cwd=temp_dir)
 
         assert result.returncode == 2
-        assert '--pattern' in result.stderr
+        assert ('--pattern' in result.stderr) == ('/' in name)
 
 
 class TestOneQuestionPerRun:

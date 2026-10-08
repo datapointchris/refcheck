@@ -369,7 +369,7 @@ reports the one reference that had genuinely broken.
 | `store renamed versions.json last week`, a bare repo name | silent |
 | `docs/versions.json`, where this repo holds that file | silent |
 | `/srv/versions.json`, inside no listed repo | silent |
-| `$UNSET_VAR/versions.json`, nothing to expand | silent |
+| `$UNSET_VAR/versions.json`, nothing to expand | silent while a listed repo holds a `versions.json`, reported once none does |
 
 **A filename the change took out of use is asked about too, once nothing holds
 it.** Prose cites a file by its name alone as often as by its path — "a

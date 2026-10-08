@@ -452,7 +452,7 @@ wheels = [
 
 [[package]]
 name = "refcheck"
-version = "2.4.0"
+version = "2.5.0"
 source = { editable = "." }
 dependencies = [
     { name = "pyselfupdate", extra = ["typer"] },

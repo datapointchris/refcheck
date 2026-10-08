@@ -1,6 +1,5 @@
 """Command-line interface for refcheck."""
 
-import re
 import sys
 from pathlib import Path
 from typing import Annotated
@@ -15,6 +14,7 @@ from . import sweep as sweep_module
 from .checker import ReferenceChecker
 from .config import REPO_CONFIG_NAME
 from .config import load_config
+from .names import NAME_WORD
 from .output import print_config
 from .output import print_results
 from .output import print_sweep
@@ -30,8 +30,6 @@ HELP = (
     'rather than a changeset, and infers the repo from the directory you run it in. Run any command '
     'with --help to see what comes next.'
 )
-
-NAME_WORD = re.compile(r'\w[\w.-]*')
 
 CHECK_HELP = (
     'Validate every file reference in the tree. Give it a directory to narrow the search, --pattern '
@@ -72,7 +70,9 @@ CHECK_EPILOG = '\n\n'.join(
         '[b]Which flag answers which change[/b]',
         (
             'Moved, renamed or deleted a file or directory: --moves before committing, --moves-since '
-            '<base> over a branch, or --pattern "old/path/" by hand.\n'
+            '<base> over a branch, or --pattern "old/path/" by hand. With --registry, --moves also asks '
+            'where a filename the change took out of use is still cited, once neither this tree nor any '
+            'listed repo holds a file of that name.\n'
             'Renamed or removed a tool: --name oldtool.\n'
             'Renamed, moved or removed a subcommand: --name "tool oldsub", once per subcommand.\n'
             'Add --registry once per registry to ask every repo and store, not just this one. A tool '
@@ -319,7 +319,12 @@ def check(
         config=config,
     )
 
+    listed = _load_registries(registry) if registry else None
     sweep_patterns: dict[str, str] = {}
+    found: list[moves_module.Move] = []
+    gone_filenames: dict[str, str] = {}
+    filenames_still_held: list[str] = []
+    unmatchable: list[str] = []
 
     if pattern:
         checker.check_pattern(pattern, desc)
@@ -356,6 +361,23 @@ def check(
             )
             sweep_patterns = {move.old: move.description for move in found}
 
+    swept = None
+    if listed:
+        # A filename the change took out of use is cited alone as often as by
+        # path. It is asked only once neither this tree nor any listed repo
+        # holds a file of that name, because until then the citation names
+        # something real.
+        candidates, unmatchable = moves_module.old_filenames(found)
+        if candidates:
+            roots = [get_repo_root(root_dir) or root_dir, *(repo.path for repo in listed.repos if repo.is_on_disk)]
+            held = sweep_module.held_filenames(roots)
+            gone_filenames = {old: became for old, became in candidates.items() if old not in held}
+            filenames_still_held = sorted(set(candidates) - set(gone_filenames))
+            checker.check_filenames(gone_filenames)
+        swept = _sweep_other_repos(
+            listed, sweep_patterns, bool(name), skip_docs, file_type, test_mode, flag_patterns, root_dir, search_path, gone_filenames
+        )
+
     print_results(
         checker.issues,
         checker.warnings,
@@ -366,11 +388,14 @@ def check(
         checker.set_aside,
     )
 
-    swept = (
-        _sweep_other_repos(registry, sweep_patterns, bool(name), skip_docs, file_type, test_mode, flag_patterns, root_dir, search_path)
-        if registry
-        else None
-    )
+    if swept is not None:
+        print_sweep(swept, sweep_patterns, by_name=bool(name), filenames=gone_filenames)
+        if filenames_still_held:
+            print(f'Not asked as old filenames, because this tree or a listed repo still holds one: {", ".join(filenames_still_held)}')
+        if unmatchable:
+            print(f'Not asked as old filenames, because no shape can match them: {", ".join(unmatchable)}')
+        if filenames_still_held or unmatchable:
+            print()
 
     notify(UPDATE_CONFIG)
 
@@ -395,8 +420,16 @@ def learn_rules():
 add_update_command(app, UPDATE_CONFIG)
 
 
+def _load_registries(registries: list[Path]) -> registry_module.Registry:
+    try:
+        return registry_module.load_all(registries)
+    except registry_module.RegistryError as error:
+        print(f'refcheck: {error}', file=sys.stderr)
+        raise typer.Exit(2) from error
+
+
 def _sweep_other_repos(
-    registries: list[Path],
+    listed: registry_module.Registry,
     patterns: dict[str, str],
     by_name: bool,
     skip_docs: bool,
@@ -405,14 +438,9 @@ def _sweep_other_repos(
     flag_excludes: list[str],
     source_root: Path,
     scanned_here: Path,
+    filenames: dict[str, str],
 ) -> sweep_module.SweepResult:
-    """Ask every repo the registries list what a move or a rename left behind."""
-    try:
-        listed = registry_module.load_all(registries)
-    except registry_module.RegistryError as error:
-        print(f'refcheck: {error}', file=sys.stderr)
-        raise typer.Exit(2) from error
-
+    """Ask every repo the registries list what a move or a rename left behind, printing nothing."""
     if by_name:
         swept = sweep_module.names_across_repos(
             listed,
@@ -432,8 +460,9 @@ def _sweep_other_repos(
             test_mode=test_mode,
             flag_excludes=flag_excludes,
             source_root=source_root,
+            filenames=filenames,
+            already_scanned=scanned_here,
         )
-    print_sweep(swept, patterns, by_name=by_name)
     return swept
 
 

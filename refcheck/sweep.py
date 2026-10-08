@@ -119,8 +119,14 @@ def across_repos(
     test_mode: bool = False,
     flag_excludes: Sequence[str] = (),
     source_root: Path | None = None,
+    filenames: dict[str, str] | None = None,
+    already_scanned: Path | None = None,
 ) -> SweepResult:
     """Ask every listed repo what it still points at, in one walk each.
+
+    `filenames` are old filenames to ask in the same read, each cited alone.
+    Their hits inside `already_scanned`, the tree the local run read, are left
+    out, since the local run reported them.
 
     A repo whose directory is not there is reported rather than skipped in
     silence: a registry naming a path this machine does not hold is drift of its
@@ -158,12 +164,39 @@ def across_repos(
     sweep.source_is_listed = source_root is None or Path(os.path.realpath(source_root)) in homes
     paths = homes_by_name(registry)
 
+    scanned = Path(os.path.realpath(already_scanned)) if already_scanned is not None else None
     for repo in live:
         checker = _checker_for(repo, skip_docs, file_type, test_mode, flag_excludes)
         checker.check_patterns_across_repos(patterns, homes, paths)
+        if filenames:
+            before = len(checker.issues)
+            checker.check_filenames(filenames)
+            home = Path(os.path.realpath(repo.path))
+            checker.issues[before:] = [issue for issue in checker.issues[before:] if not _inside(home / issue.file, scanned)]
         sweep.results.append(RepoResult(repo=repo, issues=checker.issues, unreadable=checker.unreadable))
 
     return sweep
+
+
+def held_filenames(roots: Sequence[Path]) -> set[str]:
+    """Every filename a repo under these roots authors, whatever a scan would exclude.
+
+    A repo's own exclusion says a file is not to be read, never that it is
+    absent, so the walk ignores it and opens nothing. The default exclusions
+    are skipped. Each holds dependencies, caches or build output, and a
+    `ci.yml` inside some package in `node_modules` is not the file a
+    citation names.
+    """
+    held: set[str] = set()
+    for root in roots:
+        for _, directories, files in os.walk(root):
+            directories[:] = [directory for directory in directories if directory not in ReferenceChecker.DEFAULT_EXCLUDES]
+            held.update(files)
+    return held
+
+
+def _inside(path: Path, tree: Path | None) -> bool:
+    return tree is not None and Path(os.path.realpath(path)).is_relative_to(tree)
 
 
 def names_across_repos(

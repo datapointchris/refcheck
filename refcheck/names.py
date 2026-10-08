@@ -33,6 +33,8 @@ import re
 from dataclasses import dataclass
 from enum import Enum
 
+NAME_WORD = re.compile(r'\w[\w.-]*')
+
 
 class LineKind(Enum):
     """What a line of a scanned file holds, as far as a reference check cares."""
@@ -56,14 +58,30 @@ class NameShapes:
         words = name.split()
         if len(words) > 1:
             return cls.of_command(words)
+        return cls.of_word(name, directory=True)
+
+    @classmethod
+    def of_filename(cls, filename: str) -> 'NameShapes':
+        """The shapes for a filename: a tool's, less a directory of that name.
+
+        A filename ends a path and never leads one, so `ci.yml/` is not it.
+        """
+        return cls.of_word(filename, directory=False)
+
+    @classmethod
+    def of_word(cls, name: str, directory: bool) -> 'NameShapes':
         word = re.escape(name)
         alone = rf'(?<![\w./$-]){word}(?![\w-])'
+        leading = rf'| (?<![\w./-]){word}(?=/[\w.])          # a leading segment' if directory else ''
+        segments = rf"""
+            | (?<=/){word}(?![\w-])                 # a segment after a slash
+            {leading}
+            """
         anywhere = re.compile(
             rf"""
               `{word}(?=[`\s])                      # opens a code span
             | (["']){word}\1                        # is the whole of a quoted literal
-            | (?<=/){word}(?![\w-])                 # a segment after a slash
-            | (?<![\w./-]){word}(?=/[\w.])          # a leading segment
+            {segments}
             | (?<![\w./-]){word}(?=\.[A-Za-z]\w*)   # a file stem or a module prefix
             | \*\*{word}\*\* | __{word}__           # bold holding only it
             | \|\s*{word}\s*\|                      # a table cell holding only it

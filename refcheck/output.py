@@ -238,7 +238,12 @@ def _print_unreadable(unreadable: list[Unreadable]) -> None:
         print(f'    {entry.reason}')
 
 
-def print_sweep(sweep: 'SweepResult', patterns: dict[str, str], by_name: bool = False) -> None:
+def print_sweep(
+    sweep: 'SweepResult',
+    patterns: dict[str, str],
+    by_name: bool = False,
+    filenames: dict[str, str] | None = None,
+) -> None:
     """Print a cross-repo sweep, grouped by the repo each finding sits in.
 
     Paths are printed absolute rather than repo-relative. Every other refcheck
@@ -250,8 +255,9 @@ def print_sweep(sweep: 'SweepResult', patterns: dict[str, str], by_name: bool = 
     does not hold is drift of its own, and a sweep reporting a clean 60 repos
     when the caller expected 90 is the false clean this tool exists to avoid.
 
-    `by_name` says the sweep looked for old names rather than moved paths, which
-    changes only what the count line says was looked for.
+    `by_name` says the sweep looked for old names rather than moved paths, and
+    `filenames` that it also looked for old filenames cited alone. Both change
+    only what the count line says was looked for.
     """
     try:
         print()
@@ -266,6 +272,9 @@ def print_sweep(sweep: 'SweepResult', patterns: dict[str, str], by_name: bool = 
             looked_for = ', '.join(patterns)
             clean_claim = f'No other repo names {looked_for}'
             asked = f'old name {looked_for}'
+        elif filenames:
+            clean_claim = 'No repo names a path that moved or an old filename'
+            asked = f'{len(patterns)} moved path(s), old filename {", ".join(filenames)}'
         else:
             clean_claim = 'No repo names a path that moved'
             asked = f'{len(patterns)} moved path(s)'

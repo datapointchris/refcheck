@@ -149,3 +149,20 @@ class TestMovesInThePreCommitChange:
 
         found = moves.in_pre_commit_change(temp_git_repo)
         assert [(m.old, m.new) for m in found] == [('lib/helpers.sh', 'shared/helpers.sh')]
+
+
+class TestOldFilenames:
+    """The filenames a change took out of use, which prose cites without a path."""
+
+    @pytest.mark.parametrize(
+        ('old', 'new', 'expected'),
+        [
+            ('.github/workflows/ci.yml', '.github/workflows/cross-platform.yml', ({'ci.yml': 'now cross-platform.yml'}, [])),
+            ('scripts/old-deploy.sh', None, ({'old-deploy.sh': 'deleted in this change'}, [])),
+            ('.markdownlint.yaml', '.markdownlint.yml', ({'.markdownlint.yaml': 'now .markdownlint.yml'}, [])),
+            ('docs/README.md', 'README.md', ({}, [])),
+            ('notes/a file.md', 'notes/b.md', ({}, ['a file.md'])),
+        ],
+    )
+    def test_a_move_takes_a_filename_out_of_use_only_by_changing_it(self, old, new, expected):
+        assert moves.old_filenames([moves.Move(old, new)]) == expected

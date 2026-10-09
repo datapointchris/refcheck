@@ -1533,9 +1533,9 @@ class TestNameSearch:
         assert 'registry.yml:2' not in result.stdout
 
     def test_reports_a_subcommands_flag_behind_another_flag(self, temp_dir):
-        (temp_dir / 'install.sh').write_text('dotfiles apply --reinstall --package lazygit\n')
+        (temp_dir / 'install.sh').write_text('tool apply --reinstall --oldflag lazygit\n')
 
-        result = run_check('--name', 'dotfiles apply --package', '--desc', 'now dotfiles apply --entry', cwd=temp_dir)
+        result = run_check('--name', 'tool apply --oldflag', '--desc', 'now tool apply --newflag', cwd=temp_dir)
 
         assert result.returncode == 1
         assert 'install.sh:1' in result.stdout

@@ -32,6 +32,11 @@ A word after the first may be a flag, as in `refcheck --pattern`, for a flag tha
 moved under a subcommand or went away. Other flags may stand before it. A word
 between the tool and the flag that is not itself a flag is taken for a
 subcommand, so `refcheck check --pattern`, the corrected call, is not matched.
+
+A flag named after a subcommand, as in `worktree spawn --brief`, may follow any
+argument of that command: `worktree spawn parser-fix --brief b.md`. The command
+path is already fixed by the name, so a word after it is a positional or a value.
+The command ends at a pipe, a `;`, a `&`, a comment or the end of a code span.
 """
 
 import re
@@ -118,17 +123,36 @@ class NameShapes:
         Other flags may stand before a flag word, since a tool that drops one flag
         keeps the rest: `tool --json --legacy`. A word that is not a flag may not,
         because it is read as a subcommand, and `tool sub --legacy` is the
-        corrected call.
+        corrected call. After a subcommand of the name, any argument of the same
+        command may stand before the flag word: `tool sub src/ --legacy`.
         """
         tool = re.escape(words[0])
-        rest = [(re.escape(word), bool(FLAG_WORD.fullmatch(word))) for word in words[1:]]
+        rest = []
+        after_subcommand = False
+        for word in words[1:]:
+            is_flag = bool(FLAG_WORD.fullmatch(word))
+            rest.append((re.escape(word), is_flag, after_subcommand))
+            after_subcommand = after_subcommand or not is_flag
         kept = r'(?:\s+-[\w-]+)*'
         argv_kept = r'(?:\s*,\s*["\']-[\w-]+["\'])*'
-        tail = ''.join(rf'{kept if is_flag else ""}\s+{word}' for word, is_flag in rest) + r'(?![\w-])'
+        any_argument = r'(?:\s+(?!\#)[^\s|;&`]+)*?'
+        argv_any_item = r'(?:\s*,[^,\]\n]+)*?'
+
+        def before(is_flag: bool, after_subcommand: bool) -> str:
+            if not is_flag:
+                return ''
+            return any_argument if after_subcommand else kept
+
+        def argv_before(is_flag: bool, after_subcommand: bool) -> str:
+            if not is_flag:
+                return ''
+            return argv_any_item if after_subcommand else argv_kept
+
+        tail = ''.join(rf'{before(is_flag, after)}\s+{word}' for word, is_flag, after in rest) + r'(?![\w-])'
         installed = r'(?:[\w.~${}/-]*/)?'
         quoted_installed = r'(?:[^"\'\s]*/)?'
         argv = rf'["\']{quoted_installed}{tool}["\']' + ''.join(
-            rf'{argv_kept if is_flag else ""}\s*,\s*["\']{word}["\']' for word, is_flag in rest
+            rf'{argv_before(is_flag, after)}\s*,\s*["\']{word}["\']' for word, is_flag, after in rest
         )
         anywhere = re.compile(
             rf"""

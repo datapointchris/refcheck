@@ -239,6 +239,40 @@ class TestAToolAndItsFlag:
     def test_a_subcommands_own_flag_is_named(self, line, kind):
         assert NameShapes.of('refcheck check --strict').names_it(line, kind)
 
+    @pytest.mark.parametrize(
+        ('line', 'kind'),
+        [
+            ('worktree spawn parser-fix --brief b.md', LineKind.SHELL),
+            ('worktree spawn "$slug" --timeout 30 --brief b.md', LineKind.SHELL),
+            ('worktree spawn parser-fix --brief=b.md', LineKind.SHELL),
+            ('Run `worktree spawn parser-fix --brief b.md` next.', LineKind.PROSE),
+            ('subprocess.run(["worktree", "spawn", slug, "--brief", str(brief)])', LineKind.ANOTHER_LANGUAGE),
+            ('run: worktree spawn {{ slug }} --brief b.md', LineKind.ANOTHER_LANGUAGE),
+        ],
+    )
+    def test_a_subcommands_flag_is_named_behind_its_arguments(self, line, kind):
+        assert NameShapes.of('worktree spawn --brief').names_it(line, kind)
+
+    @pytest.mark.parametrize(
+        'line',
+        [
+            'worktree spawn parser-fix | tee --brief',
+            'worktree spawn parser-fix; echo --brief',
+            'worktree spawn parser-fix 2>&1 --brief',
+            'worktree spawn parser-fix --brief-file b.md',
+            'Run `worktree spawn parser-fix` with `--brief`.',
+            'run(["worktree", "spawn", slug]); log(["--brief"])',
+            'worktree new parser-fix --brief b.md',
+        ],
+    )
+    def test_a_flag_outside_the_subcommands_command_stays_silent(self, line):
+        for kind in LineKind:
+            assert not NameShapes.of('worktree spawn --brief').names_it(line, kind)
+
+    def test_a_tools_flag_behind_a_value_stays_silent(self):
+        for kind in LineKind:
+            assert not NameShapes.of('tool --legacy').names_it('tool --type md --legacy', kind)
+
 
 class TestCheckNames:
     def found(self, temp_dir, files, **options):

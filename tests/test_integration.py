@@ -1532,6 +1532,40 @@ class TestNameSearch:
         assert 'registry.yml:1' in result.stdout
         assert 'registry.yml:2' not in result.stdout
 
+    def test_reports_a_subcommands_flag_behind_another_flag(self, temp_dir):
+        (temp_dir / 'install.sh').write_text('dotfiles apply --reinstall --package lazygit\n')
+
+        result = run_check('--name', 'dotfiles apply --package', '--desc', 'now dotfiles apply --entry', cwd=temp_dir)
+
+        assert result.returncode == 1
+        assert 'install.sh:1' in result.stdout
+
+    def test_reports_a_subcommands_flag_behind_a_positional(self, temp_dir):
+        (temp_dir / 'guide.md').write_text(
+            '```bash\nworktree spawn parser-fix --brief b.md\n```\n\nRun `worktree spawn parser-fix --brief b.md`.\n'
+        )
+
+        result = run_check('--name', 'worktree spawn --brief', cwd=temp_dir)
+
+        assert result.returncode == 1
+        assert 'guide.md:2' in result.stdout
+        assert 'guide.md:5' in result.stdout
+
+    def test_a_flag_named_on_the_tool_is_not_found_under_a_subcommand(self, temp_dir):
+        (temp_dir / 'run.sh').write_text('tool sub --oldflag\ntool sub src/ --oldflag\n')
+        (temp_dir / 'guide.md').write_text('Run `tool sub --oldflag`.\n')
+
+        assert run_check('--name', 'tool --oldflag', cwd=temp_dir).returncode == 0
+
+    def test_a_flag_after_the_command_ends_is_not_the_subcommands(self, temp_dir):
+        commands = ['| grep --brief', '|| tool --brief', '; tool --brief', '&& tool --brief', '& tool --brief', '# then --brief']
+        (temp_dir / 'run.sh').write_text(''.join(f'worktree spawn parser-fix {rest}\n' for rest in commands))
+        (temp_dir / 'guide.md').write_text('Run `worktree spawn parser-fix`, then pass `--brief`.\n')
+
+        result = run_check('--name', 'worktree spawn --brief', cwd=temp_dir)
+
+        assert result.returncode == 0, result.stdout
+
     @pytest.mark.parametrize('name', ['old/tool', 'tool old/sub', '', '   ', 'tool $sub', '--flag tool', 'tool ---x', 'tool -'])
     def test_refuses_anything_that_is_not_a_tool_a_subcommand_or_a_flag(self, temp_dir, name):
         result = run_check('--name', name, cwd=temp_dir)

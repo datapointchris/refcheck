@@ -1,5 +1,6 @@
 """Command-line interface for refcheck."""
 
+import shlex
 import sys
 from pathlib import Path
 from typing import Annotated
@@ -7,6 +8,9 @@ from typing import Annotated
 import typer
 from pyselfupdate import notify
 from pyselfupdate.typercmd import add_update_command
+from typer._click.core import Context
+from typer._click.exceptions import NoSuchOption
+from typer.core import TyperGroup
 
 from . import moves as moves_module
 from . import registry as registry_module
@@ -141,7 +145,40 @@ CHECK_EPILOG = '\n\n'.join(
     ]
 )
 
+
+class RootGroup(TyperGroup):
+    """The root command, which points a scan flag given ahead of any command at check.
+
+    The scan's flags belong to check, so refcheck itself refuses them. Click's
+    own refusal names the flag and stops there; this one also names the command
+    the flag belongs to, and spells the call that runs it.
+    """
+
+    def parse_args(self, ctx: Context, args: list[str]) -> list[str]:
+        # Click consumes the list it parses, so the call as given is kept aside.
+        given = list(args)
+        try:
+            return super().parse_args(ctx, args)
+        except NoSuchOption as error:
+            check_command = self.get_command(ctx, 'check')
+            if check_command is None:
+                raise
+            check_flags = {flag for param in check_command.params for flag in (*param.opts, *param.secondary_opts)}
+            if error.option_name not in check_flags:
+                raise
+            # The whole call moves under check only when it names no command of
+            # its own, since then every argument in it is one of check's.
+            commands = set(self.list_commands(ctx))
+            rest = given if not commands.intersection(given) else [error.option_name]
+            raise NoSuchOption(
+                error.option_name,
+                message=f'{error.option_name} belongs to check: {ctx.command_path} check {shlex.join(rest)}',
+                ctx=ctx,
+            ) from error
+
+
 app = typer.Typer(
+    cls=RootGroup,
     add_completion=False,
     no_args_is_help=True,
     help=HELP,

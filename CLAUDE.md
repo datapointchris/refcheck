@@ -55,8 +55,9 @@ per listed repo. `names.py` holds the name shapes, `moves.py` reads git, and
   off home, an absolute path is itself, and anything else hangs off the repo
   root. `resolves` also accepts a `~/` path when a file in the repo ends in the
   same segments, because a CI runner's home holds nothing the repo deploys.
-  These checks read only files ending in `.sh` or `.md`. An extensionless
-  script is not read for them.
+  These checks read markdown and every file `kind_of_file` reads as shell
+  (`declares_shell`). A file with no suffix is opened for its shebang, and is
+  read only when that names a shell.
 - **`--pattern` and `--moves` in this tree** widen each hit to its whole path
   token (`_resolved_hits`). A token that resolves on disk is set aside and
   listed, never reported. A substring cannot tell a stale reference from a
@@ -139,7 +140,9 @@ it in place.
   installed tests the installed release instead.
 - **Fixtures build their trees under `tmp_path`, with `HOME` pointed there.**
   A test reading a directory on the machine makes its result a property of
-  that machine.
+  that machine. The user config and the rules files sit under
+  `$XDG_CONFIG_HOME` when it is set, so the autouse `config_follows_home`
+  unsets it and both follow `HOME`.
 - **A fixture or docstring names a placeholder tool, never a real one.** A real
   tool's old name written here is a hit in every cross-repo sweep for that
   rename.

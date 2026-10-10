@@ -21,10 +21,11 @@ A directory named on the command line and not there is refused outright, exit 2.
 Walking it would find no files, pass every check over nothing, and certify a
 tree that does not exist.
 
-Shell scripts and markdown are both checked. Documentation goes stale in
-exactly the way code does — a usage example naming a library that has since
-moved is the drift this tool exists to catch — so prose is scanned unless you
-pass `--skip-docs`.
+Shell scripts and markdown are both checked. A shell script is a file ending in
+`.sh`, `.bash`, `.zsh` or `.ksh`, or a file with no suffix whose shebang names a
+shell. Documentation goes stale in exactly the way code does — a usage example
+naming a library that has since moved is the drift this tool exists to catch —
+so prose is scanned unless you pass `--skip-docs`.
 
 Inside markdown, a fenced block is read as shell when it is tagged as shell
 (` ```bash `, ` ```sh `, ` ```shell `, ` ```console `) or carries no tag at all.
@@ -516,7 +517,8 @@ refcheck check  # Shows warnings for SCRIPT_DIR="$(cd "$DIR/../../.." && pwd)"
 # Generate rules from git rename history (last 6 months by default)
 refcheck learn-rules
 
-# Stored per checkout at ~/.config/refcheck/repos/{repo-path-with--for-slash}/rules.json
+# Stored per checkout at $XDG_CONFIG_HOME/refcheck/repos/{repo-path-with--for-slash}/rules.json,
+# with ~/.config standing in for an unset $XDG_CONFIG_HOME
 ```
 
 Rules improve the **Possible matches** line under a broken reference; they
@@ -527,7 +529,8 @@ six months of history describing moves already reconciled.
 
 ## Configuration
 
-Create `~/.config/refcheck/config.toml` to customize behavior:
+Create `$XDG_CONFIG_HOME/refcheck/config.toml`, or `~/.config/refcheck/config.toml`
+where `$XDG_CONFIG_HOME` is unset, to customize behavior:
 
 ```toml
 [learn]

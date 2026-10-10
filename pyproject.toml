@@ -3,7 +3,7 @@ name = "refcheck"
 version = "2.6.3"
 description = "Find broken file references and fragile path patterns in codebases"
 authors = [{ name = "Chris Birch", email = "datapointchris@gmail.com" }]
-license = { text = "MIT" }
+license = "MIT"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

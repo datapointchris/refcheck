@@ -1,10 +1,10 @@
 """Renames and deletions read from git, for the check a move leaves behind.
 
-The question refcheck exists to answer is "what still points at the old name",
-and until now it had to be asked by hand, with the old name typed in. git
-already knows: a rename is staged as R, a deletion as D, and the old path is
-right there in the changeset. Reading it at commit time is what makes the check
-automatic, and it needs no stored state — unlike learned rules, which describe
+The question refcheck exists to answer is "what still points at the old name".
+`--pattern` asks it of one old name typed by hand. git already holds every old
+name a change made: a rename is staged as R, a deletion as D, and the old path
+is in the changeset. Reading the changeset makes the check automatic at commit
+time and in CI. It needs no stored state, unlike learned rules, which describe
 moves already reconciled and go stale between runs.
 """
 

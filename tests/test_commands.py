@@ -83,3 +83,34 @@ def test_the_hook_entry_runs_the_check():
     hooks = yaml.safe_load((Path(__file__).parent.parent / '.pre-commit-hooks.yaml').read_text())
 
     assert hooks[0]['entry'] == 'refcheck check'
+
+
+# The error panel draws a border down each side of the message and wraps it to
+# the terminal, so a long corrected call can arrive split across two rows.
+def error_text(result: subprocess.CompletedProcess) -> str:
+    return ' '.join(result.stderr.replace('│', ' ').replace('╭', ' ').replace('╰', ' ').split())
+
+
+def test_a_scan_flag_at_the_root_names_the_call_under_check(tmp_path):
+    """The scan flags belong to check, so refcheck refuses them and spells the call that runs them."""
+    result = run('--moves-since', 'origin/main', cwd=tmp_path)
+
+    assert result.returncode == 2
+    assert '--moves-since belongs to check: refcheck check --moves-since origin/main' in error_text(result)
+
+
+def test_a_scan_flag_beside_a_command_names_only_the_flag(tmp_path):
+    """With a command in the call, the rest of it is not all check's, so only the flag is moved."""
+    result = run('--moves', 'learn-rules', cwd=tmp_path)
+
+    assert result.returncode == 2
+    assert '--moves belongs to check: refcheck check --moves' in error_text(result)
+    assert 'check --moves learn-rules' not in error_text(result)
+
+
+def test_a_flag_no_command_takes_gets_the_plain_refusal(tmp_path):
+    result = run('--no-such-flag', cwd=tmp_path)
+
+    assert result.returncode == 2
+    assert 'No such option: --no-such-flag' in error_text(result)
+    assert 'belongs to check' not in error_text(result)

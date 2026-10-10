@@ -129,7 +129,7 @@ notice to stderr; set `NO_AUTO_UPDATE` to silence it.
 ```yaml
 repos:
   - repo: https://github.com/datapointchris/refcheck
-    rev: v2.6.3
+    rev: v2.7.0
     hooks:
       - id: refcheck
         args: [--moves]

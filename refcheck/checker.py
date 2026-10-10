@@ -510,13 +510,33 @@ class ReferenceChecker:
         had used in months. A false clean is worse than a false positive,
         because it certifies the rot.
 
+        Shell is what `kind_of_file` reads as shell, so a script installed as a
+        command, with no suffix and a shell shebang, is checked like a `.sh`
+        file. A file with no suffix and any other first line is not read.
+
         Filtering one full listing rather than globbing per suffix is what makes
         a single-file argument behave: find_files ignores its pattern in that
         case and returns the file, so two globs returned it twice and scanned
         it twice, and --skip-docs could never exclude it.
         """
-        suffixes = {'.sh'} if self.skip_docs else {'.sh', '.md'}
-        return [f for f in self.find_files() if f.suffix in suffixes]
+        reads_markdown = not self.skip_docs
+        return [f for f in self.find_files() if (reads_markdown and f.suffix == '.md') or self.declares_shell(f)]
+
+    def declares_shell(self, file_path: Path) -> bool:
+        """Whether the file is shell by its suffix, or by its shebang when it has no suffix.
+
+        Only a file with no suffix is opened, because only there does the first
+        line decide.
+        """
+        first_line = ''
+        if not file_path.suffix:
+            lines = self.lines_of(file_path)
+            first_line = lines[0] if lines else ''
+        return self.kind_of_file(file_path, first_line) is LineKind.SHELL
+
+    def shell_files(self) -> list[Path]:
+        """Every file the walk yields that `declares_shell` reads as shell."""
+        return [f for f in self.find_files() if self.declares_shell(f)]
 
     def note_unreadable(self, path: Path, error: OSError) -> None:
         """Record a path the walk was handed and could not read.
@@ -1059,9 +1079,6 @@ class ReferenceChecker:
             if self.skip_docs and file_path.suffix == '.md':
                 continue
 
-            if file_path.name in ('refcheck', 'verify-references.py', 'verify-file-references.sh'):
-                continue
-
             lines = self.lines_of(file_path)
             if lines is None:
                 continue
@@ -1315,7 +1332,7 @@ class ReferenceChecker:
         """Check if relative paths are fragile to working directory changes."""
         source_pattern = re.compile(r'source\s+(?:["\']([^"\']+)["\']|([^\s]+))')
 
-        for file_path in self.find_files('.sh'):
+        for file_path in self.shell_files():
             try:
                 rel_path = file_path.relative_to(self.root_dir)
 
@@ -1381,7 +1398,7 @@ class ReferenceChecker:
         """Detect relative directory traversal patterns fragile to file moves."""
         traversal_pattern = re.compile(r'([A-Z_]+_DIR)=.*\$\(cd.*\.\./.*pwd\)')
 
-        for file_path in self.find_files('.sh'):
+        for file_path in self.shell_files():
             try:
                 rel_path = file_path.relative_to(self.root_dir)
 

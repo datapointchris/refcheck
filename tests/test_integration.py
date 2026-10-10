@@ -74,6 +74,17 @@ class TestPatternChecking:
         result = run_check('--pattern', 'management/tests/', 'docs/', '--skip-docs', cwd=test_fixtures)
         assert result.returncode == 0
 
+    @pytest.mark.parametrize('name', ['refcheck', 'verify-references.py', 'verify-file-references.sh'])
+    def test_no_filename_exempts_a_file_from_the_scan(self, tmp_path, monkeypatch, name):
+        """A consumer's wrapper script can share a name with the checker, and its stale path still counts."""
+        monkeypatch.setenv('HOME', str(tmp_path))
+        (tmp_path / name).write_text('cp legacy/tools/settings.toml .\n')
+
+        result = run_check('--pattern', 'legacy/tools/', cwd=tmp_path)
+
+        assert result.returncode == 1
+        assert name in result.stdout
+
 
 class TestPatternWithDescription:
     """Test 4: Pattern with description."""
@@ -257,6 +268,45 @@ class TestDocumentedInvocations:
         result = run_check('valid/runs-after-echo.sh', cwd=test_fixtures)
         assert result.returncode == 1
         assert 'runner.sh' in result.stdout
+
+
+class TestScriptsDeclaredShell:
+    """The source and bash checks read a file its suffix or shebang declares shell."""
+
+    @pytest.mark.parametrize('name', ['deploy', 'deploy.bash', 'deploy.zsh'])
+    def test_a_broken_source_is_reported_in_a_script_declared_shell(self, tmp_path, monkeypatch, name):
+        monkeypatch.setenv('HOME', str(tmp_path))
+        (tmp_path / 'bin').mkdir()
+        (tmp_path / 'bin' / name).write_text('#!/usr/bin/env bash\nsource lib/gone.sh\n')
+
+        result = run_check(cwd=tmp_path)
+
+        assert result.returncode == 1
+        assert f'bin/{name}' in result.stdout
+        assert 'lib/gone.sh' in result.stdout
+
+    def test_a_fragile_source_is_warned_about_in_a_script_without_a_suffix(self, tmp_path, monkeypatch):
+        """`lib/helpers.sh` resolves from the repo root and not from `bin/`, so it depends on the cwd."""
+        monkeypatch.setenv('HOME', str(tmp_path))
+        (tmp_path / 'lib').mkdir()
+        (tmp_path / 'lib' / 'helpers.sh').write_text('#!/usr/bin/env bash\n')
+        (tmp_path / 'bin').mkdir()
+        (tmp_path / 'bin' / 'deploy').write_text('#!/usr/bin/env bash\nsource lib/helpers.sh\n')
+
+        result = run_check(cwd=tmp_path)
+
+        assert 'Relative path only valid from' in result.stdout
+        assert 'bin/deploy' in result.stdout
+
+    def test_a_file_without_a_suffix_or_a_shell_shebang_is_not_read(self, tmp_path, monkeypatch):
+        monkeypatch.setenv('HOME', str(tmp_path))
+        (tmp_path / 'bin').mkdir()
+        (tmp_path / 'bin' / 'deploy').write_text('#!/usr/bin/env python3\nsource lib/gone.sh\n')
+
+        result = run_check(cwd=tmp_path)
+
+        assert result.returncode == 0
+        assert 'lib/gone.sh' not in result.stdout
 
 
 class TestMovesEndToEnd:

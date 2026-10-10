@@ -39,6 +39,21 @@ class TestGetRulesPath:
 
         assert 'home--user--projects--my-project' in str(rules_path)
 
+    def test_rules_are_read_under_the_xdg_config_home(self, temp_git_repo, tmp_path, monkeypatch):
+        """HOME points elsewhere, so a path built from HOME finds nothing here."""
+        config_home = tmp_path / 'xdg-config'
+        monkeypatch.setenv('XDG_CONFIG_HOME', str(config_home))
+        monkeypatch.setenv('HOME', str(tmp_path / 'home'))
+        safe_name = str(temp_git_repo.resolve()).lstrip('/').replace('/', '--')
+        rules_path = config_home / 'refcheck' / 'repos' / safe_name / 'rules.json'
+        rules_path.parent.mkdir(parents=True)
+        rules_path.write_text(json.dumps({'directory_mappings': {'old/': 'new/'}, 'file_mappings': {}}))
+
+        rules, path = load_rules(temp_git_repo)
+
+        assert path == rules_path
+        assert rules['directory_mappings'] == {'old/': 'new/'}
+
 
 class TestLoadRules:
     """Tests for load_rules function."""

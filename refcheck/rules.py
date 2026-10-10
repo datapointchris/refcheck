@@ -6,6 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from .config import user_config_dir
 from .output import PASS
 from .output import marked
 
@@ -28,12 +29,12 @@ def get_repo_root(cwd: Path | None = None) -> Path | None:
 def get_rules_path(repo_root: Path) -> Path:
     """Get the rules file path for a given repo root."""
     safe_name = str(repo_root).lstrip('/').replace('/', '--')
-    return Path.home() / '.config' / 'refcheck' / 'repos' / safe_name / 'rules.json'
+    return user_config_dir() / 'repos' / safe_name / 'rules.json'
 
 
 def load_rules(root_dir: Path) -> tuple[dict, Path | None]:
     """
-    Load rules from ~/.config/refcheck/repos/{safe-repo-path}/rules.json.
+    Load rules from repos/{safe-repo-path}/rules.json under the user config directory.
 
     Returns (rules_dict, rules_path) tuple.
     """

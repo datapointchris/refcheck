@@ -37,6 +37,18 @@ def detached_from_the_calling_git():
     os.environ.update(inherited)
 
 
+@pytest.fixture(autouse=True)
+def config_follows_home(monkeypatch):
+    """Put the user config and the rules files under whatever HOME a test sets.
+
+    Both live under `$XDG_CONFIG_HOME` when it is set. A test points HOME at its
+    own directory to keep them there, and an inherited XDG_CONFIG_HOME would
+    send `learn-rules` to write into the caller's real config. A test that sets
+    the variable itself does so after this fixture runs.
+    """
+    monkeypatch.delenv('XDG_CONFIG_HOME', raising=False)
+
+
 @pytest.fixture
 def temp_dir():
     """Create a temporary directory for test files."""

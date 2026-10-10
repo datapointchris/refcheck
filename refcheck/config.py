@@ -18,11 +18,16 @@ class Config:
     config_path: Path | None = None
 
 
-def user_config_path() -> Path:
-    """Where the per-user config lives."""
+def user_config_dir() -> Path:
+    """refcheck's directory under `$XDG_CONFIG_HOME`, or under ~/.config when that is unset."""
     base = os.environ.get('XDG_CONFIG_HOME')
     root = Path(base) if base else Path.home() / '.config'
-    return root / 'refcheck' / 'config.toml'
+    return root / 'refcheck'
+
+
+def user_config_path() -> Path:
+    """Where the per-user config lives."""
+    return user_config_dir() / 'config.toml'
 
 
 def find_repo_config(start: Path) -> Path | None:

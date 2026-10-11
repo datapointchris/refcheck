@@ -21,6 +21,11 @@ What none of them reaches is the name in running prose, as in "across indy, rela
 and syncer". Nothing on such a line tells the tool from the verb, so it is left to
 a reader.
 
+A subcommand may join segments with `:`, the way a task runner or a package
+manager namespaces its scripts (`task feed:pull`). A longer name opening on it,
+`task feed:pull:all`, is a different subcommand, and so is `task feed:pull` to
+an old `task feed`.
+
 A name of several words is a tool and its subcommand, as in `forge brief`. On a
 line of code, config or shell, the words in order count, comments included, and so
 does an installed path ahead of the tool (/usr/bin/forge brief). In prose the
@@ -44,6 +49,9 @@ from dataclasses import dataclass
 from enum import Enum
 
 NAME_WORD = re.compile(r'\w[\w.-]*')
+
+# A word after the first may join segments with `:`, as in `task feed:pull`.
+SUBCOMMAND_WORD = re.compile(r'\w[\w.-]*(?::\w[\w.-]*)*')
 
 # A word after the first may also be a flag, as in `tool --oldflag`.
 FLAG_WORD = re.compile(r'--?\w[\w-]*')
@@ -148,7 +156,7 @@ class NameShapes:
                 return ''
             return argv_any_item if after_subcommand else argv_kept
 
-        tail = ''.join(rf'{before(is_flag, after)}\s+{word}' for word, is_flag, after in rest) + r'(?![\w-])'
+        tail = ''.join(rf'{before(is_flag, after)}\s+{word}' for word, is_flag, after in rest) + r'(?![\w-]|:\w)'
         installed = r'(?:[\w.~${}/-]*/)?'
         quoted_installed = r'(?:[^"\'\s]*/)?'
         argv = rf'["\']{quoted_installed}{tool}["\']' + ''.join(

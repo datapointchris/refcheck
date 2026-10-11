@@ -179,6 +179,37 @@ class TestAToolAndItsSubcommand:
             assert not COMMAND.names_it(line, kind)
 
 
+NAMESPACED = NameShapes.of('task feed:pull')
+
+
+class TestASubcommandWithNamespaces:
+    @pytest.mark.parametrize(
+        ('line', 'kind'),
+        [
+            ('task feed:pull', LineKind.SHELL),
+            ('task feed:pull -- --since 2d', LineKind.SHELL),
+            ('Run `task feed:pull` first.', LineKind.PROSE),
+            ('  cmds: [task feed:pull]', LineKind.ANOTHER_LANGUAGE),
+            ('feed: task feed:pull', LineKind.ANOTHER_LANGUAGE),
+        ],
+    )
+    def test_is_named_on_every_kind_of_line(self, line, kind):
+        assert NAMESPACED.names_it(line, kind)
+
+    @pytest.mark.parametrize('line', ['task feed:pull:all', 'task feed:puller', 'task feed:pull-all', 'task feed'])
+    def test_a_longer_or_shorter_name_stays_silent(self, line):
+        for kind in LineKind:
+            assert not NAMESPACED.names_it(line, kind)
+
+    # The old shape let a colon end the name, so an old `task feed` matched
+    # every task namespaced under feed.
+    def test_an_old_plain_subcommand_is_not_found_inside_a_namespaced_one(self):
+        old = NameShapes.of('task feed')
+        assert old.names_it('task feed -- -v', LineKind.SHELL)
+        assert not old.names_it('task feed:pull', LineKind.SHELL)
+        assert not old.names_it('Run `task feed:pull` first.', LineKind.PROSE)
+
+
 FLAG = NameShapes.of('refcheck --pattern')
 
 

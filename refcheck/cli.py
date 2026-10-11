@@ -20,6 +20,7 @@ from .config import REPO_CONFIG_NAME
 from .config import load_config
 from .names import FLAG_WORD
 from .names import NAME_WORD
+from .names import SUBCOMMAND_WORD
 from .output import print_config
 from .output import print_results
 from .output import print_sweep
@@ -342,15 +343,17 @@ def check(
         raise typer.Exit(2)
 
     # A name is one word or several, each of word characters, dots and hyphens,
-    # and any word after the first may be a flag. A slash makes it a path, which
-    # --pattern resolves and --name would only match as text.
+    # and any word after the first may be a flag or join segments with ':'. A
+    # slash makes it a path, which --pattern resolves and --name would only
+    # match as text.
     if name is not None:
         first, *rest = name.split() or ['']
-        if not NAME_WORD.fullmatch(first) or not all(NAME_WORD.fullmatch(word) or FLAG_WORD.fullmatch(word) for word in rest):
+        if not NAME_WORD.fullmatch(first) or not all(SUBCOMMAND_WORD.fullmatch(word) or FLAG_WORD.fullmatch(word) for word in rest):
             path_hint = ' For a path, use --pattern.' if '/' in name else ''
             print(
                 "refcheck: --name takes a tool's name, then optionally its subcommand or one of its flags: "
                 "'oldtool', 'tool oldsub' or 'tool --oldflag'. A name is letters, digits, '.', '_' or '-', "
+                "a subcommand may also join such names with ':', as in 'task feed:pull', "
                 "and a flag is '-' or '--' and then letters, digits, '_' or '-'. "
                 f'{name!r} is not one of those.{path_hint}',
                 file=sys.stderr,

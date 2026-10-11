@@ -1616,7 +1616,19 @@ class TestNameSearch:
 
         assert result.returncode == 0, result.stdout
 
-    @pytest.mark.parametrize('name', ['old/tool', 'tool old/sub', '', '   ', 'tool $sub', '--flag tool', 'tool ---x', 'tool -'])
+    def test_reports_a_namespaced_subcommand_and_not_one_nested_under_it(self, temp_dir):
+        (temp_dir / 'run.sh').write_text('task feed:pull\ntask feed:pull:all\n')
+
+        result = run_check('--name', 'task feed:pull', '--desc', 'now task feed:fetch', cwd=temp_dir)
+
+        assert result.returncode == 1
+        assert 'run.sh:1' in result.stdout
+        assert 'run.sh:2' not in result.stdout
+
+    @pytest.mark.parametrize(
+        'name',
+        ['old/tool', 'tool old/sub', '', '   ', 'tool $sub', '--flag tool', 'tool ---x', 'tool -', 'to:ol sub', 'tool :sub', 'tool sub:'],
+    )
     def test_refuses_anything_that_is_not_a_tool_a_subcommand_or_a_flag(self, temp_dir, name):
         result = run_check('--name', name, cwd=temp_dir)
 

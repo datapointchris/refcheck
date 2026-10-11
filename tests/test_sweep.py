@@ -8,6 +8,7 @@ silent gets its own test, beside the ones that must fire.
 
 import os
 import shutil
+from itertools import chain
 from pathlib import Path
 
 import pytest
@@ -37,7 +38,14 @@ def listing(*repos, unusable=()):
 
 
 def names(sweep_result):
-    return [f'{result.repo.name}:{issue.file}' for result in sweep_result.with_issues for issue in result.issues]
+    found = []
+    for result in sweep_result.with_issues:
+        found.extend(f'{result.repo.name}:{issue.file}' for issue in result.issues)
+    return found
+
+
+def unreadable_entries(sweep_result):
+    return list(chain.from_iterable(result.unreadable for result in sweep_result.with_unreadable))
 
 
 class TestTheReferenceThatBroke:
@@ -478,7 +486,7 @@ class TestWhatTheSweepCouldNotRead:
             os.chmod(locked, 0o755)
 
         assert result.unreached
-        assert [entry.path for result_ in result.with_unreadable for entry in result_.unreadable] == [locked]
+        assert [entry.path for entry in unreadable_entries(result)] == [locked]
 
     def test_a_file_that_will_not_open_is_carried_into_the_result(self, two_repos):
         if os.geteuid() == 0:
@@ -494,7 +502,7 @@ class TestWhatTheSweepCouldNotRead:
             os.chmod(locked, 0o644)
 
         assert result.unreached
-        assert [entry.path for result_ in result.with_unreadable for entry in result_.unreadable] == [locked]
+        assert [entry.path for entry in unreadable_entries(result)] == [locked]
 
     def test_one_refused_directory_is_recorded_once(self, two_repos):
         """A run walks the tree four times, so a bare append prints one refusal as four."""
@@ -510,7 +518,7 @@ class TestWhatTheSweepCouldNotRead:
         finally:
             os.chmod(locked, 0o755)
 
-        assert len([entry for result_ in result.with_unreadable for entry in result_.unreadable]) == 1
+        assert len(unreadable_entries(result)) == 1
 
 
 class TestWhichRepoOwnsATokenTheScannedRepoCannotAnswerFor:

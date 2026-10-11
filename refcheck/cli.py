@@ -163,8 +163,7 @@ class RootGroup(TyperGroup):
             check_command = self.get_command(ctx, 'check')
             if check_command is None:
                 raise
-            check_flags = {flag for param in check_command.params for flag in (*param.opts, *param.secondary_opts)}
-            if error.option_name not in check_flags:
+            if not any(error.option_name in (*param.opts, *param.secondary_opts) for param in check_command.params):
                 raise
             # The whole call moves under check only when it names no command of
             # its own, since then every argument in it is one of check's.

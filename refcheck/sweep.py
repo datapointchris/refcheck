@@ -15,6 +15,7 @@ import os
 from collections.abc import Sequence
 from dataclasses import dataclass
 from dataclasses import field
+from itertools import chain
 from pathlib import Path
 
 from .checker import ReferenceChecker
@@ -58,7 +59,7 @@ class SweepResult:
 
     @property
     def issues(self) -> list[Issue]:
-        return [issue for result in self.results for issue in result.issues]
+        return list(chain.from_iterable(result.issues for result in self.results))
 
     @property
     def with_issues(self) -> list[RepoResult]:

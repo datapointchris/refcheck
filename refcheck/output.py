@@ -4,6 +4,7 @@ import sys
 from dataclasses import dataclass
 from dataclasses import field
 from enum import Enum
+from itertools import chain
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -327,7 +328,7 @@ def _print_unreached(sweep: 'SweepResult') -> None:
     if not sweep.unreached:
         return
 
-    unreadable = [entry for result in sweep.with_unreadable for entry in result.unreadable]
+    unreadable = list(chain.from_iterable(result.unreadable for result in sweep.with_unreadable))
     total = len(sweep.absent) + len(sweep.unusable) + len(unreadable)
 
     unreached = f'{_count(total, "path")} the sweep was asked to read and could not, so this run covered less than it claims'

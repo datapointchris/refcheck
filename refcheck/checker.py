@@ -769,11 +769,17 @@ class ReferenceChecker:
         rather than against a root. `~/.local/share/<repo>/pinned-versions.json`
         is a corrected reference and hangs off no root in this repo, so joining
         it to one reported the file that had just been fixed.
+
+        A hit that begins its token is a bare mention only where the token is
+        the pattern itself. A token running past it is a longer path and is
+        resolved like any other. A config file turned into a template is
+        deleted beside an added `config.toml.tmpl`, and the deleted path begins
+        every reference to the template, so each one was reported as stale.
         """
         resolved: list[tuple[str, Path]] = []
 
         for token, begins_the_token in self._path_tokens_around(pattern, line):
-            if begins_the_token or not token:
+            if not token or (begins_the_token and token == pattern):
                 return None
 
             # Tried first and never on its own. An absolute token needs nothing

@@ -829,6 +829,24 @@ def test_pattern_reports_a_stale_path_on_a_line_that_also_holds_a_url(tmp_path):
     assert len(checker.issues) == 1
 
 
+def test_pattern_resolves_a_longer_path_that_begins_with_the_old_one(tmp_path):
+    """A config file turned into a template leaves its old path at the start of every new reference.
+
+    The `.tmpl` path is on disk, so a reference to it is no stale mention of the
+    deleted file. A line naming the deleted file itself still is.
+    """
+    (tmp_path / 'configs').mkdir()
+    (tmp_path / 'configs' / 'config.toml.tmpl').write_text('api = "${API}"\n')
+    (tmp_path / 'flags.yml').write_text('consumers:\n  - configs/config.toml.tmpl\n')
+    (tmp_path / 'guide.md').write_text('Edit configs/config.toml by hand.\n')
+
+    checker = ReferenceChecker(tmp_path)
+    checker.check_pattern('configs/config.toml', 'deleted in this change')
+
+    assert len(checker.issues) == 1
+    assert 'guide.md' in str(checker.issues[0])
+
+
 def test_pattern_ignores_hits_inside_run_logs(tmp_path):
     """A run transcript names what existed when it ran, like the .jsonl logs.
 

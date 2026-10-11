@@ -50,7 +50,7 @@ EPILOG = '\n\n'.join(
         '[b]refcheck check[/b] — every source and bash reference in the repo, plus fragile-path warnings',
         '[b]refcheck check apps/ --type sh[/b] — narrow to one directory and one file type',
         '[b]refcheck check --strict[/b] — CI mode, where a warning is a failure',
-        '[b]refcheck check --pattern "old/path/" --desc "now new/path/"[/b] — after a move, what still points at the old name',
+        '[b]refcheck check --pattern "old/path/" --desc "now new/path/"[/b] — after a move, what still points at the old path',
         '[b]refcheck check --moves[/b] — ask that of every rename and deletion you have staged, without naming them',
         '[b]refcheck check --moves-since origin/main[/b] — the same over a branch, for CI',
         (
@@ -236,7 +236,14 @@ def check(
     ] = None,
     pattern: Annotated[
         str | None,
-        typer.Option('--pattern', help="An old path or name to hunt for, e.g. 'old/path/'.", rich_help_panel='Pattern search'),
+        typer.Option(
+            '--pattern',
+            help=(
+                "An old path to hunt for, e.g. 'old/path/'. It matches inside longer words, "
+                'so a renamed tool, subcommand or flag goes to --name.'
+            ),
+            rich_help_panel='Pattern search',
+        ),
     ] = None,
     desc: Annotated[
         str | None,

@@ -168,7 +168,7 @@ refcheck check
 # Check specific directory
 refcheck check install/
 
-# Find old pattern after refactoring
+# Find what still points at a moved path
 refcheck check --pattern "old/path/" --desc "Update to new/path/"
 
 # Filter by file type (like fd -e)
@@ -187,7 +187,7 @@ refcheck check --name "tool oldsub" --desc "Now newtool sub"
 refcheck check --name "tool --oldflag" --desc "Now tool sub --oldflag"
 
 # Combine filters
-refcheck check --pattern "FooClass" --type py --skip-docs src/
+refcheck check --pattern "lib/old_module/" --type py --skip-docs src/
 
 # Disable warnings (only check for errors)
 refcheck check --no-warn
@@ -653,7 +653,7 @@ Bare `refcheck` prints help. Run any command with `--help` for its flags.
 | Flag | Description | Example |
 | --- | --- | --- |
 | `path` | Directory to check (positional) | `refcheck check install/` |
-| `--pattern PATTERN` | Find old pattern | `--pattern "old/"` |
+| `--pattern PATTERN` | Find an old path, matched inside longer words. A renamed tool goes to `--name` | `--pattern "old/"` |
 | `--name NAME` | Find a tool, or a tool and its subcommand or flag, that is gone but still named | `--name oldtool`, `--name "tool oldsub"`, `--name "tool --oldflag"` |
 | `--desc DESC` | What the pattern or name became | `--desc "Now new/"` |
 | `--moves` | Check what staged renames and deletions left behind | `--moves` |

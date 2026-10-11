@@ -85,7 +85,7 @@ the shortest form the rename left behind.
 **Better than grep:**
 
 - Validates file existence, not just pattern matching
-- Automatically filters false positives (docs, planning, dynamic paths)
+- Automatically filters false positives (docs, dynamic paths)
 - Structured output with suggestions
 - Exit codes for CI/CD integration
 
@@ -675,7 +675,7 @@ Automatically excludes:
 
 - **Build artifacts**: `.git`, `node_modules`, `.venv`, `__pycache__`, `.cache`,
   `site/`, `*.pyc`
-- **Historical files**: `.planning/`, `.claude/metrics/`, `*.log`, `*.jsonl`,
+- **Historical files**: `.claude/metrics/`, `*.log`, `*.jsonl`,
   `CHANGELOG.md`, backups (`*.bak`, `*.backup`, `*.backup.*`, `*.orig`),
   `file-history/`, the tool caches (`.pytest_cache`,
   `.ruff_cache`, `.mypy_cache`) and coverage.py's reports (`.coverage`,

@@ -57,9 +57,9 @@ class FileSuggestions:
         Two matchers, because the patterns are two kinds. `*.log` and
         `CHANGELOG.md` name a file wherever it sits, which is Path.match's
         right-anchored semantics. `dir/**` names a subtree — and Path.match
-        reads `**` as one component, so `.planning/**` excluded
-        `.planning/top.md` while scanning `.planning/design/notes.md` right
-        beside it. fnmatch over the posix string is anchored at the root and
+        reads `**` as one component, so `.claude/metrics/**` excluded
+        `.claude/metrics/top.json` while scanning `.claude/metrics/a/b.json`
+        right beside it. fnmatch over the posix string is anchored at the root and
         lets `*` cross separators, which is what a subtree pattern means.
         """
         posix = rel_path.as_posix()

@@ -114,8 +114,8 @@ repos from another's.
 
 `_matches_exclusion` tries `Path.match` and `fnmatch` on every pattern.
 `Path.match` is right-anchored, which fits `*.log` and `CHANGELOG.md`. It reads
-`**` as one component. Alone, it lets `.planning/**` exclude
-`.planning/top.md` and scan `.planning/design/notes.md`. `fnmatch` over the
+`**` as one component. Alone, it lets `.claude/metrics/**` exclude
+`.claude/metrics/top.json` and scan `.claude/metrics/a/b.json`. `fnmatch` over the
 POSIX path covers subtrees. `should_skip_directory` matches a subtree pattern
 with a trailing slash, so `build/**` prunes `build` itself.
 

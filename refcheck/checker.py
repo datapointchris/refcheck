@@ -62,7 +62,6 @@ class ReferenceChecker:
     DEFAULT_EXCLUDE_PATTERNS = [
         '*.pyc',
         '.claude/metrics/**',
-        '.planning/**',
         'site/**',
         # Append-only event logs record what a path *was*, not what should
         # exist. A 197 MB log naming every file a hook had ever checked reported

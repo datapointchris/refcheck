@@ -5,7 +5,7 @@ description = "Find broken file references and fragile path patterns in codebase
 authors = [{ name = "Chris Birch", email = "datapointchris@gmail.com" }]
 license = "MIT"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.13"
 dependencies = [
     "pyselfupdate[typer]>=0.5.0",
     "typer>=0.12.0",
@@ -66,7 +66,7 @@ enable_all = true
 
 [tool.ruff]
 line-length = 140
-target-version = "py311"
+target-version = "py313"
 
 [tool.ruff.lint]
 select = [

@@ -732,7 +732,7 @@ uv run pytest
 Tests cover config parsing, rules management, file suggestions, and end-to-end
 CLI behavior. The suite also runs as a pre-commit hook.
 
-Python 3.11+. The runtime dependencies are typer and
+Python 3.13+. The runtime dependencies are typer and
 [pyselfupdate](https://github.com/datapointchris/pyselfupdate); everything else
 is stdlib.
 

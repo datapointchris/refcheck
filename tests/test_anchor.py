@@ -52,7 +52,7 @@ def test_a_tilde_path_that_is_not_there_is_still_reported(tmp_path: Path) -> Non
     assert not checker.anchor('~/.local/shell/nonexistent-xyz.sh').exists()
 
 
-def _deploying_repo(tmp_path: Path, tracked: str) -> Path:
+def deploying_repo(tmp_path: Path, tracked: str) -> Path:
     """A repo tracking one file, with a home that holds nothing it deploys."""
     repo = tmp_path / 'repo'
     (repo / tracked).parent.mkdir(parents=True)
@@ -63,7 +63,7 @@ def _deploying_repo(tmp_path: Path, tracked: str) -> Path:
 
 def test_a_repo_file_sharing_only_the_basename_does_not_satisfy_a_tilde_path(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv('HOME', str(tmp_path / 'home'))
-    repo = _deploying_repo(tmp_path, 'lib/logging.sh')
+    repo = deploying_repo(tmp_path, 'lib/logging.sh')
 
     assert not ReferenceChecker(root_dir=repo).resolves('~/.local/shell/logging.sh')
 
@@ -71,7 +71,7 @@ def test_a_repo_file_sharing_only_the_basename_does_not_satisfy_a_tilde_path(tmp
 def test_a_script_sourcing_what_its_repo_deploys_is_not_reported(tmp_path: Path, monkeypatch) -> None:
     """The source check asks resolves, not anchor alone."""
     monkeypatch.setenv('HOME', str(tmp_path / 'home'))
-    repo = _deploying_repo(tmp_path, 'configs/common/.local/shell/logging.sh')
+    repo = deploying_repo(tmp_path, 'configs/common/.local/shell/logging.sh')
     (repo / 'tests').mkdir()
     (repo / 'tests/loads.sh').write_text('#!/usr/bin/env bash\nsource ~/.local/shell/logging.sh\nsource ~/.local/shell/gone.sh\n')
     checker = ReferenceChecker(root_dir=repo)

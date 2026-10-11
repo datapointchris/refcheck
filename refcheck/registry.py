@@ -74,7 +74,7 @@ def load(registry_path: Path) -> Registry:
 
     if isinstance(document, dict):
         entries = document.get('repos', document.get('stores'))
-        excluded = [_expand(path) for path in document.get('exclude_paths', [])]
+        excluded = [expand(path) for path in document.get('exclude_paths', [])]
     else:
         entries = document
         excluded = []
@@ -91,7 +91,7 @@ def load(registry_path: Path) -> Registry:
         if not entry.get('path'):
             unusable.append(f'{entry.get("name") or f"entry {position}"} names no path')
             continue
-        path = _expand(entry['path'])
+        path = expand(entry['path'])
         if any(path == home or path.is_relative_to(home) for home in excluded):
             continue
         repos.append(Repo(name=entry.get('name') or path.name, path=path, status=entry.get('status', '')))
@@ -144,7 +144,7 @@ XDG_DEFAULTS = {
 }
 
 
-def _expand(path: str) -> Path:
+def expand(path: str) -> Path:
     for variable, default in XDG_DEFAULTS.items():
         if not os.environ.get(variable):
             path = path.replace(f'${{{variable}}}', default).replace(f'${variable}', default)

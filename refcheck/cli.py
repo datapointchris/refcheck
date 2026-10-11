@@ -186,7 +186,7 @@ app = typer.Typer(
 )
 
 
-def _version_callback(value: bool) -> None:
+def version_callback(value: bool) -> None:
     if value:
         print_version()
         raise typer.Exit(0)
@@ -198,7 +198,7 @@ def root(
         bool,
         typer.Option(
             '--version',
-            callback=_version_callback,
+            callback=version_callback,
             is_eager=True,
             help='Show the installed version and exit.',
         ),
@@ -369,7 +369,7 @@ def check(
         config=config,
     )
 
-    listed = _load_registries(registry) if registry else None
+    listed = load_registries(registry) if registry else None
     sweep_patterns: dict[str, str] = {}
     found: list[moves_module.Move] = []
     gone_filenames: dict[str, str] = {}
@@ -424,7 +424,7 @@ def check(
             gone_filenames = {old: became for old, became in candidates.items() if old not in held}
             filenames_still_held = sorted(set(candidates) - set(gone_filenames))
             checker.check_filenames(gone_filenames)
-        swept = _sweep_other_repos(
+        swept = sweep_other_repos(
             listed, sweep_patterns, bool(name), skip_docs, file_type, test_mode, flag_patterns, root_dir, search_path, gone_filenames
         )
 
@@ -470,7 +470,7 @@ def learn_rules():
 add_update_command(app, UPDATE_CONFIG)
 
 
-def _load_registries(registries: list[Path]) -> registry_module.Registry:
+def load_registries(registries: list[Path]) -> registry_module.Registry:
     try:
         return registry_module.load_all(registries)
     except registry_module.RegistryError as error:
@@ -478,7 +478,7 @@ def _load_registries(registries: list[Path]) -> registry_module.Registry:
         raise typer.Exit(2) from error
 
 
-def _sweep_other_repos(
+def sweep_other_repos(
     listed: registry_module.Registry,
     patterns: dict[str, str],
     by_name: bool,

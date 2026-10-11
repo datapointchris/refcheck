@@ -124,14 +124,14 @@ def print_results(
         # report that reads complete while carrying one of the three.
         if not issues and not warnings:
             if set_aside:
-                clean = f'No stale references{search_info}, and {_count(len(set_aside), "hit")} set aside'
+                clean = f'No stale references{search_info}, and {count(len(set_aside), "hit")} set aside'
                 print(f'\n{marked(PASS, clean)}\n')
-                _print_set_aside(set_aside)
+                print_set_aside(set_aside)
                 print()
             elif not unreadable:
                 print(f'\n{marked(PASS, f"All file references valid{search_info}")}\n')
             if unreadable:
-                _print_unreadable(unreadable)
+                print_unreadable(unreadable)
             return
 
         # Print summary header
@@ -191,11 +191,11 @@ def print_results(
 
         if set_aside:
             print()
-            _print_set_aside(set_aside)
+            print_set_aside(set_aside)
 
         if unreadable:
             print()
-            _print_unreadable(unreadable)
+            print_unreadable(unreadable)
 
         print_rules_hint(issues, rules_path)
         print()
@@ -203,7 +203,7 @@ def print_results(
         sys.stderr.close()
 
 
-def _print_set_aside(set_aside: list[SetAside]) -> None:
+def print_set_aside(set_aside: list[SetAside]) -> None:
     """Say which hits the resolver dropped, and what each one resolved to.
 
     Not an error and not a warning, so nothing here fails a run. The reader is
@@ -215,7 +215,7 @@ def _print_set_aside(set_aside: list[SetAside]) -> None:
     became tests the hits against that and prints none of this, so a list here
     means refcheck had nothing to compare against.
     """
-    print(f'{_count(len(set_aside), "hit")} matched the text and resolved to a path on disk, so none was reported:')
+    print(f'{count(len(set_aside), "hit")} matched the text and resolved to a path on disk, so none was reported:')
     print('─' * 60)
     for entry in set_aside:
         print(f'  {entry.file}:{entry.line_num}')
@@ -223,7 +223,7 @@ def _print_set_aside(set_aside: list[SetAside]) -> None:
         print(f'    → resolves to {entry.target}')
 
 
-def _print_unreadable(unreadable: list[Unreadable]) -> None:
+def print_unreadable(unreadable: list[Unreadable]) -> None:
     """Say which files and directories the walk could not read.
 
     The one thing this tool sells is a clean result that means something, and a
@@ -268,7 +268,7 @@ def print_sweep(
 
         skipped = f' (skipped {len(sweep.retired)} retired)' if sweep.retired else ''
 
-        repos = _count(sweep.scanned, 'repo')
+        repos = count(sweep.scanned, 'repo')
         if by_name:
             looked_for = ', '.join(patterns)
             clean_claim = f'No other repo names {looked_for}'
@@ -294,7 +294,7 @@ def print_sweep(
             partial = f'{repos} swept, {asked}{skipped} — but the sweep could not read everything it was given'
             print(marked(FAIL, partial))
 
-        _print_unlisted_source(sweep)
+        print_unlisted_source(sweep)
         print()
 
         for result in sweep.with_issues:
@@ -307,16 +307,16 @@ def print_sweep(
                     print(f'    → {issue.suggestion}')
             print()
 
-        _print_unreached(sweep)
+        print_unreached(sweep)
     except BrokenPipeError:
         sys.stderr.close()
 
 
-def _count(number: int, noun: str) -> str:
+def count(number: int, noun: str) -> str:
     return f'{number} {noun}' if number == 1 else f'{number} {noun}s'
 
 
-def _print_unreached(sweep: 'SweepResult') -> None:
+def print_unreached(sweep: 'SweepResult') -> None:
     """Say what the sweep was asked to read and could not, as an error.
 
     Retired is the one deliberate skip, so it stays in the count line above.
@@ -331,7 +331,7 @@ def _print_unreached(sweep: 'SweepResult') -> None:
     unreadable = list(chain.from_iterable(result.unreadable for result in sweep.with_unreadable))
     total = len(sweep.absent) + len(sweep.unusable) + len(unreadable)
 
-    unreached = f'{_count(total, "path")} the sweep was asked to read and could not, so this run covered less than it claims'
+    unreached = f'{count(total, "path")} the sweep was asked to read and could not, so this run covered less than it claims'
     print(marked(FAIL, unreached))
     print('─' * 60)
     for description in sweep.unusable:
@@ -345,7 +345,7 @@ def _print_unreached(sweep: 'SweepResult') -> None:
     print()
 
 
-def _print_unlisted_source(sweep: 'SweepResult') -> None:
+def print_unlisted_source(sweep: 'SweepResult') -> None:
     """Say when the repo the paths moved in is not one the sweep can credit.
 
     A hit is credited to the repo holding the path that went away, so a repo the

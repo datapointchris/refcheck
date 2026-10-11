@@ -53,7 +53,7 @@ def find_repo_config(start: Path) -> Path | None:
     return None
 
 
-def _read_toml(path: Path) -> dict:
+def read_toml(path: Path) -> dict:
     """Parse a TOML file, treating anything unreadable as absent."""
     try:
         with path.open('rb') as handle:
@@ -69,7 +69,7 @@ def load_config(start: Path | None = None) -> Config:
     """
     config = Config()
 
-    learn = _read_toml(user_config_path()).get('learn')
+    learn = read_toml(user_config_path()).get('learn')
     if isinstance(learn, dict) and isinstance(learn.get('time_window'), str):
         config.time_window = learn['time_window']
 
@@ -78,7 +78,7 @@ def load_config(start: Path | None = None) -> Config:
         return config
 
     config.config_path = repo_config
-    scan = _read_toml(repo_config).get('scan')
+    scan = read_toml(repo_config).get('scan')
     if isinstance(scan, dict) and isinstance(scan.get('exclude'), list):
         config.exclude = [str(pattern) for pattern in scan['exclude']]
 

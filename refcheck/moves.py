@@ -66,7 +66,7 @@ def old_filenames(moves: list[Move]) -> tuple[dict[str, str], list[str]]:
 
 def staged(repo_root: Path, include_bare_names: bool = False) -> list[Move]:
     """Renames and deletions in the git index — what a pre-commit hook sees."""
-    return _read(['git', 'diff', '--cached', '--diff-filter=RD', '-M', '--name-status'], repo_root, include_bare_names)
+    return read(['git', 'diff', '--cached', '--diff-filter=RD', '-M', '--name-status'], repo_root, include_bare_names)
 
 
 def since(ref: str, repo_root: Path, include_bare_names: bool = False) -> list[Move]:
@@ -80,7 +80,7 @@ def between(from_ref: str, to_ref: str, repo_root: Path, include_bare_names: boo
     A shallow CI clone lacks the base commit. Reading that as no moves would
     pass a check that never ran, so it raises UnreadableChange instead.
     """
-    return _read(['git', 'diff', '--diff-filter=RD', '-M', '--name-status', from_ref, to_ref], repo_root, include_bare_names)
+    return read(['git', 'diff', '--diff-filter=RD', '-M', '--name-status', from_ref, to_ref], repo_root, include_bare_names)
 
 
 def in_pre_commit_change(repo_root: Path, include_bare_names: bool = False) -> list[Move]:
@@ -97,7 +97,7 @@ def in_pre_commit_change(repo_root: Path, include_bare_names: bool = False) -> l
     return staged(repo_root, include_bare_names)
 
 
-def _read(command: list[str], repo_root: Path, include_bare_names: bool = False) -> list[Move]:
+def read(command: list[str], repo_root: Path, include_bare_names: bool = False) -> list[Move]:
     try:
         result = subprocess.run(  # nosec B603
             command,

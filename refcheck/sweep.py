@@ -148,7 +148,7 @@ def across_repos(
     if not patterns:
         return sweep
 
-    live = _partition(registry, sweep)
+    live = partition(registry, sweep)
 
     # Which repos are walked and which can own a gone path are different
     # questions, and only the first one is about where a fix would land. A live
@@ -167,13 +167,13 @@ def across_repos(
 
     scanned = Path(os.path.realpath(already_scanned)) if already_scanned is not None else None
     for repo in live:
-        checker = _checker_for(repo, skip_docs, file_type, test_mode, flag_excludes)
+        checker = checker_for(repo, skip_docs, file_type, test_mode, flag_excludes)
         checker.check_patterns_across_repos(patterns, homes, paths)
         if filenames:
             before = len(checker.issues)
             checker.check_filenames(filenames)
             home = Path(os.path.realpath(repo.path))
-            checker.issues[before:] = [issue for issue in checker.issues[before:] if not _inside(home / issue.file, scanned)]
+            checker.issues[before:] = [issue for issue in checker.issues[before:] if not inside(home / issue.file, scanned)]
         sweep.results.append(RepoResult(repo=repo, issues=checker.issues, unreadable=checker.unreadable))
 
     return sweep
@@ -196,7 +196,7 @@ def held_filenames(roots: Sequence[Path]) -> set[str]:
     return held
 
 
-def _inside(path: Path, tree: Path | None) -> bool:
+def inside(path: Path, tree: Path | None) -> bool:
     return tree is not None and Path(os.path.realpath(path)).is_relative_to(tree)
 
 
@@ -230,7 +230,7 @@ def names_across_repos(
         return sweep
 
     scanned = Path(os.path.realpath(already_scanned)) if already_scanned is not None else None
-    for repo in _partition(registry, sweep):
+    for repo in partition(registry, sweep):
         home = Path(os.path.realpath(repo.path))
         skip: list[str] = []
         if scanned is not None and scanned.is_relative_to(home):
@@ -238,14 +238,14 @@ def names_across_repos(
                 continue
             inside = scanned.relative_to(home).as_posix()
             skip = [inside, f'{inside}/**']
-        checker = _checker_for(repo, skip_docs, file_type, test_mode, [*flag_excludes, *skip])
+        checker = checker_for(repo, skip_docs, file_type, test_mode, [*flag_excludes, *skip])
         checker.check_names(names)
         sweep.results.append(RepoResult(repo=repo, issues=checker.issues, unreadable=checker.unreadable))
 
     return sweep
 
 
-def _partition(registry: Registry, sweep: SweepResult) -> list[Repo]:
+def partition(registry: Registry, sweep: SweepResult) -> list[Repo]:
     """The repos to walk, with the retired and the absent recorded on the sweep."""
     live = []
     for repo in registry.repos:
@@ -258,7 +258,7 @@ def _partition(registry: Registry, sweep: SweepResult) -> list[Repo]:
     return live
 
 
-def _checker_for(
+def checker_for(
     repo: Repo,
     skip_docs: bool,
     file_type: str | None,

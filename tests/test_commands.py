@@ -9,6 +9,9 @@ what disqualifies a bare default from standing in for a command.
 
 import re
 import subprocess
+from pathlib import Path
+
+import yaml
 
 # Rich styles the help, and whether it does depends on the terminal it thinks it
 # has: a local run pipes into a non-tty and gets plain text, while CI forces
@@ -76,9 +79,6 @@ def test_the_retired_flags_are_gone(tmp_path):
 
 def test_the_hook_entry_runs_the_check():
     """.pre-commit-hooks.yaml names the invocation, and bare refcheck no longer scans."""
-    from pathlib import Path
-
-    import yaml
 
     hooks = yaml.safe_load((Path(__file__).parent.parent / '.pre-commit-hooks.yaml').read_text())
 

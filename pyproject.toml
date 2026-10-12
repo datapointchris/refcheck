@@ -178,6 +178,10 @@ source = "uv-dynamic-versioning"
 
 [tool.uv-dynamic-versioning]
 style = "semver"
+# pre-commit builds this hook inside the commit that first uses it, with that
+# repo's GIT_INDEX_FILE still exported. git then cannot read this checkout, so
+# the build needs a version that does not come from git.
+fallback-version = "0.0.0"
 
 # A new commit or tag changes the version, so it has to invalidate uv's cache.
 [tool.uv]

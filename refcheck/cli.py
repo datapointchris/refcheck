@@ -35,6 +35,15 @@ HELP = (
     'A reference breaks in the file that was not edited, so [b]check[/b] always reads the whole tree '
     'rather than a changeset, and infers the repo from the directory you run it in. Run any command '
     'with --help to see what comes next.'
+    '\n\n'
+    'Moved, renamed or deleted a file: run [b]refcheck check --moves[/b] before committing, and '
+    '[b]refcheck check --moves-since origin/main[/b] over a branch. Renamed or removed a tool, a '
+    'subcommand or a flag: run [b]refcheck check --name[/b] with the old name once the change lands, '
+    'since git records no such move for --moves to read.'
+    '\n\n'
+    '--pattern looks for a path and matches inside longer words, which is right for a moved file; '
+    '--name looks for a tool, a subcommand or a flag only where it stands as a name, which is right '
+    'for a rename.'
 )
 
 CHECK_HELP = (

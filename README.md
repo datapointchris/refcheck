@@ -1,131 +1,37 @@
 # refcheck
 
-Fast reference validator for codebases. Finds broken file references,
-fragile path patterns, and validates variable-based paths.
+refcheck finds what a move, a rename or a deletion left behind. That is a
+`source` or `bash` target that does not resolve, an old path still named after a
+move, and an old tool, subcommand or flag name still in use. It ships as a
+pre-commit hook.
 
-## What it does
+A reference breaks in the file that was not edited. Move `b.sh` and the stale
+`source b.sh` sits in `a.sh`, which is nowhere in the changeset. So refcheck
+reads the whole tree on every run. It asks the filesystem and git, not the text.
+grep finds the string and cannot say whether the path around it exists.
+shellcheck lints the shell inside one script and reads none of the markdown,
+YAML and code that also name a path.
 
-`refcheck` validates file references across your codebase, checking for:
+A false clean is worse than a false positive, because it certifies the rot. A
+run that covered less than it was handed fails rather than printing a tick. A
+checker is also worth exactly its false-positive rate. Documentation, history
+and another machine's paths are read behind guards that keep them quiet.
 
-### Errors (always exit 1)
-
-1. **Broken source statements** - Missing files in `source` and `.` commands,
-   quoted or not (including variable paths like `$SCRIPT_DIR/file.sh`)
-2. **Broken script references** - Missing files in `bash` or `sh` commands
-3. **Old path patterns** - Stale references after refactoring
-4. **A path it was handed and could not read** - a directory that will not list
-   or a file that will not open, because a scan of a tree it could only partly
-   open has no business printing a tick
-
-A directory named on the command line and not there is refused outright, exit 2.
-Walking it would find no files, pass every check over nothing, and certify a
-tree that does not exist.
-
-Shell scripts and markdown are both checked. A shell script is a file ending in
-`.sh`, `.bash`, `.zsh` or `.ksh`, or a file with no suffix whose shebang names a
-shell. Documentation goes stale in exactly the way code does — a usage example
-naming a library that has since moved is the drift this tool exists to catch —
-so prose is scanned unless you pass `--skip-docs`.
-
-Inside markdown, a fenced block is read as shell when it is tagged as shell
-(` ```bash `, ` ```sh `, ` ```shell `, ` ```console `) or carries no tag at all.
-A block tagged as another language holds another language: a ` ```yaml ` sample
-showing a tool's own report is not an invocation, however much its
-`bash some/path.sh` line looks like one.
-
-### Warnings (exit 0 unless --strict)
-
-1. **Fragile to working directory** - Relative paths that only work from
-   specific directories
-2. **Fragile to refactoring** - Variable assignments using `../` traversal
-   (breaks when files move)
-
-### Set aside (never a failure)
-
-A `--pattern` hit is dropped when the path around it is on disk, because a
-substring cannot tell a stale reference from a longer correct path that ends
-the same way. `--pattern boards/arm` matching `config/boards/arm/` right after
-the move that made it correct is the case that rule exists for.
-
-Existence is weak evidence though. In a repo where the old name is still on
-disk somewhere, every mention of it resolves and every mention is dropped — so
-each dropped hit is listed with the path it resolved to, and you decide whether
-it was repaired or merely has not been cleaned up yet.
-
-`--moves` and `--moves-since` read what each path became out of git and list
-only the hits that record cannot account for. A hit spelling the new path is a
-repair the run can prove, so it says nothing about it.
-
-What the listing covers is the resolver's guesses, not every occurrence of the
-string. A hit inside a URL is not listed, because a URL names no file whatever
-the tree holds, and a docs page swept for a moved path would otherwise list
-every link quoting it. Nor is a file the scan never opened — `--show-config`
-prints every exclusion in force and the layer that set it.
-
-Two spellings of the same name are not ordered, so neither is a workaround for
-the other. `--pattern .markdownlint.json` finds nothing on a line spelling the
-name without the dot, and `--pattern markdownlint.json` finds both. Sweep for
-the shortest form the rename left behind.
-
-## Why use it
-
-**Proactive error detection:**
-
-- Catch broken references before running expensive test suites
-- Find issues in seconds vs minutes for full e2e tests
-- Validate changes before committing
-
-**Refactoring safety:**
-
-- After moving files, verify all references updated
-- Find stale patterns across entire codebase
-- Sweep the *other* repos on the machine, which the renaming repo cannot see
-- Custom pattern checking for any refactoring
-
-**Better than grep:**
-
-- Validates file existence, not just pattern matching
-- Automatically filters false positives (docs, dynamic paths)
-- Structured output with suggestions
-- Exit codes for CI/CD integration
-
-**Variable path validation:**
-
-- Resolves shell variables like `$SCRIPT_DIR` and `$DOTFILES_DIR` before
-  validation
-- Detects broken paths hidden behind variables
-- Shows both original and resolved paths in error messages
-- Gracefully skips unresolvable variables to avoid false positives
-- In prose, `$DOTFILES_DIR` is the repo root; `$SCRIPT_DIR` stays unresolved,
-  because a doc has no one script for it to be relative to
-
-**Quiet on documentation that is not about your repo:**
-
-Prose quotes other projects' trees constantly, so a reference is only checked
-when its leading directory is one your repo actually has. A rename *under* a
-directory you still have is reported — that is the case worth catching — while
-`source child.sh` in a page explaining `set -e` is not. Documentation
-placeholders (`toolname.sh`, `{tool}-plugins.sh`) are skipped in prose but not
-in shell, where `bash script.sh` is a real invocation.
-
-**Warning system:**
-
-- Detects fragile patterns that may break in different contexts
-- Configurable severity: warnings (default) or errors (--strict)
-- Can be disabled for legacy codebases (--no-warn)
-- Actionable suggestions for each warning
-
-## Installation
+## Install
 
 ```bash
-uv tool install https://github.com/datapointchris/refcheck.git
+uv tool install "refcheck @ git+https://github.com/datapointchris/refcheck.git@$(gh release view --repo datapointchris/refcheck --json tagName -q .tagName)"
+refcheck update   # later: reinstall at the latest GitHub release
 ```
 
-Update in place with `refcheck update`, which installs the latest GitHub
-release. Once a day, a run that is behind the latest release prints a one-line
-notice to stderr; set `NO_AUTO_UPDATE` to silence it.
+Install a tag, not the default branch. Substitute one explicitly if you would
+rather not shell out to `gh`. `refcheck update` reads uv's receipt and refuses a
+branch install, whose version says nothing about how far behind it is.
 
-## As a pre-commit hook
+A run at a terminal checks for a newer release at most once a day. It prints one
+line to stderr when it is behind. `NO_AUTO_UPDATE` silences it.
+
+As a pre-commit hook, in `.pre-commit-config.yaml`:
 
 ```yaml
 repos:
@@ -136,157 +42,302 @@ repos:
         args: [--moves]
 ```
 
-`--moves` is what makes the hook worth having. Without it the hook validates
-`source` and `bash` targets, which on a repo that is already clean finds nothing
-most days. With it, every rename and deletion you have staged is also checked
-for what still points at the old name — in any file type, not just shell. That
-is the check a move actually needs, asked at the moment fixing it is free.
+Each release rewrites that `rev:` line, so it names the latest tag.
 
-Add `args: [--moves, --strict]` to fail on warnings as well as errors.
+## Starting from scratch
 
-A renamed tool, subcommand or flag is not a file git moves, so the hook
-never sees one. Run `--name` by hand when that change lands, per
-[Which flag answers which change](#which-flag-answers-which-change).
+```bash
+refcheck --version                 # the release installed, and the commit it was built from
+cd path/to/repo                    # the repo root, which refcheck takes to be the repo
+refcheck check                     # every source and bash target resolved; exit 1 names each miss
+refcheck check --show-config       # what the scan skipped, and which layer skipped it
+
+git mv lib/log.sh lib/logging.sh   # any staged rename or deletion
+refcheck check --moves             # every file still naming lib/log.sh, in any file type
+
+pre-commit install                 # with the hook block above in .pre-commit-config.yaml
+pre-commit run refcheck            # the hook asks --moves of the index: PASS once nothing names an old path
+```
+
+**Run it from the repo root.** refcheck takes the directory it runs in as the
+repo, and a relative `source` target hangs off that directory.
+`cd docs && refcheck check` reads `docs` as a repo of its own. It can pass over
+a broken reference that `refcheck check docs/` from the root reports. Narrow
+with the path argument, never with `cd`.
+
+The first `refcheck check` on an older repo may print warnings beside the
+errors. Warnings exit 0. `--strict` fails on them and `--no-warn` drops them.
+
+`--moves` reads git, so it exits 128 outside a repository. The hook is the same
+`refcheck check --moves`, run on every commit.
+
+## The grammar
+
+`check` is the tool. `learn-rules` and `update` maintain it.
+
+`refcheck check` with no question validates every `source` and `bash` target in
+the tree, and warns on fragile paths. Three flags each ask a different question
+instead: `--pattern`, `--moves` (or `--moves-since`) and `--name`. A run asks
+one. Passing two exits 2, because answering the first would print a tick read as
+covering both.
+
+`--registry` widens a question to every repo a registry lists. It needs one of
+the three, because validating another repo's `source` statements is that repo's
+own run. The filters `--type`, `--skip-docs`, `--test-mode` and `--exclude`
+narrow every tree the run reads, swept repos included.
+
+A `check` flag given at the root is refused with the call that runs it.
+`refcheck --pattern x` answers `refcheck check --pattern x`.
+
+Exit codes:
+
+- `0`: clean, or only warnings without `--strict`. A set-aside hit never fails.
+- `1`: an error, a path the run could not read, a listed repo the sweep could
+  not reach, or a warning under `--strict`.
+- `2`: refused before the scan. That is a directory that is not there, a
+  `--registry` that cannot be read as one, `--registry` with no question, two
+  questions in one run, a `--name` that is not a name, or a range git cannot
+  diff.
+- `128`: `--moves`, `--moves-since` or `learn-rules` outside a git repository,
+  which is git's own code for it.
+
+## Which surface answers which question
+
+| Ask | Surface | Reads |
+| --- | --- | --- |
+| Does every `source` and `bash` target still resolve | `check` | shell files and markdown, against the filesystem |
+| Which paths break the next time something moves | `check`, its warnings | shell files |
+| What still names the paths I just moved | `check --moves` | the renames and deletions staged in git, then every file |
+| What still names the paths this branch moved | `check --moves-since <base>` | git's renames and deletions since `<base>`, then every file |
+| What still names an old path I type in | `check --pattern` | every file, each hit resolved on disk |
+| Where is a renamed tool, subcommand or flag still named | `check --name` | every file, judged by the shape of the line |
+| What did a move or a rename break in other repos | `--registry` beside any of the three | every repo the registry lists |
+| What did the scan skip | `check --show-config` | the built-ins, `.refcheck.toml` and `--exclude` |
+| What did a missing file probably become | `learn-rules` | git's rename history |
+| Is a newer release out | `update --check` | GitHub releases |
+
+## `check` — a `source` or `bash` target is resolved on disk, not matched as text
+
+```bash
+refcheck check               # the whole repo: errors, then warnings
+refcheck check install/      # one directory, still anchored at the repo root
+refcheck check --strict      # a warning fails the run too, for CI
+```
+
+refcheck reads shell and markdown. Shell is a `.sh`, `.bash`, `.zsh` or `.ksh`
+file, or a file with no suffix whose shebang names `sh`, `bash`, `zsh`, `ksh` or
+`dash`. Markdown is read because a usage example goes stale exactly the way code
+does. `--skip-docs` leaves it out.
+
+Inside markdown, a fence tagged `bash`, `sh`, `shell`, `zsh`, `ksh`, `console`,
+`shellsession` or `shell-session` holds shell. So does an untagged fence. A
+fence tagged with another language is never read as shell. A `yaml` sample of a
+tool's report is not an invocation, however much its `bash some/path.sh` line
+looks like one.
+
+Errors exit 1:
+
+- A `source` or `.` target that is not there, quoted or not.
+- A `bash` or `sh` invocation of a `.sh` file that is not there.
+- A path the run was handed and could not read: a directory that will not list,
+  or a file that will not open.
+
+Warnings exit 0 unless `--strict`:
+
+- A relative `source` path that resolves from some of the repo root, the
+  script's directory and the directory above it, but not from all three.
+- A `*_DIR` variable built by `../` traversal, as in
+  `ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"`, which breaks when the file
+  moves.
+
+```text
+FAIL Found 1 error(s) and 1 warning(s)
+
+Errors:
+────────────────────────────────────────────────────────────
+
+Broken Source Command (1):
+────────────────────────────────────────────────────────────
+  install.sh:4
+    Missing: $SCRIPT_DIR/lib/missing.sh → /path/to/repo/lib/missing.sh
+    → Verify path exists or update reference
+
+Warnings:
+────────────────────────────────────────────────────────────
+
+Fragile Traversal Path (1):
+────────────────────────────────────────────────────────────
+  scripts/ci/deploy.sh:2
+    ROOT_DIR uses relative directory traversal (../) - fragile to file moves
+    → Resolve the root from an exported variable first: "${REPO_DIR:-$(git rev-parse --show-toplevel)}"
+
+HINT 1 broken reference(s) came up with no suggestions.
+     'refcheck learn-rules' reads git's rename history to improve them.
+```
+
+**A path hangs off one of three anchors.** A `~` path hangs off the home
+directory. An absolute path is itself. Anything else hangs off the repo root. A
+`~/` path is the deployed spelling, the one a script running outside the repo
+has to use. It also resolves when the repo tracks a file ending in the same
+segments: `home/.local/lib/log.sh` satisfies `~/.local/lib/log.sh`. A CI
+runner's home holds nothing the repo deploys, so this keeps its answer the same
+as a desk that ran the install. A file sharing only the basename does not count.
+
+**Two variables are resolved.** `$SCRIPT_DIR` is the script's directory when the
+script sets it from `BASH_SOURCE` with `cd … && pwd`. `$DOTFILES_DIR` is the
+directory `$(cd "$SCRIPT_DIR/../.." && pwd)` names when the script derives it
+that way. It is the repo root when the script defaults it as
+`${DOTFILES_DIR:-$HOME/dotfiles}`. In markdown, `$DOTFILES_DIR` is always the
+repo root. `$SCRIPT_DIR` stays unresolved there, because a doc has no one script
+for it to be relative to. A path behind any other variable is skipped rather
+than guessed. A miss prints both forms, as above.
+
+**Documentation widens the guards and never skips the line.** Markdown, a `#`
+comment and an `echo` or `printf` line are documentation. There, a path whose
+leading directory the repo lacks is read as another project's tree. So
+`source child.sh` in a page explaining `set -e` stays quiet. A placeholder name
+is skipped too: `toolname.sh`, `{tool}-plugins.sh`, `my-script.sh`. A
+documented path under a directory the repo still has is reported, because that
+is the stale reference worth catching. In code, `bash script.sh` is a real
+invocation and has to resolve.
+
+**Another machine's paths are not this tree's.** A path under `/tmp/`,
+`/root/`, `/home/`, `/Users/`, `/etc/`, `/opt/` or `/srv/` is skipped. Whether
+`/etc/os-release` resolves says which OS ran the check, not whether the
+reference is good. A line that hands its command to `ssh`, `docker exec`,
+`kubectl exec`, `lxc exec`, `pct exec` or `su - … -c` is skipped too, because
+the file it names is on another host.
+
+**A run that covered less than it was handed fails.** A directory that will not
+list, or a file that will not open, is a finding. Three things are not
+shortfalls. A subtree the exclusions skip is never entered. A file deleted
+mid-run left nothing to miss. A file that is not UTF-8 text still arrived. A
+directory named on the command line and not there exits 2, since walking it
+would pass every check over nothing.
+
+## `--moves` — git names the old paths, so the hook asks while fixing them is free
+
+```bash
+refcheck check --moves                       # the renames and deletions you have staged
+refcheck check --moves-since origin/main     # every move the branch made, for CI
+```
+
+`--moves` reads the renames and deletions git recorded, through
+`git diff --diff-filter=RD -M`. It asks of each old path what `--pattern` asks.
+The answer covers every file type: markdown, YAML, Dockerfiles and code alike. A
+path that came back is skipped, since it is not stale. A bare filename with no
+directory is skipped too, because inside one repo it is too generic to be
+evidence. `--registry` asks it anyway.
+
+git also records what each path became. A hit spelling that path is a repair the
+run can prove, so it is not listed. Every other hit that resolves on disk is
+set aside and listed, as `--pattern` does.
+
+**The hook asks it on every commit.** `args: [--moves]` is what makes the hook
+worth having. Without it the hook validates `source` and `bash` targets, which on
+a clean repo finds nothing most days. With it, every staged rename and deletion
+is checked for what still names the old path. Add `--strict` to the args to fail
+on warnings too.
+
+The hook scans the whole repository, never the staged files. It sets
+`pass_filenames: false` and `always_run: true`, because the stale reference sits
+in the file that was not edited.
 
 `pre-commit run --from-ref A --to-ref B` stages nothing, and neither does the
 pre-push stage. Both export the range as `PRE_COMMIT_FROM_REF` and
-`PRE_COMMIT_TO_REF`, and `--moves` checks the moves in that range instead of the
-index. That is how CI runs the same hook over a pushed branch.
+`PRE_COMMIT_TO_REF`. `--moves` then reads that range instead of the index. That
+is how CI runs the same hook over a pushed branch.
 
-The hook scans the whole repository rather than the staged files, and this is
-deliberate: a reference breaks in the file that was *not* edited. Delete or move
-`b.sh` and the stale `source b.sh` sits in `a.sh`, which is nowhere in the
-changeset. Filtering to staged files would miss the entire class of bug the hook
-exists to catch.
+A range git cannot diff exits 2 rather than reading as no moves. A base commit a
+shallow clone never fetched is the usual case.
 
-## Usage
+A renamed tool, subcommand or flag is not a file git moves, so the hook never
+asks `--name`. Run it by hand when that change lands.
 
-```bash
-# Validate all references in current directory
-refcheck check
-
-# Check specific directory
-refcheck check install/
-
-# Find what still points at a moved path
-refcheck check --pattern "old/path/" --desc "Update to new/path/"
-
-# Filter by file type (like fd -e)
-refcheck check --type sh apps/
-
-# Skip documentation files
-refcheck check --skip-docs
-
-# Find a renamed tool's old name, wherever it is still used as one
-refcheck check --name oldtool --desc "Now newtool"
-
-# Find a renamed, moved or removed subcommand, wherever it is still named
-refcheck check --name "tool oldsub" --desc "Now newtool sub"
-
-# Find a flag that moved under a subcommand, wherever it is still called the old way
-refcheck check --name "tool --oldflag" --desc "Now tool sub --oldflag"
-
-# Combine filters
-refcheck check --pattern "lib/old_module/" --type py --skip-docs src/
-
-# Disable warnings (only check for errors)
-refcheck check --no-warn
-
-# Treat warnings as errors (strict mode for CI)
-refcheck check --strict
-```
-
-## Common workflows
-
-### Which flag answers which change
-
-| What changed | Run | Who runs it |
-| --- | --- | --- |
-| A file or directory moved, was renamed or was deleted | `--moves`, `--moves-since <base>`, or `--pattern "old/path/"` | The pre-commit hook, with `args: [--moves]`, for this repo. You, with `--moves-since <base> --registry`, for every other repo and for the old filename |
-| A tool was renamed or removed | `--name oldtool` | You, when the change lands |
-| A subcommand was renamed, moved to another tool, or removed | `--name "tool oldsub"`, once per subcommand | You, when the change lands |
-| A flag moved under a subcommand, was renamed, or was removed | `--name "tool --oldflag"`, or `--name "tool sub --oldflag"` for a subcommand's flag, once per flag and once per subcommand that carried it | You, when the change lands |
-
-Add `--registry` once per registry to ask every repo and store it lists, not
-just this one.
-
-### After moving files
+## `--pattern` — a hit whose path is on disk is listed, never reported
 
 ```bash
-# Ask git what moved, instead of typing the old path in
-refcheck check --moves              # renames and deletions you have staged
-refcheck check --moves-since origin/main   # everything the branch moved
-
-# Or name the old path yourself
-refcheck check --pattern "tests/install/"
+refcheck check --pattern "old/path/" --desc "now new/path/"   # what still names a path you moved
 ```
 
-`--moves` reads `git diff --diff-filter=RD -M` and runs a pattern check per old
-path, so the answer covers markdown, YAML, Dockerfiles and code alike. Paths
-that came back, and bare filenames with no directory, are skipped — the first is
-not stale and the second is too generic to be evidence.
+Each hit is widened to the whole path token around it. A substring cannot tell a
+stale reference from a longer correct path that ends the same way.
+`--pattern boards/arm` matches `config/boards/arm/` right after the move that
+made it correct. So a token that resolves on disk is set aside, and listed with
+the path it resolved to. A token that does not resolve is reported. A hit
+standing alone as its whole token is reported too, so `--pattern oldname` finds
+`Run oldname`.
 
-### After renaming a tool
+Existence is weak evidence. Where the old name is still on disk somewhere, every
+mention of it resolves and every mention is set aside. The list lets you decide
+whether each one was repaired or is waiting to be cleaned up. Expect it to
+outnumber the findings in a repo still holding the old name.
 
-A renamed tool leaves its old name in prose, commands and paths, and none of
-those is a path git recorded moving. `--name` finds them:
+```text
+PASS No stale references, and 1 hit set aside
+
+1 hit matched the text and resolved to a path on disk, so none was reported:
+────────────────────────────────────────────────────────────
+  docs/lint.md:1
+    Found: markdownlint.json, inside .markdownlint.json
+    → resolves to .markdownlint.json
+```
+
+The list covers the resolver's guesses, not every occurrence of the string. A
+hit inside a URL is dropped, because a URL names no file whatever the tree
+holds. A file the scan never opened is not listed either. `--show-config` prints
+every exclusion in force.
+
+Two spellings of one name are not ordered. `--pattern .markdownlint.json` finds
+nothing on a line spelling it without the dot. `--pattern markdownlint.json`
+finds both. Sweep for the shortest form the rename left behind.
+
+`--pattern` matches inside longer words, which is right for a path. A renamed
+tool goes to `--name`.
+
+## `--name` — a name counts only in a shape the English word never takes
 
 ```bash
-refcheck check --name oldtool --desc "Now newtool" \
-  --registry ~/.config/repos.json --registry ~/.config/stores.json
+refcheck check --name oldtool --desc "now newtool"   # a renamed or removed tool
+refcheck check --name "tool oldsub"                  # a subcommand, once per subcommand
+refcheck check --name "tool --oldflag"               # a root flag that moved or went away
+refcheck check --name "tool sub --oldflag"           # a subcommand's flag, once per subcommand that carried it
 ```
 
-Matching the bare word buries the references in English whenever the old name
-is also a word, because most lines holding it use the word. So a hit counts only
-in a shape that kind of line does not take when it means the word:
+Matching the bare word buries the references in English whenever the old name is
+also a word, because most lines holding it use the word. So a hit counts only in
+a shape that kind of line does not take when it means the word:
 
 | Line | Shape | Example |
 | --- | --- | --- |
 | Any | A code span opening on it | `` `oldtool` ``, `` `oldtool check` ``, `` `oldtool`'s `` |
 | Any | A quoted literal holding only it | `"oldtool"`, `['oldtool', 'batch']` |
-| Any | A path segment | `~/tools/oldtool`, `src/oldtool/main.py`, `oldtool.db`, `oldtool.storage` |
+| Any | A path segment | `~/.local/bin/oldtool`, `src/oldtool/main.py`, `oldtool.db`, `oldtool.storage` |
 | Any | Bold, or a table cell, holding only it | `**oldtool**`, `\| oldtool \|` |
 | Code or config | An import, or a value that is only it | `import oldtool`, `name: oldtool` |
-| Code or config | A list item | `[indy, oldtool]`, `-F oldtool,nomad` |
+| Code or config | A list item | `[othertool, oldtool]`, `-F oldtool,othertool` |
 | Code or config | A line opening on it in aligned columns | `oldtool     SQLite · CLI` |
 | Shell | The whole word, outside a comment | `oldtool batch`, `uv tool install oldtool`, `if oldtool check; then` |
 
-A shell line is one in a `.sh`, `.bash`, `.zsh` or `.ksh` file, an extensionless
-file whose shebang names a shell, or a markdown fence tagged as shell or
-untagged. Prose is markdown outside its fences and `.txt`, `.rst`, `.adoc`,
-`.org`, `.html` and `.tex`. Every other file is code or config, which is what
-keeps a docstring opening on the word from reading as a command.
+A shell line is one in a shell file, or in a markdown fence tagged as shell or
+untagged. Prose is markdown outside its fences, and `.txt`, `.rst`, `.adoc`,
+`.org`, `.html`, `.htm` and `.tex` files. Every other line is code or config.
+That is what keeps a docstring opening on the word from reading as a command.
 
-What no shape reaches is the name in running prose — "across indy, oldtool and
-syncer". Nothing on the line tells the tool from the word, so that one is left
-for you to find.
+No shape reaches the name in running prose, as in "across othertool, oldtool and
+anothertool". Nothing on that line tells the tool from the word, so that one is
+left for you to find.
 
-Two kinds of hit are correct and reported anyway, because nothing on the line
-says so. The renamed tool's own repo names its former name on purpose, in
-migration code and its history. And where the old name lives on as a
-subcommand or a key of the tool that absorbed it — `newtool oldtool` — every
-mention of that live name is reported too. Read both rather than fixing them,
-and add a `[scan] exclude` to that repo's `.refcheck.toml` to quiet them.
+Two kinds of hit are correct and reported anyway. The renamed tool's own repo
+names its former name on purpose, in migration code and its history. Where the
+old name lives on as a subcommand or a key of the tool that absorbed it,
+`newtool oldtool`, every mention of that live name is reported too. Read both
+rather than fixing them. A `[scan] exclude` in that repo's `.refcheck.toml`
+quiets them. Each row prints the line it was found on, so a hit can be judged
+without opening the file.
 
-Each row prints the line it was found on, so a hit can be judged without
-opening the file.
-
-The tree the local run read is left out of the sweep, so nothing in it is
-printed twice. A run narrowed to one directory still sweeps the rest of its
-repo when the registry lists that repo. Both hold for a subcommand too.
-
-### After renaming, moving or removing a subcommand
-
-A subcommand that went away strands its callers in other repos. A caller in
-code spells it as an argument list, which a text search for the phrase misses:
-
-```bash
-refcheck check --name "tool oldsub" --desc "Now newtool sub" \
-  --registry ~/.config/repos.json --registry ~/.config/stores.json
-```
-
-A subcommand can also be an English phrase — `learning plan`, `fleet hosts` — so
-which shapes count depends on the line, as they do for a single name:
+**A subcommand** can also be an English phrase, so its shapes depend on the
+line:
 
 | Line | Shape | Example |
 | --- | --- | --- |
@@ -294,111 +345,84 @@ which shapes count depends on the line, as they do for a single name:
 | Any | Consecutive quoted items of an argument list | `["tool", "oldsub"]`, `exec.Command("/usr/bin/tool", "oldsub")` |
 | Any | A code span opening on it, a quoted literal, bold or a table cell holding only it | `` `tool oldsub` ``, `"tool oldsub"`, `**tool oldsub**` |
 
-The phrase in a sentence of prose is not reported. A flag between the two,
-`tool --json oldsub`, is not matched, and neither is a caller that passes the
-tool and its arguments in separate fields. A line mentioning `tool` or `oldsub`
-alone is never reported.
+A flag between the two, `tool --json oldsub`, is not matched. Neither is a
+caller passing the tool and its arguments in separate fields. A line holding
+`tool` or `oldsub` alone is never reported.
 
-### After moving a flag under a subcommand, or removing it
+**A flag** takes a subcommand's shapes. Other flags may stand before it, so a
+removed flag is found behind the ones the tool kept: `tool --json --oldflag`. A
+word between the tool and the flag that is not itself a flag is taken for a
+subcommand. So `tool check --oldflag`, the corrected call, is not matched. A
+flag after a value, as in `tool --type md --oldflag`, is not matched either,
+because nothing tells the value from a subcommand.
 
-A CLI that turns its root flags into subcommands, `tool --pattern x` becoming
-`tool check --pattern x`, leaves every old call failing on an unknown option. A
-flag takes the shapes a subcommand does, so name each flag that moved:
-
-```bash
-refcheck check --name "tool --pattern" --desc "Now tool check --pattern" \
-  --registry ~/.config/repos.json --registry ~/.config/stores.json
-```
-
-Other flags may stand before it, so a removed flag is found behind the ones the
-tool kept: `tool --json --legacy`. A word between the tool and the flag that is
-not itself a flag is taken for a subcommand, so `tool check --pattern`, the
-corrected call, is not matched. A flag after a value, as in
-`tool --type md --oldflag`, is not matched either, because nothing tells the
-value from a subcommand.
-
-A subcommand's own flag, renamed or removed, is named with the subcommand:
-
-```bash
-refcheck check --name "tool check --strict" --desc "Now tool check --fail-on-warning"
-```
-
-The name fixes the command path, so any argument of that command may stand
-before the flag: `tool check src/ --type md --strict` is matched. The command
-ends at a `|`, `;`, `&`, a comment or the end of a code span, so
-`tool check src/ | grep --strict` is not.
-
-A flag several subcommands carry is named once per subcommand.
+A subcommand's own flag is named with the subcommand. The name fixes the command
+path, so any argument may stand before the flag. `--name "tool check --strict"`
+matches `tool check src/ --type md --strict`. The command ends at a `|`, `;`,
+`&`, a comment or the end of a code span, so `tool check src/ | grep --strict`
+is not matched. A flag several subcommands carry is named once per subcommand.
 `--name "tool --strict"` finds none of them, because it reads each
 `tool check --strict` as the corrected call.
 
-A positional argument that moved, such as `tool src/` becoming
-`tool check src/`, names nothing a shape can match, so it is left for you to
-find.
+A positional argument that moved, `tool src/` becoming `tool check src/`, names
+nothing a shape can match. That one is left for you to find.
 
-### After moving files, in the repos that name them
+With `--registry`, the sweep leaves out the tree the local run read, so nothing
+in it is printed twice. A run narrowed to one directory still sweeps the rest of
+its repo when the registry lists that repo.
 
-A rename is answerable in the repo that made it and unanswerable everywhere
-else. That is the gap `--registry` closes: it asks the same question of every
-repo on the machine, driven by the same renames git already recorded.
+## `--registry` — a reference into another repo is judged by the filesystem, not the string
 
 ```bash
-refcheck check --moves-since origin/main --registry ~/.config/repos.json
+refcheck check --moves-since origin/main --registry repos.json            # what the branch's moves broke elsewhere
+refcheck check --name oldtool --registry repos.json --registry dirs.json  # every listed repo still naming it
 ```
 
-The registry is named at the call site and refcheck never goes looking for one.
-A check that resolved its own subject would sweep whatever the environment
-answered at that moment, and one machine's registry lists a different set of
-repos from another's. Any JSON naming repo paths works — a bare array of entries,
-an object holding them under `stores`, or an object holding them under `repos`
-beside an `exclude_paths` list, which is honored:
+A rename is answerable in the repo that made it and unanswerable everywhere
+else. `--registry` closes that gap. It asks the same question of every repo a
+registry lists, driven by the renames git already recorded.
+
+The registry is named at the call site. refcheck never goes looking for one,
+because one machine's registry lists a different set of repos from another's.
+Any JSON naming repo paths works: a bare array of entries, or an object holding
+them under `repos` or `stores`. An object's `exclude_paths` list is honored.
 
 ```json
 {
-  "exclude_paths": ["~/code/third-party"],
+  "exclude_paths": ["~/src/third-party"],
   "repos": [
-    {"name": "toolbox", "path": "~/code/toolbox", "status": "active"},
-    {"name": "old-thing", "path": "~/code/old-thing", "status": "retired"}
+    {"name": "web-app", "path": "~/src/web-app", "status": "active"},
+    {"name": "old-thing", "path": "~/src/old-thing", "status": "retired"}
   ]
 }
 ```
 
-`--registry` repeats. A machine that declares its repos in one file and its
-content directories in another passes both, and a directory both list is walked
-once, under the name the first file gives it. An unset `$XDG_DATA_HOME`,
-`$XDG_CONFIG_HOME`, `$XDG_STATE_HOME` or `$XDG_CACHE_HOME` in a path takes the
-base-directory spec's default rather than staying literal text.
+`--registry` repeats. A directory two files list is walked once, under the name
+the first file gives it. An unset `$XDG_DATA_HOME`, `$XDG_CONFIG_HOME`,
+`$XDG_STATE_HOME` or `$XDG_CACHE_HOME` in a path takes the base-directory spec's
+default rather than staying literal text.
 
-**A reference from one repo into another either spells a location or names the
-repo.** Code spells it — an absolute path, a `~`, or a variable holding one.
-Prose names it, because `<repo-name>/path/inside-it` is how a document points at
-a file in another repo without knowing where that repo is checked out.
-Both forms resolve to a directory here, which is what makes the sweep safe on a
-pattern as loose as `versions.json`: the token becomes a location and the answer
-is the filesystem's, not the string's. A hit is reported only when the path it
-names sits inside a repo the registry lists and is not there.
+**A hit is reported only when the path it names sits inside a listed repo and is
+not there.** A reference from one repo into another either spells a location or
+names the repo. Code spells it: an absolute path, a `~`, or a variable holding
+one. Prose names it as `<repo-name>/path/inside-it`, because a document does not
+know where that repo is checked out. Both forms resolve to a directory, so the
+answer is the filesystem's, not the string's. That makes a pattern as loose as a
+bare `versions.json` safe to sweep. Across many repos, nearly every hit on a
+bare basename is noise. This rule reports none of those, and reports the
+reference that broke.
 
-The second form is resolved through the registry's own names, so a token is only
-repo-qualified when its first segment is a name the registry carries. A repo
-name and a directory name collide constantly — a registry of any size carries a
-repo called `docs`, `assets` or `tools`, and so does half the trees it lists —
-so the repo being scanned is asked first, and only a path it cannot answer for
-is handed to the repo its first segment names.
+A token is repo-qualified only when the scanned repo has no directory of its
+first segment. Repo names and directory names collide constantly: `docs`,
+`assets`, `tools`. So the scanned repo answers first. Only a path it cannot
+answer for goes to the repo its first segment names.
 
-Those two halves ask about different forms of the same path, because different
-things answer them. **Is it there** is the kernel's answer, so it gets the path
-as written — the one a program reading that line would open. **Whose is it** is
-a string comparison, so it gets the path with its symlinks and `..` walked out,
-and so do the repo paths it is compared against. Handing either the other's form
-is a bug in whichever direction it is done: flatten before asking the kernel and
-a file that is on disk is reported gone, compare an unwalked path and a real
-file lands outside every repo that holds it.
-
-Everything else stays quiet, and it has to — three of refcheck's first five
-findings were its own bugs, which is why it went unused. Six registry files
-renamed at a repo root hit roughly 150 lines across 90 repos on the bare
-basename, effectively all of it noise. The rule above reports none of them, and
-reports the one reference that had genuinely broken.
+The two halves take different forms of one path. **Is it there** is the
+kernel's question, so it gets the path as written, the one a program reading
+that line would open. **Whose is it** compares strings, so both sides get their
+symlinks and `..` walked out. Flatten before asking the kernel and a file on
+disk is reported gone. Compare an unwalked path and a real file lands outside
+the repo holding it.
 
 | What the line holds | Swept |
 | --- | --- |
@@ -413,297 +437,87 @@ reports the one reference that had genuinely broken.
 | `/srv/versions.json`, inside no listed repo | silent |
 | `$UNSET_VAR/versions.json`, nothing to expand | silent while a listed repo holds a `versions.json`, reported once none does |
 
-**A filename the change took out of use is asked about too, once nothing holds
-it.** Prose cites a file by its name alone as often as by its path — "a
-hand-written `ci.yml`" — and no path check reads that. So when a move deletes a
-file, or renames it to a different filename, `--moves` with `--registry` also
-runs the [`--name` shapes](#after-renaming-a-tool) for the old filename, here and
-in every listed repo. A row there reads `→ now cross-platform.yml`.
+**A filename the change took out of use is asked too, once nothing holds it.**
+Prose cites a file by its name alone as often as by its path, as in "a
+hand-written `ci.yml`". No path check reads that. So when a move deletes a file,
+or renames it to a different filename, `--moves` with `--registry` also runs the
+`--name` shapes for the old filename. It runs them here and in every listed
+repo. A row there reads `→ now cross-platform.yml`.
 
-It asks only when no file in this tree or any listed repo still has that name.
-Until then the citation names something real: `main.go` leaving one repo is not
-news to the others. That walk ignores a repo's `[scan] exclude` and `--type`,
-because an excluded file is still a file. It skips the default exclusions, such
-as `node_modules` and `.venv`, because a dependency's `ci.yml` is not the one a
-citation names. The run prints the filenames it left out for that
-reason. A move that keeps the filename, `docs/setup.md` to `setup.md`, asks
-nothing more.
+It asks only once no file in this tree or any listed repo has that name. Until
+then the citation names something real: `main.go` leaving one repo is not news
+to the others. That walk ignores a repo's `[scan] exclude` and `--type`, because
+an excluded file is still a file. It skips the built-in excluded directories
+that `--show-config` lists, such as `node_modules` and `.venv`. A dependency's
+`ci.yml` is not the one a citation names. The run prints the filenames it left
+out for that reason. A move that keeps the filename, `docs/setup.md` to
+`setup.md`, asks nothing more.
 
-A path the path check can resolve is left to it: `/srv/ci.yml`, `~/x/ci.yml`,
-or a URL ending in `ci.yml`. A path nothing here can resolve is asked, so
+A path the path check can resolve is left to it: `/srv/ci.yml`, `~/x/ci.yml`, or
+a URL ending in `ci.yml`. A path nothing here can resolve is asked, so
 `c="$d/.github/workflows/ci.yml"` in a shell snippet is reported. A line the
-path check already reported is not reported twice. A dotfile
-such as `.markdownlint.yaml` is asked like any other. A filename no shape can
-match, one with a space in it, is named in a "Not asked" line.
+path check already reported is not reported twice. A dotfile such as
+`.markdownlint.yaml` is asked like any other. A filename no shape can match, one
+holding a space, is named in a "Not asked" line.
 
-Retired repos are not walked, because a finding in one is not going to be fixed.
-Dormant ones are swept — dormant work gets picked up, and a reference that broke
-while it was quiet is exactly what nobody would otherwise find. A retired repo
-can still *own* a gone path, though: a live repo holding a path into one still
-holds a path that does not resolve, and the edit that fixes it is in the live
-repo.
+**Retired repos are the one deliberate skip.** A finding in one is not going to
+be fixed, so it is not walked. The count line says how many were skipped.
+Dormant repos are swept. Dormant work gets picked up, and a reference that broke
+while it was quiet is what nobody would otherwise find. A retired repo can still
+own a gone path. A live repo holding a path into one holds a path that does not
+resolve, and the fix lands in the live repo.
 
-Four things stop a repo owning a gone path, and only one of them is a deliberate
-skip. Retired is that one, and it stays in the count line. The other three are
-the sweep failing to look — an entry naming no path, a listed repo with no
-directory here, a directory or file that will not open — and each fails the run
-with its own row. A tick that cannot be told from "the repo the file left was
-not in the map" is the false clean this whole tool exists to avoid, so a run
-that covered less than it was handed does not print one. Where the repo you are
-standing in is itself unlisted, the sweep says so, because nothing it finds can
-be credited to the renames you just made.
+Everything else that shrinks the sweep fails the run with its own row: an entry
+naming no path, a listed repo with no directory here, a directory or file that
+will not open. Where the repo you are standing in is itself unlisted, the sweep
+says so. Nothing it finds can then be credited to the renames you just made.
 
-Every filter narrows the sweep as well as the local run — `--type`, `--skip-docs`,
-`--test-mode` and `--exclude` all reach all of it. Each repo still reads its own
-`.refcheck.toml`, with `--exclude` added on top.
+Every filter reaches every swept repo. Each swept repo still reads its own
+`.refcheck.toml`, with `--exclude` added on top. A change that moved nothing
+prints `Nothing moved, so no repo was swept` and reads no other repo.
 
-`--registry` also takes `--pattern`, `--moves` and `--name`, and needs one of
-them: validating another repo's `source` statements is that repo's own run, so a
-registry with nothing to look for exits 2 rather than walking every listed repo
-to ask it nothing.
-
-`--pattern`, `--name` and `--moves` each ask a different question, and a run
-asks one. Passing two exits 2, because answering the first would print a tick
-the caller reads as covering both.
-
-One sweep of 90 repos costs about 14 seconds for six moved paths — roughly 12
-for the walk and a quarter-second per extra pattern. A run with nothing to look
-for reads no files at all.
-
-### Before running tests
+## `learn-rules` — learned renames suggest a fix and detect nothing
 
 ```bash
-# Quick validation (2 seconds vs 10+ minutes for e2e tests)
-refcheck check --skip-docs
-# Catches broken references early
+refcheck learn-rules     # write this checkout's rules.json from git's rename history
 ```
 
-### Check specific component
+Learned rules feed only the **Possible matches** line under a broken `source` or
+`bash` reference. That is why refcheck mentions them only when a finding came up
+with no suggestion. To catch what a move left behind, reach for `--moves`. It
+reads the change you are making, not history describing moves already
+reconciled.
 
-```bash
-# Validate install/ directory only
-refcheck check install/
-
-# Check only shell scripts in apps/
-refcheck check apps/ --type sh
-```
-
-### Use in CI/CD
-
-```bash
-# Strict mode - fail build on warnings
-refcheck check --strict
-
-# Regular mode - warnings don't fail build
-refcheck check
-
-# Disable warnings for legacy code
-refcheck check --no-warn
-```
-
-### Detect fragile patterns
-
-```bash
-# Find paths that only work from specific directories
-refcheck check  # Shows warnings for fragile relative paths
-
-# Find variable assignments using ../ traversal
-refcheck check  # Shows warnings for SCRIPT_DIR="$(cd "$DIR/../../.." && pwd)"
-```
-
-### Learn from git history
-
-```bash
-# Generate rules from git rename history (last 6 months by default)
-refcheck learn-rules
-
-# Stored per checkout at $XDG_CONFIG_HOME/refcheck/repos/{repo-path-with--for-slash}/rules.json,
-# with ~/.config standing in for an unset $XDG_CONFIG_HOME
-```
-
-Rules improve the **Possible matches** line under a broken reference; they
-detect nothing on their own, which is why refcheck only mentions them when a
-finding came up with no suggestion. For catching what a move left behind, reach
-for `--moves` instead — it reads the change you are actually making rather than
-six months of history describing moves already reconciled.
-
-## Configuration
-
-Create `$XDG_CONFIG_HOME/refcheck/config.toml`, or `~/.config/refcheck/config.toml`
-where `$XDG_CONFIG_HOME` is unset, to customize behavior:
+The rules land at `$XDG_CONFIG_HOME/refcheck/repos/<path>/rules.json`, where
+`<path>` is the checkout's absolute path with each `/` written as `--`.
+`~/.config` stands in for an unset `$XDG_CONFIG_HOME`. The user config sets how
+far back the history is read:
 
 ```toml
+# $XDG_CONFIG_HOME/refcheck/config.toml, or ~/.config/refcheck/config.toml
 [learn]
-time_window = "6 months"  # How far back learn-rules reads git history
+time_window = "6 months"  # the default, handed to git log --since
 ```
 
-## Output
-
-**When errors found:**
-
-```text
-FAIL Found 2 error(s)
-
-Errors:
-
-Broken Source (2):
-────────────────────────────────────────────────────────────
-  tests/broken.sh:4
-    Missing: $SCRIPT_DIR/nonexistent.sh → /path/to/nonexistent.sh
-    → Verify path exists or update reference
-
-  src/install.sh:15
-    Missing: /path/to/missing.sh
-    → Verify path exists or update reference
-```
-
-**When warnings found:**
-
-```text
-WARN Found 2 warning(s)
-
-Warnings:
-
-Fragile to Working Directory (1):
-────────────────────────────────────────────────────────────
-  scripts/deploy.sh:3
-    Relative path only valid from: repo root
-    source scripts/helpers.sh
-    → Use root directory variable (e.g., $PROJECT_ROOT, $REPO_ROOT)
-
-Fragile to Refactoring (1):
-────────────────────────────────────────────────────────────
-  scripts/setup.sh:8
-    SCRIPT_DIR uses relative directory traversal (../) - fragile to file moves
-    → Resolve the root from an exported variable first: "${REPO_DIR:-$(git rev-parse --show-toplevel)}"
-```
-
-**When hits were set aside:**
-
-Rows come in file order, then line order. One repo holding the old name at its
-root put eleven of these above a single finding, which is the shape to expect
-rather than the exception.
-
-```text
-PASS No stale references, and 3 hits set aside
-
-3 hits matched the text and resolved to a path on disk, so none was reported:
-────────────────────────────────────────────────────────────
-  CLAUDE.md:132
-    Found: markdownlint.json, inside .markdownlint.json
-    → resolves to .markdownlint.json
-  configs/prettierignore.txt:16
-    Found: markdownlint.json, inside .markdownlint.json
-    → resolves to .markdownlint.json
-  docs/setup.md:8
-    Found: markdownlint.json, inside ../.markdownlint.json
-    → resolves to .markdownlint.json
-```
-
-**When all valid:**
-
-```text
-PASS All file references valid
-```
-
-## Exit codes
-
-- `0` - All references valid, or only warnings found (default mode)
-- `1` - Found errors, a path the run could not read, or warnings in strict mode
-  (`--strict`)
-- `2` - The run was asked for something it cannot do: a directory that is not
-  there, a `--registry` that is missing or is not JSON, `--registry` with
-  nothing to look for, two of `--pattern`, `--name` and `--moves` in one run, a
-  `--name` that is not a tool, a tool and its subcommand, or a tool and its
-  flag, or a range git
-  cannot diff, such as a base
-  commit a shallow clone never fetched
-- `128` - `--moves` or `--moves-since` outside a git repository, which is git's
-  own code for it
-
-**Use in scripts:**
+## Exclusions — history is skipped, and each repo names its own generated output
 
 ```bash
-# Normal mode - warnings don't fail
-if refcheck check; then
-  echo "All references valid (warnings OK)"
-fi
-
-# Strict mode - warnings fail
-if refcheck check --strict; then
-  echo "All references valid (no errors or warnings)"
-else
-  echo "Issues found, fix before deploying"
-  exit 1
-fi
+refcheck check --show-config                  # every exclusion in force, and the layer that set it
+refcheck check --exclude "build/reports/**"   # one more pattern, for one run
+refcheck check --test-mode                    # read the recorded fixtures too
 ```
 
-## Commands
+The built-in list holds what is true of any repository: version control and
+dependency directories, tool caches, logs, changelogs, backups, coverage output,
+and recorded fixtures (`fixtures/`, `testdata/`, `docs/archive/`). Each records
+what a path *was*. A changelog entry naming the old location is correct rather
+than stale. A captured tool output names every file that existed when it was
+taken. It is fixed by re-running the tool, never by editing. A file with a NUL
+byte near its start is binary and is skipped, the heuristic git uses. A
+symlinked directory is not followed.
 
-| Command | Description |
-| --- | --- |
-| `refcheck check [PATH]` | Validate every reference in the tree, or in one directory |
-| `refcheck learn-rules` | Write rules.json from git's rename history |
-| `refcheck update` | Install the latest release; `--check` reports one without installing |
-
-Bare `refcheck` prints help. Run any command with `--help` for its flags.
-
-## Flags on `check`
-
-| Flag | Description | Example |
-| --- | --- | --- |
-| `path` | Directory to check (positional) | `refcheck check install/` |
-| `--pattern PATTERN` | Find an old path, matched inside longer words. A renamed tool goes to `--name` | `--pattern "old/"` |
-| `--name NAME` | Find a tool, or a tool and its subcommand or flag, that is gone but still named | `--name oldtool`, `--name "tool oldsub"`, `--name "tool --oldflag"` |
-| `--desc DESC` | What the pattern or name became | `--desc "Now new/"` |
-| `--moves` | Check what staged renames and deletions left behind | `--moves` |
-| `--moves-since REF` | The same, for every move between REF and HEAD | `--moves-since origin/main` |
-| `--registry PATH` | Ask the same of every repo or store the registry lists (repeatable) | `--registry ~/.config/repos.json` |
-| `--type, -t TYPE` | Filter by file type | `--type sh` |
-| `--skip-docs` | Skip markdown files, for both reference and pattern checks | `--skip-docs` |
-| `--strict` | Treat warnings as errors (exit 1) | `--strict` |
-| `--no-warn` | Disable fragile path warnings | `--no-warn` |
-| `--test-mode` | Include test fixtures (normally excluded) | `--test-mode` |
-| `--exclude GLOB` | Also skip paths matching this glob (repeatable) | `--exclude "build/reports/**"` |
-| `--show-config` | Print the exclusions in force and where each came from | `--show-config` |
-| `--version` | Show the installed version (on `refcheck` itself) | `refcheck --version` |
-| `--help, -h` | Show help | `--help` |
-
-## Smart filtering
-
-Automatically excludes:
-
-- **Build artifacts**: `.git`, `node_modules`, `.venv`, `__pycache__`, `.cache`,
-  `site/`, `*.pyc`
-- **Historical files**: `.claude/metrics/`, `*.log`, `*.jsonl`,
-  `CHANGELOG.md`, backups (`*.bak`, `*.backup`, `*.backup.*`, `*.orig`),
-  `file-history/`, the tool caches (`.pytest_cache`,
-  `.ruff_cache`, `.mypy_cache`) and coverage.py's reports (`.coverage`,
-  `.coverage.*`, `coverage.json`, `coverage.xml`, `coverage.lcov`, `htmlcov/`) —
-  each records what a path *was*, which is what makes a changelog entry naming
-  the old location correct rather than stale
-- **Recorded data**: `fixtures/`, `testdata/`, `docs/archive/` — a captured tool
-  output names every file that existed when it was taken, and is fixed by
-  re-running the tool, never by editing. `--test-mode` scans them anyway
-- **Dynamic paths**: anything opening with `$`, temp files (`/tmp/`), home
-  directories (`/root/`, `/home/`, `/Users/`) and machine state (`/etc/`).
-  Whether `/etc/os-release` resolves says which OS is running the check, not
-  whether the reference is good
-- **Paths on another machine**: the argument to `ssh`, and to `docker exec`,
-  `pct exec`, `lxc exec` or `kubectl exec` — that file is not in this tree
-- **Self-references**: Usage examples in scripts referencing themselves
-
-A `~/` path is the deployed spelling, the one a script running outside the repo
-has to use. It resolves under the home directory, or where the repo tracks a
-file whose path ends in it, as `configs/common/.local/shell/logging.sh` does for
-`~/.local/shell/logging.sh`. The second is what makes the answer the same on a
-CI runner, whose home holds nothing the repo deploys.
-
-## A repo excludes its own generated output
-
-The list above is what holds for any repository. Which of *this* repo's
-directories hold generated output is a fact only the repo knows, so it says so
-in `.refcheck.toml` at its root:
+Which of *this* repo's directories hold generated output is a fact only the repo
+knows. It says so in `.refcheck.toml` at its root:
 
 ```toml
 [scan]
@@ -711,17 +525,14 @@ exclude = ["build/reports/**", "*.snapshot.json"]
 ```
 
 Patterns are globs matched against the repo-relative path, and `**` crosses
-directory separators. They add to the built-in list rather than replacing it.
+directory separators. They add to the built-in list rather than replacing it. A
+test-report directory that records a node ID per test is the usual case.
+Deleting a test file reports one miss per report that ever ran it, and the count
+grows with every run.
 
-A file a tool writes names what a path was when the tool ran, so a hit inside
-one is history rather than a stale reference. A test-report directory that
-records a node ID per test is the usual case: deleting a test file then reports
-one miss per report that ever ran it, and the count grows with every run.
-
-Discovery walks up from the repo root and stops there, so a checkout never
-inherits the config of whatever encloses it. `--exclude GLOB` adds a pattern for
-a single run without declaring it, and `--show-config` prints every exclusion in
-force alongside the layer that set it.
+refcheck reads the nearest `.refcheck.toml` at or above the directory it runs
+in, and stops at the git root. A checkout never inherits the config of whatever
+encloses it.
 
 ## Development
 
@@ -729,43 +540,14 @@ force alongside the layer that set it.
 uv run pytest
 ```
 
-Tests cover config parsing, rules management, file suggestions, and end-to-end
-CLI behavior. The suite also runs as a pre-commit hook.
+The suite also runs as a pre-commit hook on any commit staging a Python file.
+The CLI tests run `refcheck` from `PATH`. Under `uv run` that is the editable
+install in `.venv`. A bare `pytest` on a machine with refcheck installed tests
+the installed release instead.
 
-Python 3.13+. The runtime dependencies are typer and
-[pyselfupdate](https://github.com/datapointchris/pyselfupdate); everything else
-is stdlib.
+The runtime dependencies are typer and
+[pyselfupdate](https://github.com/datapointchris/pyselfupdate). Everything else
+is the standard library.
 
-Modular structure:
-
-- `cli.py` - typer CLI entry point
-- `config.py` - Config dataclass, TOML loading
-- `checker.py` - ReferenceChecker class (core logic)
-- `moves.py` - Renames and deletions read from git
-- `names.py` - The shapes in which an old name is a reference rather than a word
-- `registry.py` - The repos and stores on this machine, read from registries the caller names
-- `sweep.py` - The move and name sweeps, run across those repos rather than one
-- `rules.py` - Rules loading/learning from git
-- `suggestions.py` - File similarity matching
-- `output.py` - Result formatting
-- `selfupdate.py` - Version reporting and release updates
-
-## Comparison to alternatives
-
-**vs grep:**
-
-- `grep` finds patterns but doesn't validate file existence
-- `refcheck` validates references point to real files
-- `refcheck` auto-filters false positives
-
-**vs shellcheck:**
-
-- `shellcheck` checks literal paths in single files
-- `refcheck` checks across entire codebase
-- `refcheck` handles dynamic paths and patterns
-
-**vs manual testing:**
-
-- Manual testing requires running full test suite (minutes)
-- `refcheck` validates in seconds
-- Catches issues before expensive CI/CD runs
+This repo's own refcheck hook runs the release `.pre-commit-config.yaml` pins,
+so a change to the checker does not check its own commit.

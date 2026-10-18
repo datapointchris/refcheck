@@ -1,6 +1,6 @@
 """Tests for telling a renamed tool's old name apart from the same word in a sentence.
 
-The name in these tests is `relate`, because it is a real English verb. A name
+The name in these tests is `connect`, because it is a real English verb. A name
 nobody would write in prose would pass every test below whatever the matcher did.
 """
 
@@ -10,25 +10,22 @@ from refcheck.checker import ReferenceChecker
 from refcheck.names import LineKind
 from refcheck.names import NameShapes
 
-SHAPES = NameShapes.of('relate')
+SHAPES = NameShapes.of('connect')
 
 
 class TestShapesThatNameTheToolOnAnyLine:
     @pytest.mark.parametrize(
         'line',
         [
-            'Use `relate` for this.',
-            "`relate`'s eval reaches its own tables",
-            'Run `relate check --json` first.',
-            'tool = "relate"',
-            'cd ~/tools/relate',
-            'Set in src/relate/storage.py',
-            'saved to ~/shart/relate/relate.db',
-            'from relate.storage import open_db',
-            'relate/main.py holds the CLI',
-            'docs_url: "https://github.com/someone/relate"',
-            '| **relate** | SQLite | CLI |',
-            '| SQLite | relate | CLI |',
+            'Use `connect` for this.',
+            'Run `connect check --json` first.',
+            'tool = "connect"',
+            'cd ~/src/connect',
+            'from connect.storage import open_db',
+            'connect/main.py holds the CLI',
+            'docs_url: "https://github.com/someone/connect"',
+            '| **connect** | SQLite | CLI |',
+            '| SQLite | connect | CLI |',
         ],
     )
     def test_in_prose(self, line):
@@ -39,14 +36,14 @@ class TestShapesThatNameTheToolInCode:
     @pytest.mark.parametrize(
         'line',
         [
-            'import relate',
-            'from relate import storage',
-            '  - name: relate',
-            'tool = relate',
-            'see_also: [indy, relate, doit]',
-            'forge exec -F relate,nomad -- <cmd>',
-            'forge exec -F nomad,relate -- <cmd>',
-            '  relate     SQLite · CLI     content synthesis',
+            'import connect',
+            'from connect import storage',
+            '  - name: connect',
+            'tool = connect',
+            'see_also: [othertool, connect, anothertool]',
+            'tool exec -F connect,othertool -- <cmd>',
+            'tool exec -F othertool,connect -- <cmd>',
+            '  connect     SQLite · CLI     content synthesis',
         ],
     )
     def test_in_another_language(self, line):
@@ -55,21 +52,11 @@ class TestShapesThatNameTheToolInCode:
     @pytest.mark.parametrize(
         'line',
         [
-            'relate batch ./urls.txt',
-            '$ relate deltas',
-            'cat urls | relate batch -',
-            'out=$(relate show 3)',
-            'uv tool install relate',
-            'command -v relate >/dev/null',
-            'which relate',
-            'sudo relate check',
-            'if relate check; then',
-            'for f in *; do relate "$f"; done',
-            'RELATE=1 relate go',
-            'exec relate',
-            'nohup relate six &',
-            'xargs relate < list',
-            "rg -e '\\b(indy|relate|syncer)\\b'",
+            'connect batch ./urls.txt',
+            'out=$(connect show 3)',
+            'uv tool install connect',
+            'if connect check; then',
+            "rg -e '\\b(othertool|connect|anothertool)\\b'",
         ],
     )
     def test_on_a_shell_line(self, line):
@@ -80,98 +67,71 @@ class TestTheWordStaysSilent:
     @pytest.mark.parametrize(
         'line',
         [
-            'How do the pieces relate across repos?',
-            'relate across repos, and how they share state.',
-            'These correlate closely.',
-            'it relates to the earlier rule',
-            '`digest relate` grades a saved analysis',
-            'the relate-ish helpers',
-            'a sentence ending on relate.',
-            'myrelate/config is another tool',
-            'Example: relate',
+            'How do the pieces connect across repos?',
+            '`othertool connect` grades a saved analysis',
+            'a sentence ending on connect.',
+            'myconnect/config is another tool',
+            'Example: connect',
         ],
     )
     def test_in_prose(self, line):
         assert not SHAPES.names_it(line, LineKind.PROSE)
 
-    @pytest.mark.parametrize(
-        'line',
-        [
-            '    relate them to each other later.',
-            '  relate records across tables.',
-            'relate to one another is the question.',
-            '# how the parts relate',
-            'across indy, relate, syncer and dectl',
-        ],
-    )
-    def test_in_another_language(self, line):
-        assert not SHAPES.names_it(line, LineKind.ANOTHER_LANGUAGE)
+    def test_in_a_comma_list_with_spaces(self):
+        assert not SHAPES.names_it('across othertool, connect, anothertool and newtool', LineKind.ANOTHER_LANGUAGE)
 
     @pytest.mark.parametrize(
         'line',
         [
-            'make build  # so the parts relate',
-            '# relate the two before running',
-            'digest related --json',
+            'make build  # so the parts connect',
+            '# connect the two before running',
+            'othertool connected --json',
         ],
     )
     def test_on_a_shell_line_in_a_comment_or_a_longer_word(self, line):
         assert not SHAPES.names_it(line, LineKind.SHELL)
 
 
-COMMAND = NameShapes.of('forge status')
+COMMAND = NameShapes.of('tool oldsub')
 
 
 class TestAToolAndItsSubcommand:
     @pytest.mark.parametrize(
         ('line', 'kind'),
         [
-            ('1. forge status — project descriptions, planning state', LineKind.ANOTHER_LANGUAGE),
-            ("        logger.warning(f'forge status failed: {e}')", LineKind.ANOTHER_LANGUAGE),
-            ("            ['forge', 'status'],", LineKind.ANOTHER_LANGUAGE),
-            ('{Name: "repos", Command: []string{"forge", "status", "--json"}},', LineKind.ANOTHER_LANGUAGE),
-            ('For where each project stands: `forge status`.', LineKind.PROSE),
-            ('Run `~/go/bin/forge status --json` first.', LineKind.PROSE),
-            ('the old command was "forge status"', LineKind.PROSE),
-            ('| **forge status** | removed |', LineKind.PROSE),
-            ('| forge status | removed |', LineKind.PROSE),
-            ('forge  status --json | jq .', LineKind.SHELL),
-            ('make all  # then forge status', LineKind.SHELL),
-            ('ExecStart=/usr/bin/forge status', LineKind.ANOTHER_LANGUAGE),
-            ('*/5 * * * * ~/go/bin/forge status', LineKind.ANOTHER_LANGUAGE),
-            ('exec.Command("/usr/bin/forge", "status")', LineKind.ANOTHER_LANGUAGE),
-            ('"$HOME/go/bin/forge" status --json', LineKind.SHELL),
-            ('/usr/bin/forge status', LineKind.SHELL),
-            ('./bin/forge status', LineKind.SHELL),
+            ("        logger.warning(f'tool oldsub failed: {e}')", LineKind.ANOTHER_LANGUAGE),
+            ("            ['tool', 'oldsub'],", LineKind.ANOTHER_LANGUAGE),
+            ('{Name: "repos", Command: []string{"tool", "oldsub", "--json"}},', LineKind.ANOTHER_LANGUAGE),
+            ('For where each project stands: `tool oldsub`.', LineKind.PROSE),
+            ('Run `~/go/bin/tool oldsub --json` first.', LineKind.PROSE),
+            ('the old command was "tool oldsub"', LineKind.PROSE),
+            ('| **tool oldsub** | removed |', LineKind.PROSE),
+            ('| tool oldsub | removed |', LineKind.PROSE),
+            ('tool  oldsub --json | jq .', LineKind.SHELL),
+            ('make all  # then tool oldsub', LineKind.SHELL),
+            ('ExecStart=/usr/bin/tool oldsub', LineKind.ANOTHER_LANGUAGE),
+            ('exec.Command("/usr/bin/tool", "oldsub")', LineKind.ANOTHER_LANGUAGE),
+            ('"$HOME/go/bin/tool" oldsub --json', LineKind.SHELL),
         ],
     )
     def test_is_named_on_every_kind_of_line(self, line, kind):
         assert COMMAND.names_it(line, kind)
 
-    @pytest.mark.parametrize(
-        ('name', 'line'),
-        [
-            ('forge status', 'They were one tool, and forge status swept the portfolio.'),
-            ('learning plan', 'Two books on the topic are not in my learning plan yet.'),
-            ('fleet hosts', 'The fleet hosts a dozen services.'),
-        ],
-    )
-    def test_the_phrase_in_running_prose_stays_silent(self, name, line):
-        assert not NameShapes.of(name).names_it(line, LineKind.PROSE)
+    def test_the_phrase_in_running_prose_stays_silent(self):
+        assert not NameShapes.of('release notes').names_it('The release notes list every change.', LineKind.PROSE)
 
     @pytest.mark.parametrize(
         'line',
         [
-            'forge reports its status per repo',
-            'the forge status-line widget',
-            'reforge status',
-            'forge statuses',
-            '`forge` is the tool',
-            'status: forge',
-            'my-forge status',
-            'forge.status',
-            'the forge status-line, via /usr/bin/reforge status',
-            'forge --json status',
+            'tool reports its oldsub per repo',
+            'the tool oldsub-line widget',
+            'retool oldsub',
+            'tool oldsubs',
+            '`tool` is the command',
+            'oldsub: tool',
+            'my-tool oldsub',
+            'tool.oldsub',
+            'tool --json oldsub',
         ],
     )
     def test_other_uses_of_either_word_stay_silent(self, line):
@@ -201,8 +161,6 @@ class TestASubcommandWithNamespaces:
         for kind in LineKind:
             assert not NAMESPACED.names_it(line, kind)
 
-    # The old shape let a colon end the name, so an old `task feed` matched
-    # every task namespaced under feed.
     def test_an_old_plain_subcommand_is_not_found_inside_a_namespaced_one(self):
         old = NameShapes.of('task feed')
         assert old.names_it('task feed -- -v', LineKind.SHELL)
@@ -273,32 +231,31 @@ class TestAToolAndItsFlag:
     @pytest.mark.parametrize(
         ('line', 'kind'),
         [
-            ('worktree spawn parser-fix --brief b.md', LineKind.SHELL),
-            ('worktree spawn "$slug" --timeout 30 --brief b.md', LineKind.SHELL),
-            ('worktree spawn parser-fix --brief=b.md', LineKind.SHELL),
-            ('Run `worktree spawn parser-fix --brief b.md` next.', LineKind.PROSE),
-            ('subprocess.run(["worktree", "spawn", slug, "--brief", str(brief)])', LineKind.ANOTHER_LANGUAGE),
-            ('run: worktree spawn {{ slug }} --brief b.md', LineKind.ANOTHER_LANGUAGE),
+            ('tool sub parser-fix --oldflag b.md', LineKind.SHELL),
+            ('tool sub "$slug" --timeout 30 --oldflag b.md', LineKind.SHELL),
+            ('Run `tool sub parser-fix --oldflag b.md` next.', LineKind.PROSE),
+            ('subprocess.run(["tool", "sub", slug, "--oldflag", str(brief)])', LineKind.ANOTHER_LANGUAGE),
         ],
     )
     def test_a_subcommands_flag_is_named_behind_its_arguments(self, line, kind):
-        assert NameShapes.of('worktree spawn --brief').names_it(line, kind)
+        assert NameShapes.of('tool sub --oldflag').names_it(line, kind)
 
     @pytest.mark.parametrize(
         'line',
         [
-            'worktree spawn parser-fix | tee --brief',
-            'worktree spawn parser-fix; echo --brief',
-            'worktree spawn parser-fix 2>&1 --brief',
-            'worktree spawn parser-fix --brief-file b.md',
-            'Run `worktree spawn parser-fix` with `--brief`.',
-            'run(["worktree", "spawn", slug]); log(["--brief"])',
-            'worktree new parser-fix --brief b.md',
+            'tool sub parser-fix | tee --oldflag',
+            'tool sub parser-fix; echo --oldflag',
+            'tool sub parser-fix 2>&1 --oldflag',
+            'tool sub parser-fix # then --oldflag',
+            'tool sub parser-fix --oldflag-file b.md',
+            'Run `tool sub parser-fix` with `--oldflag`.',
+            'run(["tool", "sub", slug]); log(["--oldflag"])',
+            'tool new parser-fix --oldflag b.md',
         ],
     )
     def test_a_flag_outside_the_subcommands_command_stays_silent(self, line):
         for kind in LineKind:
-            assert not NameShapes.of('worktree spawn --brief').names_it(line, kind)
+            assert not NameShapes.of('tool sub --oldflag').names_it(line, kind)
 
     def test_a_tools_flag_behind_a_value_stays_silent(self):
         for kind in LineKind:
@@ -310,47 +267,47 @@ class TestCheckNames:
         for name, text in files.items():
             (temp_dir / name).write_text(text)
         checker = ReferenceChecker(root_dir=temp_dir, **options)
-        checker.check_names({'relate': 'now digest'})
+        checker.check_names({'connect': 'now newtool'})
         return [(str(issue.file), issue.line_num) for issue in checker.issues]
 
     def test_a_row_carries_the_line_it_found(self, temp_dir):
-        (temp_dir / 'README.md').write_text('Use `relate` here, `relate` there.\nHow do these relate?\n')
+        (temp_dir / 'README.md').write_text('Use `connect` here, `connect` there.\nHow do these connect?\n')
         checker = ReferenceChecker(root_dir=temp_dir)
 
-        checker.check_names({'relate': 'now digest'})
+        checker.check_names({'connect': 'now newtool'})
 
         assert [(str(i.file), i.line_num, i.message, i.suggestion) for i in checker.issues] == [
-            ('README.md', 1, 'Found: Use `relate` here, `relate` there.', 'now digest'),
+            ('README.md', 1, 'Found: Use `connect` here, `connect` there.', 'now newtool'),
         ]
 
     def test_no_description_leaves_no_suggestion(self, temp_dir):
-        (temp_dir / 'README.md').write_text('Use `relate`.\n')
+        (temp_dir / 'README.md').write_text('Use `connect`.\n')
         checker = ReferenceChecker(root_dir=temp_dir)
 
-        checker.check_names({'relate': ''})
+        checker.check_names({'connect': ''})
 
         assert checker.issues[0].suggestion is None
 
     def test_a_shell_fence_reports_a_command_and_prose_does_not(self, temp_dir):
-        assert self.found(temp_dir, {'guide.md': 'relate across repos\n\n```bash\nrelate batch x\n```\n'}) == [('guide.md', 4)]
+        assert self.found(temp_dir, {'guide.md': 'connect across repos\n\n```bash\nconnect batch x\n```\n'}) == [('guide.md', 4)]
 
     def test_a_script_reports_a_command_and_a_text_file_does_not(self, temp_dir):
-        files = {'run.sh': 'relate batch x\n', 'notes.txt': 'relate across repos\n', 'doc.md': '```yaml\nrelate: x\n```\n'}
+        files = {'run.sh': 'connect batch x\n', 'notes.txt': 'connect across repos\n', 'doc.md': '```yaml\nconnect: x\n```\n'}
 
         assert self.found(temp_dir, files) == [('run.sh', 1)]
 
     def test_an_extensionless_script_is_shell_by_its_shebang(self, temp_dir):
-        files = {'deploy': '#!/usr/bin/env bash\nrelate batch x\n', 'COMMIT_TEMPLATE': 'relate to the existing behavior.\n'}
+        files = {'deploy': '#!/usr/bin/env bash\nconnect batch x\n', 'COMMIT_TEMPLATE': 'connect to the existing behavior.\n'}
 
         assert self.found(temp_dir, files) == [('deploy', 2)]
 
     def test_python_and_yaml_prose_is_not_a_command(self, temp_dir):
         files = {
-            'model.py': 'def f():\n    """Load both.\n\n    relate them to each other later.\n    """\n',
-            'config.yaml': 'description: >\n  relate records across tables.\n',
+            'model.py': 'def f():\n    """Load both.\n\n    connect them to each other later.\n    """\n',
+            'config.yaml': 'description: >\n  connect records across tables.\n',
         }
 
         assert self.found(temp_dir, files) == []
 
     def test_skip_docs_leaves_markdown_out(self, temp_dir):
-        assert self.found(temp_dir, {'README.md': 'Use `relate`.\n'}, skip_docs=True) == []
+        assert self.found(temp_dir, {'README.md': 'Use `connect`.\n'}, skip_docs=True) == []

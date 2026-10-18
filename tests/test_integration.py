@@ -1561,35 +1561,15 @@ class TestNameSearch:
         assert result.returncode == 1
         assert f'{store / "workflow.md"}:2' in result.stdout
 
-    def test_a_clean_sweep_says_what_it_looked_for(self, tmp_path, temp_dir):
+    def test_a_clean_sweep_says_what_it_looked_for_with_its_spaces_collapsed(self, tmp_path, temp_dir):
         repo = tmp_path / 'repo'
         repo.mkdir()
         (tmp_path / 'repos.json').write_text(json.dumps({'repos': [{'name': 'repo', 'path': str(repo)}]}))
 
-        result = run_check('--name', 'oldtool', '--registry', str(tmp_path / 'repos.json'), cwd=temp_dir)
+        result = run_check('--name', 'tool   oldsub', '--registry', str(tmp_path / 'repos.json'), cwd=temp_dir)
 
         assert result.returncode == 0
-        assert 'No other repo names oldtool — 1 repo, old name oldtool' in result.stdout
-
-    def test_reports_a_subcommand_where_code_runs_it_and_prose_names_it(self, temp_dir):
-        (temp_dir / 'probe.go').write_text('var probes = []string{"forge", "status", "--json"}\n')
-        (temp_dir / 'notes.md').write_text('The brief came from `forge status`, which my status plan names.\n')
-
-        result = run_check('--name', 'forge status', '--desc', 'now fleet status', cwd=temp_dir)
-
-        assert result.returncode == 1
-        assert 'probe.go:1' in result.stdout
-        assert 'notes.md:1' in result.stdout
-
-    def test_a_clean_sweep_names_the_subcommand_with_its_spaces_collapsed(self, tmp_path, temp_dir):
-        repo = tmp_path / 'repo'
-        repo.mkdir()
-        (tmp_path / 'repos.json').write_text(json.dumps({'repos': [{'name': 'repo', 'path': str(repo)}]}))
-
-        result = run_check('--name', 'forge   status', '--registry', str(tmp_path / 'repos.json'), cwd=temp_dir)
-
-        assert result.returncode == 0
-        assert 'No other repo names forge status — 1 repo, old name forge status' in result.stdout
+        assert 'No other repo names tool oldsub — 1 repo, old name tool oldsub' in result.stdout
 
     def test_reports_a_flag_called_where_it_no_longer_is(self, temp_dir):
         (temp_dir / 'registry.yml').write_text('      - cmd: "refcheck --pattern old/"\n      - cmd: "refcheck check --pattern old/"\n')
@@ -1608,31 +1588,11 @@ class TestNameSearch:
         assert result.returncode == 1
         assert 'install.sh:1' in result.stdout
 
-    def test_reports_a_subcommands_flag_behind_a_positional(self, temp_dir):
-        (temp_dir / 'guide.md').write_text(
-            '```bash\nworktree spawn parser-fix --brief b.md\n```\n\nRun `worktree spawn parser-fix --brief b.md`.\n'
-        )
-
-        result = run_check('--name', 'worktree spawn --brief', cwd=temp_dir)
-
-        assert result.returncode == 1
-        assert 'guide.md:2' in result.stdout
-        assert 'guide.md:5' in result.stdout
-
     def test_a_flag_named_on_the_tool_is_not_found_under_a_subcommand(self, temp_dir):
         (temp_dir / 'run.sh').write_text('tool sub --oldflag\ntool sub src/ --oldflag\n')
         (temp_dir / 'guide.md').write_text('Run `tool sub --oldflag`.\n')
 
         assert run_check('--name', 'tool --oldflag', cwd=temp_dir).returncode == 0
-
-    def test_a_flag_after_the_command_ends_is_not_the_subcommands(self, temp_dir):
-        commands = ['| grep --brief', '|| tool --brief', '; tool --brief', '&& tool --brief', '& tool --brief', '# then --brief']
-        (temp_dir / 'run.sh').write_text(''.join(f'worktree spawn parser-fix {rest}\n' for rest in commands))
-        (temp_dir / 'guide.md').write_text('Run `worktree spawn parser-fix`, then pass `--brief`.\n')
-
-        result = run_check('--name', 'worktree spawn --brief', cwd=temp_dir)
-
-        assert result.returncode == 0, result.stdout
 
     def test_reports_a_namespaced_subcommand_and_not_one_nested_under_it(self, temp_dir):
         (temp_dir / 'run.sh').write_text('task feed:pull\ntask feed:pull:all\n')

@@ -46,12 +46,19 @@ HELP = (
     'for a rename.'
 )
 
-CHECK_HELP = (
+FLAG_MAP_HEADING = 'Which flag answers which change'
+
+CHECK_SUMMARY = (
     'Validate every file reference in the tree. Give it a directory to narrow the search, --pattern '
     'to ask the one question a move leaves behind — what still points at the old path? — or --name to '
     'ask what a rename or a removal leaves behind: where is a tool, a subcommand or a flag that is gone '
-    'still named? "Which flag answers which change", below, maps each kind of change to its flag.'
+    'still named?'
 )
+
+# The flag map prints only in check's own help. The root's command list shows
+# CHECK_SHORT_HELP, so it names where the map is rather than saying "below".
+CHECK_HELP = f'{CHECK_SUMMARY} "{FLAG_MAP_HEADING}", below, maps each kind of change to its flag.'
+CHECK_SHORT_HELP = f'{CHECK_SUMMARY} "{FLAG_MAP_HEADING}", in [b]refcheck check --help[/b], maps each kind of change to its flag.'
 
 EPILOG = '\n\n'.join(
     [
@@ -82,7 +89,7 @@ EPILOG = '\n\n'.join(
 
 CHECK_EPILOG = '\n\n'.join(
     [
-        '[b]Which flag answers which change[/b]',
+        f'[b]{FLAG_MAP_HEADING}[/b]',
         (
             'Moved, renamed or deleted a file or directory: --moves before committing, --moves-since '
             '<base> over a branch, or --pattern "old/path/" by hand. With --registry, --moves also asks '
@@ -219,7 +226,7 @@ def root(
     """Options that belong to refcheck itself rather than to any one of its commands."""
 
 
-@app.command(help=CHECK_HELP, epilog=CHECK_EPILOG)
+@app.command(help=CHECK_HELP, short_help=CHECK_SHORT_HELP, epilog=CHECK_EPILOG)
 def check(
     path: Annotated[
         Path | None,

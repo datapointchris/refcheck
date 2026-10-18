@@ -20,13 +20,14 @@ and another machine's paths are read behind guards that keep them quiet.
 ## Install
 
 ```bash
-uv tool install "refcheck @ git+https://github.com/datapointchris/refcheck.git@$(gh release view --repo datapointchris/refcheck --json tagName -q .tagName)"
-refcheck update   # later: reinstall at the latest GitHub release
+uv tool install --index https://pypi.ichrisbirch.com/simple/ refcheck
+refcheck update   # later: reinstall at the latest release
 ```
 
-Install a tag, not the default branch. Substitute one explicitly if you would
-rather not shell out to `gh`. `refcheck update` reads uv's receipt and refuses a
-branch install, whose version says nothing about how far behind it is.
+Every release is published to that package index. Name it on the install.
+Without it uv asks PyPI, where `refcheck` is a different project. uv records the
+index beside the tool, which is where `refcheck update` reads it back. A branch
+install carries no release version, so `refcheck update` refuses it.
 
 A run at a terminal checks for a newer release at most once a day. It prints one
 line to stderr when it is behind. `NO_AUTO_UPDATE` silences it.

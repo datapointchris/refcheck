@@ -49,9 +49,6 @@ ignore_missing_imports = true
 check_untyped_defs = false
 warn_return_any = false
 
-# `standard` replaces the per-rule opt-outs repos used to accumulate; basedpyright
-# defaults to `recommended`, which turns every one of them back on. Named
-# `pyright` so both basedpyright and Pylance read it.
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -124,9 +121,9 @@ version_variables = ["README.md:rev:tf"]
 commit_message = "build(release): {version}"
 
 
-# ---------- Build System ---------- #
-
-
+# `standard` is set here so a repo needs no per-rule opt-outs of its own.
+# basedpyright defaults to `recommended`, which turns every one of them back on.
+# Named `pyright` so both basedpyright and Pylance read it.
 [tool.pyright]
 typeCheckingMode = "standard"
 analyzeUnannotatedFunctions = true  # or pylance stops analyzing in vscode
@@ -170,8 +167,12 @@ managed = [
 # and extra that names them, so a local run and CI cannot disagree.
 pinned = ["ruff"]
 
+
+# ---------- Build System ---------- #
+
+
 # The release tag is the version. The README's pre-commit rev is the one file
-# python-semantic-release still stamps, so a release here writes one commit
+# python-semantic-release stamps, so a release here writes one commit
 # carrying it, and the tag sits on that commit.
 [tool.hatch.version]
 source = "uv-dynamic-versioning"

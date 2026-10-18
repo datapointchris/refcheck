@@ -135,7 +135,7 @@ CHECK_EPILOG = '\n\n'.join(
         '[b]What --name counts as a use of the name[/b]',
         (
             'On any line: a code span opening on it, a quoted literal, bold or a table cell holding only '
-            'it, and a path segment such as ~/tools/oldtool or oldtool.db. On a line of code or config, '
+            'it, and a path segment such as ~/.local/bin/oldtool or oldtool.db. On a line of code or config, '
             'also an import, a value that is only it, a list item, and a line opening on it in aligned '
             'columns. On a line a shell would run, the whole word outside a comment.'
         ),

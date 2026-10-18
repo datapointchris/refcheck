@@ -8,38 +8,40 @@ most lines holding it use the word.
 So which shapes count depends on what kind of text the line is. Each shape is one
 that text of that kind does not take when it means the English word:
 
-- Any line: a code span opening on it (`relate`, `relate check`), a quoted
-  literal holding only it ("relate"), a path segment (~/tools/relate, relate.db,
-  relate.storage), bold holding only it, or a table cell holding only it.
+- Any line: a code span opening on it (`oldtool`, `oldtool check`), a quoted
+  literal holding only it ("oldtool"), a path segment (~/.local/bin/oldtool,
+  oldtool.db, oldtool.storage), bold holding only it, or a table cell holding only
+  it.
 - A line of code or config: also an import of it, a value that is only it
-  (`name: relate`), an item in a bracketed list ([indy, relate]) or a comma list
-  with no spaces (-F relate,nomad), and a line opening on it in aligned columns.
+  (`name: oldtool`), an item in a bracketed list ([othertool, oldtool]) or a comma
+  list with no spaces (-F oldtool,othertool), and a line opening on it in aligned
+  columns.
 - A line a shell would run: the whole word anywhere outside a comment, because a
   shell line holds commands and their arguments, not sentences.
 
-What none of them reaches is the name in running prose, as in "across indy, relate
-and syncer". Nothing on such a line tells the tool from the verb, so it is left to
-a reader.
+What none of them reaches is the name in running prose, as in "across othertool,
+oldtool and anothertool". Nothing on such a line tells the tool from the word, so
+it is left to a reader.
 
 A subcommand may join segments with `:`, the way a task runner or a package
 manager namespaces its scripts (`task feed:pull`). A longer name opening on it,
 `task feed:pull:all`, is a different subcommand, and so is `task feed:pull` to
 an old `task feed`.
 
-A name of several words is a tool and its subcommand, as in `forge brief`. On a
+A name of several words is a tool and its subcommand, as in `tool oldsub`. On a
 line of code, config or shell, the words in order count, comments included, and so
-does an installed path ahead of the tool (/usr/bin/forge brief). In prose the
-phrase may be English (`learning plan`), so it counts only in a single name's
+does an installed path ahead of the tool (/usr/bin/tool oldsub). In prose the
+phrase may be English (`release notes`), so it counts only in a single name's
 shapes: a code span, a quoted literal, bold or a table cell. On every line it also
-counts as consecutive quoted items of an argument list, `["forge", "brief"]`.
+counts as consecutive quoted items of an argument list, `["tool", "oldsub"]`.
 
 A word after the first may be a flag, as in `refcheck --pattern`, for a flag that
 moved under a subcommand or went away. Other flags may stand before it. A word
 between the tool and the flag that is not itself a flag is taken for a
 subcommand, so `refcheck check --pattern`, the corrected call, is not matched.
 
-A flag named after a subcommand, as in `worktree spawn --brief`, may follow any
-argument of that command: `worktree spawn parser-fix --brief b.md`. The command
+A flag named after a subcommand, as in `tool sub --oldflag`, may follow any
+argument of that command: `tool sub src/ --oldflag value`. The command
 path is already fixed by the name, so a word after it is a positional or a value.
 The command ends at a pipe, a `;`, a `&`, a comment or the end of a code span.
 """
@@ -125,7 +127,7 @@ class NameShapes:
 
     @classmethod
     def of_command(cls, words: list[str]) -> 'NameShapes':
-        """The shapes for a name of several words: a tool and its subcommand, `forge brief`,
+        """The shapes for a name of several words: a tool and its subcommand, `tool oldsub`,
         or a tool and its flag, `refcheck --pattern`.
 
         Other flags may stand before a flag word, since a tool that drops one flag

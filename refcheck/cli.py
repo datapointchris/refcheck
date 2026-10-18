@@ -102,7 +102,9 @@ CHECK_EPILOG = '\n\n'.join(
             'Which of [i]this[/i] repo’s directories hold generated output is a fact only the repo '
             f'knows, so it says so in [b]{REPO_CONFIG_NAME}[/b] at its root:'
         ),
-        '[b][scan][/b]\n[b]exclude = ["build/reports/**", "*.snapshot.json"][/b]',
+        # Rich reads a bracketed lowercase word as a style tag and drops it. The
+        # backslash keeps the table name in the output.
+        '[b]\\[scan][/b]\n[b]exclude = ["build/reports/**", "*.snapshot.json"][/b]',
         (
             'A file written by a tool names what a path was when the tool ran, so a hit inside one is '
             'history rather than a stale reference. --exclude adds a pattern for one run without '

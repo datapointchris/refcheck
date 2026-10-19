@@ -23,7 +23,7 @@ dev = [
     "mypy>=1.10.0",
     "pre-commit>=4.3.0",
     "pytest>=8.0.0",
-    "ruff==0.12.5",
+    "ruff==0.17.1",
 ]
 
 
@@ -128,6 +128,20 @@ commit_message = "build(release): {version}"
 typeCheckingMode = "standard"
 analyzeUnannotatedFunctions = true  # or pylance stops analyzing in vscode
 
+[tool.hatch.version]
+source = "uv-dynamic-versioning"
+
+[tool.uv-dynamic-versioning]
+style = "semver"
+# pre-commit builds this hook inside the commit that first uses it, with that
+# repo's GIT_INDEX_FILE still exported. git then cannot read this checkout, so
+# the build needs a version that does not come from git.
+fallback-version = "0.0.0"
+
+# A new commit or tag changes the version, so it has to invalidate uv's cache.
+[tool.uv]
+cache-keys = [{ file = "pyproject.toml" }, { git = { commit = true, tags = true } }]
+
 [tool.forge]
 # Keys the shared toolchain standard owns, written by its generator.
 # Dropping one from the template removes it here on the next sync; a key absent
@@ -166,27 +180,6 @@ managed = [
 # Dependencies held at the version the pre-commit hook runs, in every group
 # and extra that names them, so a local run and CI cannot disagree.
 pinned = ["ruff"]
-
-
-# ---------- Build System ---------- #
-
-
-# The release tag is the version. The README's pre-commit rev is the one file
-# python-semantic-release stamps, so a release here writes one commit
-# carrying it, and the tag sits on that commit.
-[tool.hatch.version]
-source = "uv-dynamic-versioning"
-
-[tool.uv-dynamic-versioning]
-style = "semver"
-# pre-commit builds this hook inside the commit that first uses it, with that
-# repo's GIT_INDEX_FILE still exported. git then cannot read this checkout, so
-# the build needs a version that does not come from git.
-fallback-version = "0.0.0"
-
-# A new commit or tag changes the version, so it has to invalidate uv's cache.
-[tool.uv]
-cache-keys = [{ file = "pyproject.toml" }, { git = { commit = true, tags = true } }]
 
 [build-system]
 requires = ["hatchling", "uv-dynamic-versioning"]

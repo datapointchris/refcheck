@@ -37,7 +37,7 @@ As a pre-commit hook, in `.pre-commit-config.yaml`:
 ```yaml
 repos:
   - repo: https://github.com/datapointchris/refcheck
-    rev: v2.7.8
+    rev: v2.7.9
     hooks:
       - id: refcheck
         args: [--moves]

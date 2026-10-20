@@ -344,6 +344,7 @@ line:
 | --- | --- | --- |
 | Code, config or shell | The words in order, comments included, with or without an installed path ahead of the tool | `tool oldsub --json`, `f'tool oldsub failed: {e}'`, `ExecStart=/usr/bin/tool oldsub`, `"$HOME/go/bin/tool" oldsub` |
 | Any | Consecutive quoted items of an argument list | `["tool", "oldsub"]`, `exec.Command("/usr/bin/tool", "oldsub")` |
+| Code or config | Consecutive items of a bracketed list, quoted or not | `command: [tool, oldsub, --json]` |
 | Any | A code span opening on it, a quoted literal, bold or a table cell holding only it | `` `tool oldsub` ``, `"tool oldsub"`, `**tool oldsub**` |
 
 A flag between the two, `tool --json oldsub`, is not matched. Neither is a

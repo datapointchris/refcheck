@@ -34,6 +34,8 @@ does an installed path ahead of the tool (/usr/bin/tool oldsub). In prose the
 phrase may be English (`release notes`), so it counts only in a single name's
 shapes: a code span, a quoted literal, bold or a table cell. On every line it also
 counts as consecutive quoted items of an argument list, `["tool", "oldsub"]`.
+On a line of code or config the items of a bracketed list may also go unquoted,
+the way a YAML flow list writes them: `[tool, oldsub]`.
 
 A word after the first may be a flag, as in `refcheck --pattern`, for a flag that
 moved under a subcommand or went away. Other flags may stand before it. A word
@@ -144,26 +146,29 @@ class NameShapes:
             rest.append((re.escape(word), is_flag, after_subcommand))
             after_subcommand = after_subcommand or not is_flag
         kept = r'(?:\s+-[\w-]+)*'
-        argv_kept = r'(?:\s*,\s*["\']-[\w-]+["\'])*'
         any_argument = r'(?:\s+(?!\#)[^\s|;&`]+)*?'
-        argv_any_item = r'(?:\s*,[^,\]\n]+)*?'
+        any_item = r'(?:\s*,[^,\]\n]+)*?'
 
         def before(is_flag: bool, after_subcommand: bool) -> str:
             if not is_flag:
                 return ''
             return any_argument if after_subcommand else kept
 
-        def argv_before(is_flag: bool, after_subcommand: bool) -> str:
-            if not is_flag:
-                return ''
-            return argv_any_item if after_subcommand else argv_kept
+        def listed(quote: str) -> str:
+            """The words after the tool as list items, each wrapped in `quote`."""
+            kept_items = rf'(?:\s*,\s*{quote}-[\w-]+{quote})*'
+            items = []
+            for word, is_flag, after in rest:
+                if is_flag:
+                    items.append(any_item if after else kept_items)
+                items.append(rf'\s*,\s*{quote}{word}{quote}')
+            return ''.join(items)
 
         tail = ''.join(rf'{before(is_flag, after)}\s+{word}' for word, is_flag, after in rest) + r'(?![\w-]|:\w)'
         installed = r'(?:[\w.~${}/-]*/)?'
         quoted_installed = r'(?:[^"\'\s]*/)?'
-        argv = rf'["\']{quoted_installed}{tool}["\']' + ''.join(
-            rf'{argv_before(is_flag, after)}\s*,\s*["\']{word}["\']' for word, is_flag, after in rest
-        )
+        argv = rf'["\']{quoted_installed}{tool}["\']' + listed(r'["\']')
+        flow_list = rf'\[(?:[^\]\n]*,)?\s*["\']?{installed}{tool}["\']?' + listed(r'["\']?') + r'\s*[,\]]'
         anywhere = re.compile(
             rf"""
               `{installed}{tool}{tail}                  # opens a code span
@@ -174,7 +179,7 @@ class NameShapes:
             """,
             re.VERBOSE,
         )
-        in_code = re.compile(rf'(?<![\w.$-]){tool}["\']?{tail}')
+        in_code = re.compile(rf'(?<![\w.$-]){tool}["\']?{tail}|{flow_list}')
         return cls(anywhere=anywhere, in_code=in_code, in_shell=re.compile(r'(?!)'), first_word=words[0])
 
     def names_it(self, line: str, kind: LineKind) -> bool:

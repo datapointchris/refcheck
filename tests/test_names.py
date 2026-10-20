@@ -235,6 +235,7 @@ class TestAToolAndItsFlag:
             ('tool sub "$slug" --timeout 30 --oldflag b.md', LineKind.SHELL),
             ('Run `tool sub parser-fix --oldflag b.md` next.', LineKind.PROSE),
             ('subprocess.run(["tool", "sub", slug, "--oldflag", str(brief)])', LineKind.ANOTHER_LANGUAGE),
+            ("    command: [tool, sub, --status, done, --oldflag, '{today}', --json]", LineKind.ANOTHER_LANGUAGE),
         ],
     )
     def test_a_subcommands_flag_is_named_behind_its_arguments(self, line, kind):
@@ -251,6 +252,7 @@ class TestAToolAndItsFlag:
             'Run `tool sub parser-fix` with `--oldflag`.',
             'run(["tool", "sub", slug]); log(["--oldflag"])',
             'tool new parser-fix --oldflag b.md',
+            'command: [tool, sub, --oldflag-file, b.md]',
         ],
     )
     def test_a_flag_outside_the_subcommands_command_stays_silent(self, line):

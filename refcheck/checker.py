@@ -79,9 +79,8 @@ class ReferenceChecker:
         # noise in the run.
         'CHANGELOG.md',
         # A backup is a copy of what a file said when it was taken, the same
-        # record a changelog is. Sweeping a renamed tool's old name across a
-        # harness directory, every hit in its timestamped config backups named
-        # the tool correctly for the day each was written.
+        # record a changelog is, so an old name in one was correct on the day
+        # it was written.
         '*.bak',
         '*.backup',
         '*.backup.*',
@@ -573,8 +572,8 @@ class ReferenceChecker:
 
         A file deleted between the walk and the read is not recorded either.
         Nothing is left in it to miss, and a tree with live processes in it
-        churns: a session registry under `~/.claude/sessions/` lasts as long as
-        its session, and one ending mid-sweep failed a run that missed nothing.
+        churns: a file that lasts only as long as its process would otherwise
+        fail a run that missed nothing.
         """
         try:
             return file_path.read_text(encoding='utf-8').splitlines(keepends=True)
@@ -1031,12 +1030,7 @@ class ReferenceChecker:
 
     @classmethod
     def _evidence(cls, line: str) -> str:
-        """The line a name was found on, as the reader needs it to judge the hit.
-
-        A row saying only that the name was found leaves every hit to be opened
-        by hand, and the hits a reader is told to read rather than fix are the
-        ones that most need reading.
-        """
+        """The line a name was found on, as the reader needs it to judge the hit."""
         text = line.strip()
         return text if len(text) <= cls.EVIDENCE_WIDTH else f'{text[: cls.EVIDENCE_WIDTH - 1]}…'
 

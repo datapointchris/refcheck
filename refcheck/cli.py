@@ -367,9 +367,7 @@ def check(
         print(f'refcheck: {" and ".join(asked)} each ask a different question, so pass one per run.', file=sys.stderr)
         raise typer.Exit(2)
 
-    # A name is one word or several, each of word characters, dots and hyphens,
-    # and any word after the first may be a flag or join segments with ':'. A
-    # slash makes it a path, which --pattern resolves and --name would only
+    # A slash makes it a path, which --pattern resolves and --name would only
     # match as text.
     if name is not None:
         first, *rest = name.split() or ['']

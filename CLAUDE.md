@@ -171,8 +171,9 @@ generator.
 
 `release.yml` runs `validate.yml` and then python-semantic-release, through a
 shared reusable workflow. There is no changelog file. Release notes live in the
-GitHub release body. The version lives only in `pyproject.toml` and is read at
-run time through `importlib.metadata`.
+GitHub release body. The release tag is the version: hatchling reads it through
+uv-dynamic-versioning at build time, and `refcheck --version` reads the
+installed metadata through `importlib.metadata`.
 
 The release rewrites the `rev:` line in the README's pre-commit example, so
 that pin is never bumped by hand. A consumer pins a rev, so a change to

@@ -211,11 +211,6 @@ def names_across_repos(
 ) -> SweepResult:
     """Ask every listed repo where it still names a tool that was renamed.
 
-    The other half of a rename. A moved path is something git recorded and a
-    resolver can test, while a renamed tool is a word left in prose, commands and
-    paths across every repo and store that ever mentioned it. Neither the renaming
-    repo nor a path check can see those, so the sweep reads them where they are.
-
     Nothing is credited to an owner, because a name is stale wherever it stands.
 
     `already_scanned` is the tree the local run read, and the sweep reads none of

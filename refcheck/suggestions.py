@@ -4,6 +4,20 @@ from difflib import get_close_matches
 from fnmatch import fnmatch
 from pathlib import Path
 
+CARGO_BUILD_DIR = 'target beside a Cargo.toml'
+
+
+def is_cargo_build_dir(directory: Path) -> bool:
+    """Whether a directory is Cargo's build output, which sits beside the Cargo.toml that owns it.
+
+    Its dependency files and fingerprints name every source file as of the last
+    build. Deleting one module from a Rust workspace failed --moves on two `.d`
+    files under crates/target and on nothing else. A `target` with no Cargo.toml
+    beside it is matched by nothing here, so a source directory of that name is
+    still read.
+    """
+    return directory.name == 'target' and (directory.parent / 'Cargo.toml').is_file()
+
 
 class FileSuggestions:
     """Find similar files for missing references."""
@@ -31,6 +45,8 @@ class FileSuggestions:
         """
         if any(part in self.exclude_dirs for part in rel_path.parts):
             return True
+        if is_cargo_build_dir(self.root_dir / rel_path):
+            return True
         return any(fnmatch(f'{rel_path.as_posix()}/', pattern) for pattern in self.exclude_patterns)
 
     def should_skip_file(self, file_path: Path) -> bool:
@@ -38,6 +54,9 @@ class FileSuggestions:
         for part in file_path.parts:
             if part in self.exclude_dirs:
                 return True
+
+        if any(is_cargo_build_dir(self.root_dir / parent) for parent in file_path.parents if parent.name == 'target'):
+            return True
 
         if self._matches_exclusion(file_path):
             return True

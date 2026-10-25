@@ -28,6 +28,7 @@ from .rules import get_repo_root
 from .rules import learn_rules_from_git
 from .selfupdate import CONFIG as UPDATE_CONFIG
 from .selfupdate import print_version
+from .suggestions import CARGO_BUILD_DIR
 
 HELP = (
     'Find file references that no longer resolve, and path patterns that will break the next time '
@@ -341,6 +342,7 @@ def check(
             config.config_path,
             [
                 ('Excluded directory names', sorted(ReferenceChecker.DEFAULT_EXCLUDES)),
+                ('Build output', [CARGO_BUILD_DIR]),
                 ('Built-in patterns', ReferenceChecker.DEFAULT_EXCLUDE_PATTERNS),
                 ('Test fixtures, scanned under --test-mode', [] if test_mode else ReferenceChecker.TEST_FIXTURE_PATTERNS),
                 (f'{REPO_CONFIG_NAME} [scan] exclude', repo_patterns),

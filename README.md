@@ -510,8 +510,8 @@ refcheck check --test-mode                    # read the recorded fixtures too
 ```
 
 The built-in list holds what is true of any repository: version control and
-dependency directories, tool caches, logs, changelogs, backups, coverage output,
-and recorded fixtures (`fixtures/`, `testdata/`, `docs/archive/`). Each records
+dependency directories, tool caches, Cargo's build directory (a `target` beside a
+`Cargo.toml`), logs, changelogs, backups, coverage output, and recorded fixtures (`fixtures/`, `testdata/`, `docs/archive/`). Each records
 what a path *was*. A changelog entry naming the old location is correct rather
 than stale. A captured tool output names every file that existed when it was
 taken. It is fixed by re-running the tool, never by editing. A file with a NUL

@@ -24,6 +24,7 @@ from .output import Issue
 from .output import Unreadable
 from .registry import Registry
 from .registry import Repo
+from .suggestions import is_cargo_build_dir
 
 
 @dataclass
@@ -190,8 +191,12 @@ def held_filenames(roots: Sequence[Path]) -> set[str]:
     """
     held: set[str] = set()
     for root in roots:
-        for _, directories, files in os.walk(root):
-            directories[:] = [directory for directory in directories if directory not in ReferenceChecker.DEFAULT_EXCLUDES]
+        for parent, directories, files in os.walk(root):
+            directories[:] = [
+                directory
+                for directory in directories
+                if directory not in ReferenceChecker.DEFAULT_EXCLUDES and not is_cargo_build_dir(Path(parent) / directory)
+            ]
             held.update(files)
     return held
 

@@ -944,6 +944,21 @@ def test_pattern_ignores_hits_inside_tool_caches(tmp_path):
     assert 'docs/guide.md' in str(checker.issues[0])
 
 
+def test_pattern_skips_cargo_build_output_and_reads_a_source_dir_named_target(tmp_path):
+    """Deleting a module from a Rust workspace failed --moves on the `.d` files Cargo left in crates/target."""
+    (tmp_path / 'crates' / 'target' / 'debug').mkdir(parents=True)
+    (tmp_path / 'crates' / 'Cargo.toml').write_text('[workspace]\n')
+    (tmp_path / 'crates' / 'target' / 'debug' / 'libwidget.d').write_text('crates/widget/src/old_module.rs\n')
+    (tmp_path / 'deploy' / 'target').mkdir(parents=True)
+    (tmp_path / 'deploy' / 'target' / 'notes.md').write_text('See crates/widget/src/old_module.rs.\n')
+
+    checker = ReferenceChecker(tmp_path)
+    checker.check_pattern('crates/widget/src/old_module.rs', 'deleted')
+
+    assert len(checker.issues) == 1
+    assert 'deploy/target/notes.md' in str(checker.issues[0])
+
+
 def test_pattern_expands_a_home_rooted_token_before_resolving_it(tmp_path, monkeypatch):
     """A corrected reference to another repo hangs off no root in this one.
 

@@ -61,35 +61,55 @@ CHECK_SUMMARY = (
 CHECK_HELP = f'{CHECK_SUMMARY} "{FLAG_MAP_HEADING}", below, maps each kind of change to its flag.'
 CHECK_SHORT_HELP = f'{CHECK_SUMMARY} "{FLAG_MAP_HEADING}", in [b]refcheck check --help[/b], maps each kind of change to its flag.'
 
+EXAMPLES_HEADING = '[b]Examples[/b]'
+
+# The root's help and check's own help show the same check examples, so both
+# read them from here.
+CHECK_EXAMPLES = [
+    '[b]refcheck check[/b] — every source and bash reference in the repo, plus fragile-path warnings',
+    '[b]refcheck check apps/ --type sh[/b] — narrow to one directory and one file type',
+    '[b]refcheck check --strict[/b] — CI mode, where a warning is a failure',
+    '[b]refcheck check --pattern "old/path/" --desc "now new/path/"[/b] — after a move, what still points at the old path',
+    '[b]refcheck check --moves[/b] — ask that of every rename and deletion you have staged, without naming them',
+    '[b]refcheck check --moves-since origin/main[/b] — the same over a branch, for CI',
+    (
+        '[b]refcheck check --moves-since origin/main --registry <repos.json>[/b] — and of every other '
+        'repo the registry lists, which is where a rename breaks something you cannot see'
+    ),
+    (
+        '[b]refcheck check --name oldtool --desc "now newtool" --registry <repos.json> --registry <stores.json>[/b] '
+        '— after renaming a tool, every place in every listed repo and store that still names it'
+    ),
+    (
+        '[b]refcheck check --name "tool oldsub" --desc "now newtool sub" --registry <repos.json> --registry <stores.json>[/b] '
+        '— after renaming, moving or removing a subcommand, every caller and every mention of it'
+    ),
+    '[b]refcheck check --show-config[/b] — every exclusion in force, and the layer that set it',
+]
+
+LEARN_RULES_EXAMPLE = "[b]refcheck learn-rules[/b] — derive pattern rules from git's own rename history"
+
 EPILOG = '\n\n'.join(
     [
-        '[b]Examples[/b]',
-        '[b]refcheck check[/b] — every source and bash reference in the repo, plus fragile-path warnings',
-        '[b]refcheck check apps/ --type sh[/b] — narrow to one directory and one file type',
-        '[b]refcheck check --strict[/b] — CI mode, where a warning is a failure',
-        '[b]refcheck check --pattern "old/path/" --desc "now new/path/"[/b] — after a move, what still points at the old path',
-        '[b]refcheck check --moves[/b] — ask that of every rename and deletion you have staged, without naming them',
-        '[b]refcheck check --moves-since origin/main[/b] — the same over a branch, for CI',
-        (
-            '[b]refcheck check --moves-since origin/main --registry <repos.json>[/b] — and of every other '
-            'repo the registry lists, which is where a rename breaks something you cannot see'
-        ),
-        (
-            '[b]refcheck check --name oldtool --desc "now newtool" --registry <repos.json> --registry <stores.json>[/b] '
-            '— after renaming a tool, every place in every listed repo and store that still names it'
-        ),
-        (
-            '[b]refcheck check --name "tool oldsub" --desc "now newtool sub" --registry <repos.json> --registry <stores.json>[/b] '
-            '— after renaming, moving or removing a subcommand, every caller and every mention of it'
-        ),
-        '[b]refcheck check --show-config[/b] — every exclusion in force, and the layer that set it',
-        "[b]refcheck learn-rules[/b] — derive pattern rules from git's own rename history",
+        EXAMPLES_HEADING,
+        *CHECK_EXAMPLES,
+        LEARN_RULES_EXAMPLE,
         '[b]refcheck update[/b] — install the latest release',
+    ]
+)
+
+LEARN_RULES_EPILOG = '\n\n'.join(
+    [
+        EXAMPLES_HEADING,
+        LEARN_RULES_EXAMPLE,
+        '[b]refcheck check[/b] — a broken source or bash reference then lists what the learned rules say replaced its target',
     ]
 )
 
 CHECK_EPILOG = '\n\n'.join(
     [
+        EXAMPLES_HEADING,
+        *CHECK_EXAMPLES,
         f'[b]{FLAG_MAP_HEADING}[/b]',
         (
             'Moved, renamed or deleted a file or directory: --moves before committing, --moves-since '
@@ -486,7 +506,7 @@ def check(
     raise typer.Exit(0)
 
 
-@app.command(name='learn-rules')
+@app.command(name='learn-rules', epilog=LEARN_RULES_EPILOG)
 def learn_rules():
     """Write rules.json from git's rename history, so a miss can suggest what replaced it."""
     learn_rules_from_git(load_config(Path.cwd()).time_window)

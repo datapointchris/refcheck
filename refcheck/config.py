@@ -25,6 +25,17 @@ def user_config_dir() -> Path:
     return root / 'refcheck'
 
 
+def user_state_dir() -> Path:
+    """refcheck's directory under `$XDG_STATE_HOME`, or under ~/.local/state when that is unset.
+
+    The learned rules live here: refcheck writes them, nobody edits them, and
+    deleting them changes what a run suggests rather than costing a recompute.
+    """
+    base = os.environ.get('XDG_STATE_HOME')
+    root = Path(base) if base else Path.home() / '.local' / 'state'
+    return root / 'refcheck'
+
+
 def user_config_path() -> Path:
     """Where the per-user config lives."""
     return user_config_dir() / 'config.toml'

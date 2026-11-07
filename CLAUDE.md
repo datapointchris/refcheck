@@ -157,9 +157,9 @@ it in place.
   installed tests the installed release instead.
 - **Fixtures build their trees under `tmp_path`, with `HOME` pointed there.**
   A test reading a directory on the machine makes its result a property of
-  that machine. The user config and the rules files sit under
-  `$XDG_CONFIG_HOME` when it is set, so the autouse `config_follows_home`
-  unsets it and both follow `HOME`.
+  that machine. The user config sits under `$XDG_CONFIG_HOME` and the rules
+  files under `$XDG_STATE_HOME` when each is set, so the autouse
+  `config_follows_home` unsets both and each follows `HOME`.
 - **A fixture or docstring names a placeholder tool, never a real one.** A real
   tool's old name written here is a hit in every cross-repo sweep for that
   rename.

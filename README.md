@@ -492,10 +492,11 @@ with no suggestion. To catch what a move left behind, reach for `--moves`. It
 reads the change you are making, not history describing moves already
 reconciled.
 
-The rules land at `$XDG_CONFIG_HOME/refcheck/repos/<path>/rules.json`, where
+The rules land at `$XDG_STATE_HOME/refcheck/repos/<path>/rules.json`, where
 `<path>` is the checkout's absolute path with each `/` written as `--`.
-`~/.config` stands in for an unset `$XDG_CONFIG_HOME`. The user config sets how
-far back the history is read:
+`~/.local/state` stands in for an unset `$XDG_STATE_HOME`. The file is state:
+refcheck writes it and nobody edits it, so `refcheck learn-rules` is how it
+changes. The user config sets how far back the history is read:
 
 ```toml
 # $XDG_CONFIG_HOME/refcheck/config.toml, or ~/.config/refcheck/config.toml

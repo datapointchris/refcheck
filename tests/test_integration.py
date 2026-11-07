@@ -492,7 +492,7 @@ class TestLearnRules:
 
     def rules_file_for(self, repo):
         safe_name = str(repo).lstrip('/').replace('/', '--')
-        return Path.home() / '.config' / 'refcheck' / 'repos' / safe_name / 'rules.json'
+        return Path.home() / '.local' / 'state' / 'refcheck' / 'repos' / safe_name / 'rules.json'
 
     def test_runs_learn_rules(self, deployed_repo):
         result = run_refcheck('learn-rules', cwd=deployed_repo)

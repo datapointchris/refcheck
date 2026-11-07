@@ -1,7 +1,5 @@
 """Shared fixtures for refcheck tests."""
 
-import datetime as dt
-import json
 import os
 import subprocess
 import tempfile
@@ -41,12 +39,14 @@ def detached_from_the_calling_git():
 def config_follows_home(monkeypatch):
     """Put the user config and the rules files under whatever HOME a test sets.
 
-    Both live under `$XDG_CONFIG_HOME` when it is set. A test points HOME at its
-    own directory to keep them there, and an inherited XDG_CONFIG_HOME would
-    send `learn-rules` to write into the caller's real config. A test that sets
-    the variable itself does so after this fixture runs.
+    The config lives under `$XDG_CONFIG_HOME` and the rules under
+    `$XDG_STATE_HOME` when each is set. A test points HOME at its own directory
+    to keep them there, and an inherited XDG_STATE_HOME would send `learn-rules`
+    to write into the caller's real state. A test that sets either variable
+    itself does so after this fixture runs.
     """
     monkeypatch.delenv('XDG_CONFIG_HOME', raising=False)
+    monkeypatch.delenv('XDG_STATE_HOME', raising=False)
 
 
 @pytest.fixture
@@ -225,27 +225,6 @@ def config_dir(temp_dir, monkeypatch):
     monkeypatch.setenv('HOME', str(temp_dir))
     monkeypatch.setenv('XDG_CONFIG_HOME', str(temp_dir / '.config'))
     return config_path
-
-
-@pytest.fixture
-def rules_file(config_dir):
-    """Create a rules file for testing."""
-    repos_dir = config_dir / 'repos' / 'test-repo'
-    repos_dir.mkdir(parents=True)
-    rules_path = repos_dir / 'rules.json'
-
-    rules = {
-        '_metadata': {
-            'generated': dt.datetime.now().isoformat()[:19],
-            'time_window': '6 months',
-            'commits_analyzed': 10,
-        },
-        'directory_mappings': {'old/path/': 'new/path/'},
-        'file_mappings': {'old-file.sh': 'new-file.sh'},
-    }
-
-    rules_path.write_text(json.dumps(rules, indent=2))
-    return rules_path
 
 
 @pytest.fixture

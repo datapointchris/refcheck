@@ -47,6 +47,11 @@ HELP = (
     'for a rename.'
 )
 
+# The root's command list, grouped by purpose: the command that does the work,
+# then the ones that keep it working.
+CHECK_PANEL = 'Check'
+MAINTENANCE_PANEL = 'Maintenance'
+
 FLAG_MAP_HEADING = 'Which flag answers which change'
 
 CHECK_SUMMARY = (
@@ -247,7 +252,7 @@ def root(
     """Options that belong to refcheck itself rather than to any one of its commands."""
 
 
-@app.command(help=CHECK_HELP, short_help=CHECK_SHORT_HELP, epilog=CHECK_EPILOG)
+@app.command(help=CHECK_HELP, short_help=CHECK_SHORT_HELP, epilog=CHECK_EPILOG, rich_help_panel=CHECK_PANEL)
 def check(
     path: Annotated[
         Path | None,
@@ -506,7 +511,7 @@ def check(
     raise typer.Exit(0)
 
 
-@app.command(name='learn-rules', epilog=LEARN_RULES_EPILOG)
+@app.command(name='learn-rules', epilog=LEARN_RULES_EPILOG, rich_help_panel=MAINTENANCE_PANEL)
 def learn_rules():
     """Write rules.json from git's rename history, so a miss can suggest what replaced it."""
     learn_rules_from_git(load_config(Path.cwd()).time_window)
@@ -516,6 +521,8 @@ def learn_rules():
 # than by hand: the step order inside run_update is load-bearing, so calling it
 # is what keeps the update path the same as every other consumer's.
 add_update_command(app, UPDATE_CONFIG)
+# The library takes no panel, so the command it just registered is placed here.
+app.registered_commands[-1].rich_help_panel = MAINTENANCE_PANEL
 
 
 def load_registries(registries: list[Path]) -> registry_module.Registry:

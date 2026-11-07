@@ -520,6 +520,13 @@ class TestLearnRules:
 
         assert rules['file_mappings'] == {'logging.sh': 'log.sh'}
 
+    def test_outside_a_repository_exits_as_git_does(self, tmp_path, monkeypatch):
+        monkeypatch.setenv('HOME', str(tmp_path))
+
+        result = run_refcheck('learn-rules', cwd=tmp_path)
+
+        assert result.returncode == 128
+
 
 class TestLearnedRulesHint:
     """Rules feed the suggestion line, so the hint belongs where that line is empty."""

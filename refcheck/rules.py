@@ -3,13 +3,30 @@
 import datetime as dt
 import json
 import subprocess
-import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 from . import git
 from .config import user_state_dir
-from .output import PASS
-from .output import marked
+
+
+class LearnRulesError(Exception):
+    """git could not read the rename history, so no rules were written."""
+
+
+class NotAGitRepository(LearnRulesError):
+    """The working directory is in no git repository, so it has no history to learn from."""
+
+
+@dataclass(frozen=True)
+class LearnedRules:
+    """What one learn run wrote, for the command to report."""
+
+    path: Path
+    time_window: str
+    commits_analyzed: int
+    directory_mappings: int
+    file_mappings: int
 
 
 def get_repo_root(cwd: Path | None = None) -> Path | None:
@@ -53,7 +70,7 @@ def load_rules(root_dir: Path) -> tuple[dict, Path | None]:
     return rules, rules_path
 
 
-def learn_rules_from_git(time_window: str = '6 months') -> None:
+def learn_rules_from_git(time_window: str = '6 months') -> LearnedRules:
     """
     Scan git history for renames and generate rules.json.
 
@@ -61,14 +78,13 @@ def learn_rules_from_git(time_window: str = '6 months') -> None:
     Analyzes git rename operations from the specified time window to extract:
     - Directory prefix mappings (e.g., management/tests/ -> tests/install/)
     - File name mappings (e.g., parse-packages.py -> parse_packages.py)
+
+    Raises NotAGitRepository outside a repository and LearnRulesError where
+    git cannot read the log. The command decides what each means for the run.
     """
     repo_root = get_repo_root()
     if repo_root is None:
-        print(
-            'fatal: not a git repository (or any of the parent directories): .git',
-            file=sys.stderr,
-        )
-        sys.exit(128)
+        raise NotAGitRepository('not a git repository (or any of the parent directories): .git')
 
     try:
         log = git.run(
@@ -82,9 +98,8 @@ def learn_rules_from_git(time_window: str = '6 months') -> None:
             ],
             cwd=repo_root,
         )
-    except subprocess.CalledProcessError as e:
-        print(f'Error running git: {e}', file=sys.stderr)
-        sys.exit(1)
+    except subprocess.CalledProcessError as error:
+        raise LearnRulesError(f'git could not read the rename history: {error.stderr.strip() or error}') from error
 
     directory_mappings: dict[str, tuple[str, int]] = {}
     file_mappings: dict[str, str] = {}
@@ -144,13 +159,10 @@ def learn_rules_from_git(time_window: str = '6 months') -> None:
     with rules_path.open('w') as f:
         json.dump(rules, f, indent=2)
 
-    summary = '\n'.join(
-        [
-            f'Generated {rules_path}',
-            f'Time window: {time_window}',
-            f'Commits analyzed: {len(commits_analyzed)}',
-            f'Directory mappings: {len(top_directory_mappings)}',
-            f'File mappings: {len(file_mappings)}',
-        ]
+    return LearnedRules(
+        path=rules_path,
+        time_window=time_window,
+        commits_analyzed=len(commits_analyzed),
+        directory_mappings=len(top_directory_mappings),
+        file_mappings=len(file_mappings),
     )
-    print(marked(PASS, summary))

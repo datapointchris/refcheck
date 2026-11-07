@@ -21,9 +21,13 @@ from .config import load_config
 from .names import FLAG_WORD
 from .names import NAME_WORD
 from .names import SUBCOMMAND_WORD
+from .output import PASS
+from .output import marked
 from .output import print_config
 from .output import print_results
 from .output import print_sweep
+from .rules import LearnRulesError
+from .rules import NotAGitRepository
 from .rules import get_repo_root
 from .rules import learn_rules_from_git
 from .selfupdate import CONFIG as UPDATE_CONFIG
@@ -514,7 +518,24 @@ def check(
 @app.command(name='learn-rules', epilog=LEARN_RULES_EPILOG, rich_help_panel=MAINTENANCE_PANEL)
 def learn_rules():
     """Write rules.json from git's rename history, so a miss can suggest what replaced it."""
-    learn_rules_from_git(load_config(Path.cwd()).time_window)
+    try:
+        learned = learn_rules_from_git(load_config(Path.cwd()).time_window)
+    except NotAGitRepository as error:
+        print(f'fatal: {error}', file=sys.stderr)
+        raise typer.Exit(128) from error
+    except LearnRulesError as error:
+        print(f'refcheck: {error}', file=sys.stderr)
+        raise typer.Exit(1) from error
+    summary = '\n'.join(
+        [
+            f'Generated {learned.path}',
+            f'Time window: {learned.time_window}',
+            f'Commits analyzed: {learned.commits_analyzed}',
+            f'Directory mappings: {learned.directory_mappings}',
+            f'File mappings: {learned.file_mappings}',
+        ]
+    )
+    print(marked(PASS, summary))
 
 
 # Registered last so `check` heads the command list, and by the library rather

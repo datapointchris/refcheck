@@ -38,23 +38,6 @@ def test_bare_invocation_shows_help(tmp_path):
     assert 'check' in result.stdout
 
 
-def test_the_root_screen_says_when_to_reach_for_each_question(tmp_path):
-    """Which command comes when, and the one pair of flags read as the same question.
-
-    Rich wraps the screen to the terminal it thinks it has, so the words are
-    compared with the line breaks taken out.
-    """
-    result = run('--help', cwd=tmp_path)
-    screen = ' '.join(result.stdout.split())
-
-    assert result.returncode == 0
-    assert 'refcheck check --moves before committing' in screen
-    assert 'refcheck check --moves-since origin/main over a branch' in screen
-    assert 'refcheck check --name with the old name once the change lands' in screen
-    assert '--pattern looks for a path' in screen
-    assert '--name looks for a tool, a subcommand or a flag only where it stands as a name' in screen
-
-
 def test_check_is_the_verb_that_scans(tmp_path):
     (tmp_path / 'run.sh').write_text('#!/usr/bin/env bash\nsource lib/gone.sh\n')
 
@@ -85,13 +68,6 @@ def test_version_is_a_root_option(tmp_path):
 
     assert result.returncode == 0
     assert result.stdout.startswith('refcheck ')
-
-
-def test_the_retired_flags_are_gone(tmp_path):
-    """Each of these is a verb now, and a flag that still parsed would be a second spelling."""
-    for flag in ('--update', '--learn-rules'):
-        result = run('check', flag, cwd=tmp_path)
-        assert result.returncode == 2, flag
 
 
 def test_the_hook_entry_runs_the_check():

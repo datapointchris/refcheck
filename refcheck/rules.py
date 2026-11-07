@@ -6,6 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from . import git
 from .config import user_config_dir
 from .output import PASS
 from .output import marked
@@ -14,14 +15,7 @@ from .output import marked
 def get_repo_root(cwd: Path | None = None) -> Path | None:
     """Get git repo root, or None if not in a repo."""
     try:
-        result = subprocess.run(  # nosec B603 B607
-            ['git', 'rev-parse', '--show-toplevel'],
-            capture_output=True,
-            text=True,
-            check=True,
-            cwd=cwd,
-        )
-        return Path(result.stdout.strip())
+        return Path(git.run(['rev-parse', '--show-toplevel'], cwd=cwd).strip())
     except (subprocess.CalledProcessError, FileNotFoundError):
         return None
 
@@ -77,9 +71,8 @@ def learn_rules_from_git(time_window: str = '6 months') -> None:
         sys.exit(128)
 
     try:
-        result = subprocess.run(  # nosec B603 B607
+        log = git.run(
             [
-                'git',
                 'log',
                 f'--since={time_window} ago',
                 '--diff-filter=R',
@@ -87,9 +80,6 @@ def learn_rules_from_git(time_window: str = '6 months') -> None:
                 '--name-status',
                 '--format=%H %aI',
             ],
-            capture_output=True,
-            text=True,
-            check=True,
             cwd=repo_root,
         )
     except subprocess.CalledProcessError as e:
@@ -100,7 +90,7 @@ def learn_rules_from_git(time_window: str = '6 months') -> None:
     file_mappings: dict[str, str] = {}
     commits_analyzed: set[str] = set()
 
-    for line in result.stdout.splitlines():
+    for line in log.splitlines():
         line = line.strip()
         if not line:
             continue

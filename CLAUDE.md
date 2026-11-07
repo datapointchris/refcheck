@@ -85,6 +85,22 @@ once no file in this tree or a listed repo holds that name (`held_filenames`).
 Learned rules detect nothing. They feed only the "Possible matches" line under
 a broken `source` or `bash` reference.
 
+## Every external effect has one door
+
+Anything that leaves the process goes through one named function, and every
+caller uses it. That function is where a timeout, an environment change or a
+test stub attaches, once.
+
+- **git** runs only through `git.run`. `rules.get_repo_root`,
+  `rules.learn_rules_from_git` and `moves.read` call it, and each decides what
+  a failure means for its own question. No other module imports `subprocess`
+  to run a program.
+- **The one file refcheck writes** is the rules file, written only by
+  `rules.learn_rules_from_git` at the path `rules.get_rules_path` gives. Every
+  other file is read.
+- **The network** is reached only by pyselfupdate: the `update` command and
+  the once-a-day release check `notify` runs at a terminal.
+
 ## Existence and containment take different forms of one path
 
 The existence test asks the kernel about the path as written. That is the path

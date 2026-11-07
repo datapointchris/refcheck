@@ -29,6 +29,16 @@ Without it uv asks PyPI, where `refcheck` is a different project. uv records the
 index beside the tool, which is where `refcheck update` reads it back. A branch
 install carries no release version, so `refcheck update` refuses it.
 
+Without access to that index, install from the source. Every dependency comes
+from PyPI:
+
+```bash
+uv tool install git+https://github.com/datapointchris/refcheck   # the latest commit on main
+uv tool install .                                               # from a checkout of this repository
+```
+
+Upgrade such an install by running the same command again with `--reinstall`.
+
 A run at a terminal checks for a newer release at most once a day. It prints one
 line to stderr when it is behind. `NO_AUTO_UPDATE` silences it.
 

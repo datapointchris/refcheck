@@ -1,0 +1,42 @@
+version: '3'
+
+tasks:
+  default:
+    desc: List the tasks
+    silent: true
+    cmds:
+      - task --list
+
+  setup:
+    desc: Install the locked dependencies, then the git hooks
+    cmds:
+      - uv sync
+      - uv run pre-commit install --hook-type pre-commit --hook-type commit-msg
+
+  test:
+    desc: Run the pytest suite against the editable install in .venv
+    cmds:
+      - uv run pytest
+
+  lint:
+    desc: Run the read-only checks, ruff, the format check and mypy, writing no file
+    cmds:
+      - uv run ruff check
+      - uv run ruff format --check
+      - task: typecheck
+
+  format:
+    desc: Rewrite files with ruff's formatter and its autofixes
+    cmds:
+      - uv run ruff format
+      - uv run ruff check --fix
+
+  typecheck:
+    desc: Type-check the package and tests with mypy
+    cmds:
+      - uv run mypy .
+
+  build:
+    desc: Build the sdist and wheel into dist/
+    cmds:
+      - uv build

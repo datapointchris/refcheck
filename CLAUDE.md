@@ -144,6 +144,9 @@ at the git root, so a checkout never inherits an enclosing tree's config.
 
 ## The suite runs inside a git hook
 
+`task test` runs the suite (`uv run pytest`). `task --list` shows the rest:
+`setup`, `lint`, `format`, `typecheck` and `build`.
+
 pre-commit runs `uv run pytest` on any commit staging a Python file. Git
 exports `GIT_DIR` and `GIT_INDEX_FILE` to its hooks. Both outrank directory
 discovery. Left in place, a fixture's `git init` reinitializes the repository

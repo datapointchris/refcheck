@@ -26,6 +26,7 @@ class TestShapesThatNameTheToolOnAnyLine:
             'docs_url: "https://github.com/someone/connect"',
             '| **connect** | SQLite | CLI |',
             '| SQLite | connect | CLI |',
+            "A reader job runs connect's classifier first.",
         ],
     )
     def test_in_prose(self, line):
@@ -39,6 +40,7 @@ class TestShapesThatNameTheToolInCode:
             'import connect',
             'from connect import storage',
             '  - name: connect',
+            '    - connect',
             'tool = connect',
             'see_also: [othertool, connect, anothertool]',
             'tool exec -F connect,othertool -- <cmd>',
@@ -72,6 +74,8 @@ class TestTheWordStaysSilent:
             'a sentence ending on connect.',
             'myconnect/config is another tool',
             'Example: connect',
+            "the connect's strength is its reach",
+            "The connect's strength is its reach",
         ],
     )
     def test_in_prose(self, line):
@@ -292,6 +296,11 @@ class TestCheckNames:
 
     def test_a_shell_fence_reports_a_command_and_prose_does_not(self, temp_dir):
         assert self.found(temp_dir, {'guide.md': 'connect across repos\n\n```bash\nconnect batch x\n```\n'}) == [('guide.md', 4)]
+
+    def test_a_skills_frontmatter_list_is_reported_and_the_same_text_under_it_is_not(self, temp_dir):
+        text = '---\ninvokes: [othertool, connect]\n---\n\nacross [othertool, connect] here\n'
+
+        assert self.found(temp_dir, {'skill.md': text}) == [('skill.md', 2)]
 
     def test_a_script_reports_a_command_and_a_text_file_does_not(self, temp_dir):
         files = {'run.sh': 'connect batch x\n', 'notes.txt': 'connect across repos\n', 'doc.md': '```yaml\nconnect: x\n```\n'}

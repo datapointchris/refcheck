@@ -356,6 +356,15 @@ class ReferenceChecker:
             return LineKind.SHELL
         return LineKind.ANOTHER_LANGUAGE
 
+    @staticmethod
+    def frontmatter_end(lines: list[str]) -> int:
+        """The line number closing a markdown file's frontmatter, or 0 where it opens none."""
+        if lines and lines[0].rstrip() == '---':
+            for line_num, line in enumerate(lines[1:], 2):
+                if line.rstrip() == '---':
+                    return line_num
+        return 0
+
     def classified_lines(self, file_path: Path, lines: list[str]) -> Iterator[tuple[int, str, LineKind]]:
         """Every numbered line of a file, with what kind of text it is.
 
@@ -369,10 +378,15 @@ class ReferenceChecker:
                 yield line_num, line, kind
             return
 
+        frontmatter_end = self.frontmatter_end(lines)
         fence = ''
         holds_shell = False
 
         for line_num, line in enumerate(lines, 1):
+            if line_num <= frontmatter_end:
+                yield line_num, line, LineKind.FRONTMATTER
+                continue
+
             if fence:
                 # A closing run is the same character as the opener and at least
                 # as long, which is what lets a ``` block sit inside a ````

@@ -315,18 +315,20 @@ a shape that kind of line does not take when it means the word:
 | Any | A quoted literal holding only it | `"oldtool"`, `['oldtool', 'batch']` |
 | Any | A path segment | `~/.local/bin/oldtool`, `src/oldtool/main.py`, `oldtool.db`, `oldtool.storage` |
 | Any | Bold, or a table cell, holding only it | `**oldtool**`, `\| oldtool \|` |
+| Any | A possessive with no determiner ahead of it | `oldtool's classifier`, not `the oldtool's` |
 | Code or config | An import, or a value that is only it | `import oldtool`, `name: oldtool` |
-| Code or config | A list item | `[othertool, oldtool]`, `-F oldtool,othertool` |
+| Code or config | A list item | `[othertool, oldtool]`, `-F oldtool,othertool`, `- oldtool` |
 | Code or config | A line opening on it in aligned columns | `oldtool     SQLite · CLI` |
 | Shell | The whole word, outside a comment | `oldtool batch`, `uv tool install oldtool`, `if oldtool check; then` |
 
 A shell line is one in a shell file, or in a markdown fence tagged as shell or
 untagged. Prose is markdown outside its fences, and `.txt`, `.rst`, `.adoc`,
-`.org`, `.html`, `.htm` and `.tex` files. Every other line is code or config.
-That is what keeps a docstring opening on the word from reading as a command.
+`.org`, `.html`, `.htm` and `.tex` files. A markdown file's frontmatter and every
+other line is code or config. That is what keeps a docstring opening on the word
+from reading as a command.
 
-No shape reaches the name in running prose, as in "across othertool, oldtool and
-anothertool". Nothing on that line tells the tool from the word, so that one is
+No other shape reaches the name in running prose, as in "across othertool, oldtool
+and anothertool". Nothing on that line tells the tool from the word, so that one is
 left for you to find.
 
 Two kinds of hit are correct and reported anyway. The renamed tool's own repo

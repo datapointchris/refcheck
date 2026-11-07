@@ -70,8 +70,9 @@ per listed repo. `names.py` holds the name shapes, `moves.py` reads git, and
 - **`--name`** resolves nothing. The shape is the whole judgment, and the
   shapes that count depend on whether the line is prose, shell or code
   (`NameShapes.names_it`). Shell is what a file declares by suffix or shebang,
-  never the fallback (`kind_of_file`). A name in running prose is never
-  matched.
+  never the fallback (`kind_of_file`). A markdown file's frontmatter reads as
+  code. A name in running prose is matched only as a possessive with no
+  determiner ahead of it.
 
 In markdown, a fence tagged with another language is never read as shell. An
 untagged fence is shell.

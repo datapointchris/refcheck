@@ -10,18 +10,20 @@ that text of that kind does not take when it means the English word:
 
 - Any line: a code span opening on it (`oldtool`, `oldtool check`), a quoted
   literal holding only it ("oldtool"), a path segment (~/.local/bin/oldtool,
-  oldtool.db, oldtool.storage), bold holding only it, or a table cell holding only
-  it.
+  oldtool.db, oldtool.storage), bold holding only it, a table cell holding only
+  it, or a possessive with no determiner ahead of it (oldtool's classifier). English
+  writes "the oldtool's" for a noun, and a verb takes no possessive.
 - A line of code or config: also an import of it, a value that is only it
-  (`name: oldtool`), an item in a bracketed list ([othertool, oldtool]) or a comma
-  list with no spaces (-F oldtool,othertool), and a line opening on it in aligned
-  columns.
+  (`name: oldtool`), a YAML list row holding only it (- oldtool), an item in a
+  bracketed list ([othertool, oldtool]) or a comma list with no spaces
+  (-F oldtool,othertool), and a line opening on it in aligned columns. A markdown
+  file's frontmatter counts as config.
 - A line a shell would run: the whole word anywhere outside a comment, because a
   shell line holds commands and their arguments, not sentences.
 
-What none of them reaches is the name in running prose, as in "across othertool,
-oldtool and anothertool". Nothing on such a line tells the tool from the word, so
-it is left to a reader.
+What none of them reaches is the name elsewhere in running prose, as in "across
+othertool, oldtool and anothertool". Nothing on such a line tells the tool from the
+word, so it is left to a reader.
 
 A subcommand may join segments with `:`, the way a task runner or a package
 manager namespaces its scripts (`task feed:pull`). A longer name opening on it,
@@ -60,6 +62,9 @@ SUBCOMMAND_WORD = re.compile(r'\w[\w.-]*(?::\w[\w.-]*)*')
 # A word after the first may also be a flag, as in `tool --oldflag`.
 FLAG_WORD = re.compile(r'--?\w[\w-]*')
 
+# What stands ahead of a possessive that means the English noun.
+DETERMINERS = ('the', 'a', 'an', 'this', 'that', 'each', 'every', 'one', 'my', 'our', 'your', 'his', 'her', 'its', 'their')
+
 
 class LineKind(Enum):
     """What a line of a scanned file holds, as far as a reference check cares."""
@@ -67,6 +72,7 @@ class LineKind(Enum):
     PROSE = 'prose'
     SHELL = 'shell'
     ANOTHER_LANGUAGE = 'another language'
+    FRONTMATTER = 'frontmatter'
 
 
 @dataclass(frozen=True)
@@ -102,6 +108,7 @@ class NameShapes:
             | (?<=/){word}(?![\w-])                 # a segment after a slash
             {leading}
             """
+        no_determiner = ''.join(rf'(?<!\b(?i:{determiner})\s)' for determiner in DETERMINERS)
         anywhere = re.compile(
             rf"""
               `{word}(?=[`\s])                      # opens a code span
@@ -110,6 +117,7 @@ class NameShapes:
             | (?<![\w./-]){word}(?=\.[A-Za-z]\w*)   # a file stem or a module prefix
             | \*\*{word}\*\* | __{word}__           # bold holding only it
             | \|\s*{word}\s*\|                      # a table cell holding only it
+            | (?<![\w./$-]){no_determiner}{word}['’]s\b  # a possessive, no determiner
             """,
             re.VERBOSE,
         )
@@ -117,6 +125,7 @@ class NameShapes:
             rf"""
               ^\s*(?:import|from)\s+{word}(?![\w-])     # an import of it
             | [:=]\s*{word}\s*(?:\#.*)?$                # a value that is only it
+            | ^\s*-\s+{word}\s*(?:\#.*)?$               # a YAML list row holding only it
             | \[(?:[^\]\n]*,)?\s*{word}\s*[,\]]         # an item in a bracketed list
             | (?<![\w./$-]){word}(?=,[\w.-])            # a comma list, no spaces,
             | (?<=[\w.-],){word}(?![\w-])               #   at either end of a comma

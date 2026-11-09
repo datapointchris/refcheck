@@ -1583,6 +1583,25 @@ class TestNameSearch:
         assert result.returncode == 1
         assert f'{store / "workflow.md"}:2' in result.stdout
 
+    def test_under_a_registry_the_cwd_is_walked_only_when_it_is_a_repository(self, tmp_path):
+        """Run from a home directory, the walk of the cwd took longer than the whole sweep."""
+        repo = tmp_path / 'repo'
+        loose = tmp_path / 'loose'
+        repo.mkdir()
+        loose.mkdir()
+        (repo / 'README.md').write_text('Use `oldtool` for this.\n')
+        (loose / 'notes.md').write_text('Use `oldtool` for this.\n')
+        repos = tmp_path / 'repos.json'
+        repos.write_text(json.dumps({'repos': [{'name': 'repo', 'path': str(repo)}]}))
+
+        from_loose = run_check('--name', 'oldtool', '--registry', str(repos), cwd=loose)
+        subprocess.run(['git', 'init', '-q'], cwd=loose, check=True)
+        from_a_repository = run_check('--name', 'oldtool', '--registry', str(repos), cwd=loose)
+
+        assert f'{repo / "README.md"}:1' in from_loose.stdout
+        assert 'notes.md' not in from_loose.stdout
+        assert 'notes.md' in from_a_repository.stdout
+
     def test_a_clean_sweep_says_what_it_looked_for_with_its_spaces_collapsed(self, tmp_path, temp_dir):
         repo = tmp_path / 'repo'
         repo.mkdir()

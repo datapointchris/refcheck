@@ -260,7 +260,10 @@ def root(
 def check(
     path: Annotated[
         Path | None,
-        typer.Argument(help='Directory to check. Defaults to the current one.', rich_help_panel='Scope'),
+        typer.Argument(
+            help='Directory to check. Defaults to the current one, which a --registry run checks only when it is a repository.',
+            rich_help_panel='Scope',
+        ),
     ] = None,
     file_type: Annotated[
         str | None,
@@ -427,6 +430,10 @@ def check(
     )
 
     listed = load_registries(registry) if registry else None
+    # With --registry and no path, the current directory is one more tree to
+    # ask only when it is a repository. Run from a home directory, it would
+    # walk every file under it before asking any listed repo.
+    walks_here = path is not None or not registry or get_repo_root(root_dir) is not None
     sweep_patterns: dict[str, str] = {}
     found: list[moves_module.Move] = []
     gone_filenames: dict[str, str] = {}
@@ -434,11 +441,13 @@ def check(
     unmatchable: list[str] = []
 
     if pattern:
-        checker.check_pattern(pattern, desc)
+        if walks_here:
+            checker.check_pattern(pattern, desc)
         sweep_patterns = {pattern: desc or f'Old pattern: {pattern}'}
     elif name:
         sweep_patterns = {name: desc or ''}
-        checker.check_names(sweep_patterns)
+        if walks_here:
+            checker.check_names(sweep_patterns)
     else:
         checker.run_all_checks()
 
@@ -482,18 +491,28 @@ def check(
             filenames_still_held = sorted(set(candidates) - set(gone_filenames))
             checker.check_filenames(gone_filenames)
         swept = sweep_other_repos(
-            listed, sweep_patterns, bool(name), skip_docs, file_type, test_mode, flag_patterns, root_dir, search_path, gone_filenames
+            listed,
+            sweep_patterns,
+            bool(name),
+            skip_docs,
+            file_type,
+            test_mode,
+            flag_patterns,
+            root_dir,
+            search_path if walks_here else None,
+            gone_filenames,
         )
 
-    print_results(
-        checker.issues,
-        checker.warnings,
-        checker.get_rules_path(),
-        checker.root_dir,
-        checker.search_path,
-        checker.unreadable,
-        checker.set_aside,
-    )
+    if walks_here:
+        print_results(
+            checker.issues,
+            checker.warnings,
+            checker.get_rules_path(),
+            checker.root_dir,
+            checker.search_path,
+            checker.unreadable,
+            checker.set_aside,
+        )
 
     if swept is not None:
         print_sweep(swept, sweep_patterns, by_name=bool(name), filenames=gone_filenames)
@@ -563,7 +582,7 @@ def sweep_other_repos(
     test_mode: bool,
     flag_excludes: list[str],
     source_root: Path,
-    scanned_here: Path,
+    scanned_here: Path | None,
     filenames: dict[str, str],
 ) -> sweep_module.SweepResult:
     """Ask every repo the registries list what a move or a rename left behind, printing nothing."""

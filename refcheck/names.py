@@ -23,7 +23,9 @@ that text of that kind does not take when it means the English word:
 
 What none of them reaches is the name elsewhere in running prose, as in "across
 othertool, oldtool and anothertool". Nothing on such a line tells the tool from the
-word, so it is left to a reader.
+word, so it is left to a reader. A hyphenated name, `old-tool`, is the exception:
+English rarely writes a tool's name hyphenated, so the whole word counts on every
+line, a comment's prose included.
 
 A subcommand may join segments with `:`, the way a task runner or a package
 manager namespaces its scripts (`task feed:pull`). A longer name opening on it,
@@ -61,6 +63,9 @@ SUBCOMMAND_WORD = re.compile(r'\w[\w.-]*(?::\w[\w.-]*)*')
 
 # A word after the first may also be a flag, as in `tool --oldflag`.
 FLAG_WORD = re.compile(r'--?\w[\w-]*')
+
+# A hyphen between two word characters, which marks a name prose rarely writes.
+HYPHENATED = re.compile(r'\w-\w')
 
 # What stands ahead of a possessive that means the English noun.
 DETERMINERS = ('the', 'a', 'an', 'this', 'that', 'each', 'every', 'one', 'my', 'our', 'your', 'his', 'her', 'its', 'their')
@@ -109,9 +114,11 @@ class NameShapes:
             {leading}
             """
         no_determiner = ''.join(rf'(?<!\b(?i:{determiner})\s)' for determiner in DETERMINERS)
+        hyphenated = rf'| {alone}  # a hyphenated name, as a whole word' if HYPHENATED.search(name) else ''
         anywhere = re.compile(
             rf"""
               `{word}(?=[`\s])                      # opens a code span
+            {hyphenated}
             | (["']){word}\1                        # is the whole of a quoted literal
             {segments}
             | (?<![\w./-]){word}(?=\.[A-Za-z]\w*)   # a file stem or a module prefix

@@ -96,6 +96,24 @@ class TestTheWordStaysSilent:
         assert not SHAPES.names_it(line, LineKind.SHELL)
 
 
+HYPHENATED = NameShapes.of('old-tool')
+
+
+class TestAHyphenatedName:
+    @pytest.mark.parametrize(
+        ('line', 'kind'),
+        [
+            ('# The first line is the one old-tool keeps a message by,', LineKind.ANOTHER_LANGUAGE),
+            ('across othertool, old-tool and anothertool', LineKind.PROSE),
+        ],
+    )
+    def test_counts_in_running_text(self, line, kind):
+        assert HYPHENATED.names_it(line, kind)
+
+    def test_a_longer_name_holding_it_stays_silent(self):
+        assert not HYPHENATED.names_it('my-old-tool-two streams failures', LineKind.PROSE)
+
+
 COMMAND = NameShapes.of('tool oldsub')
 
 

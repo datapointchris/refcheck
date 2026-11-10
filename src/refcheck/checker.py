@@ -1402,62 +1402,59 @@ class ReferenceChecker:
     def check_source_statements(self):
         """Check that source statements point to existing files."""
         for file_path in self.scanning(self.reference_check_files()):
-            try:
-                rel_path = file_path.relative_to(self.root_dir)
-                symbol_table = self.parse_variable_assignments(file_path)
+            rel_path = file_path.relative_to(self.root_dir)
+            symbol_table = self.parse_variable_assignments(file_path)
 
-                lines = self.lines_of(file_path)
-                if lines is None:
+            lines = self.lines_of(file_path)
+            if lines is None:
+                continue
+
+            for line_num, line in self.lines_a_shell_could_run(file_path, lines):
+                match = self.SOURCE_COMMAND.search(line)
+                if not match:
                     continue
 
-                for line_num, line in self.lines_a_shell_could_run(file_path, lines):
-                    match = self.SOURCE_COMMAND.search(line)
-                    if not match:
+                if self.runs_on_another_host(line):
+                    continue
+
+                quoted, bare = match.group(1) or match.group(3), match.group(2) or match.group(4)
+                source_path = quoted or bare
+                if not source_path:
+                    continue
+
+                if bare and not self.PATH_SHAPED_ARGUMENT.search(bare):
+                    continue
+
+                if '$' not in source_path and self.is_dynamic_path(source_path):
+                    continue
+
+                documentation = self.documents_rather_than_runs(line, file_path)
+
+                if documentation and self.names_a_placeholder(source_path):
+                    continue
+
+                original_path = source_path
+                if '$' in source_path:
+                    try:
+                        source_path = self.resolve_path(source_path, symbol_table, file_path)
+                    except ValueError:
                         continue
 
-                    if self.runs_on_another_host(line):
-                        continue
+                if documentation and self.describes_another_tree(source_path):
+                    continue
 
-                    quoted, bare = match.group(1) or match.group(3), match.group(2) or match.group(4)
-                    source_path = quoted or bare
-                    if not source_path:
-                        continue
-
-                    if bare and not self.PATH_SHAPED_ARGUMENT.search(bare):
-                        continue
-
-                    if '$' not in source_path and self.is_dynamic_path(source_path):
-                        continue
-
-                    documentation = self.documents_rather_than_runs(line, file_path)
-
-                    if documentation and self.names_a_placeholder(source_path):
-                        continue
-
-                    original_path = source_path
-                    if '$' in source_path:
-                        try:
-                            source_path = self.resolve_path(source_path, symbol_table, file_path)
-                        except ValueError:
-                            continue
-
-                    if documentation and self.describes_another_tree(source_path):
-                        continue
-
-                    if not self.resolves(source_path):
-                        similar = self.find_similar_files(source_path)
-                        self.issues.append(
-                            Issue(
-                                file=rel_path,
-                                line_num=line_num,
-                                check_type=CheckType.SOURCE,
-                                message=f'Missing: {original_path}' + (f' → {source_path}' if original_path != source_path else ''),
-                                similar_files=similar,
-                                target=source_path,
-                            )
+                if not self.resolves(source_path):
+                    similar = self.find_similar_files(source_path)
+                    self.issues.append(
+                        Issue(
+                            file=rel_path,
+                            line_num=line_num,
+                            check_type=CheckType.SOURCE,
+                            message=f'Missing: {original_path}' + (f' → {source_path}' if original_path != source_path else ''),
+                            similar_files=similar,
+                            target=source_path,
                         )
-            except ValueError:
-                continue
+                    )
 
     def check_script_references(self):
         """Check that bash script references point to existing files."""
@@ -1467,149 +1464,137 @@ class ReferenceChecker:
         script_pattern = re.compile(r'(?<![\w.-])(?:bash|sh)\s+["\']?([^\s"\']+\.sh)["\']?')
 
         for file_path in self.scanning(self.reference_check_files()):
-            try:
-                rel_path = file_path.relative_to(self.root_dir)
-                lines = self.lines_of(file_path)
-                if lines is None:
+            rel_path = file_path.relative_to(self.root_dir)
+            lines = self.lines_of(file_path)
+            if lines is None:
+                continue
+
+            for line_num, line in self.lines_a_shell_could_run(file_path, lines):
+                if 'bash' not in line and 'sh' not in line:
                     continue
 
-                for line_num, line in self.lines_a_shell_could_run(file_path, lines):
-                    if 'bash' not in line and 'sh' not in line:
+                if self.runs_on_another_host(line):
+                    continue
+
+                documentation = self.documents_rather_than_runs(line, file_path)
+
+                for match in script_pattern.finditer(line):
+                    script_path = match.group(1).rstrip('"\'')
+
+                    if not script_path or self.is_dynamic_path(script_path):
                         continue
 
-                    if self.runs_on_another_host(line):
+                    if documentation and self.names_a_placeholder(script_path):
                         continue
 
-                    documentation = self.documents_rather_than_runs(line, file_path)
+                    if documentation and self.describes_another_tree(script_path):
+                        continue
 
-                    for match in script_pattern.finditer(line):
-                        script_path = match.group(1).rstrip('"\'')
-
-                        if not script_path or self.is_dynamic_path(script_path):
-                            continue
-
-                        if documentation and self.names_a_placeholder(script_path):
-                            continue
-
-                        if documentation and self.describes_another_tree(script_path):
-                            continue
-
-                        if not self.resolves(script_path):
-                            similar = self.find_similar_files(script_path)
-                            self.issues.append(
-                                Issue(
-                                    file=rel_path,
-                                    line_num=line_num,
-                                    check_type=CheckType.SCRIPT,
-                                    message=f'Missing: {script_path}',
-                                    similar_files=similar,
-                                    target=script_path,
-                                )
+                    if not self.resolves(script_path):
+                        similar = self.find_similar_files(script_path)
+                        self.issues.append(
+                            Issue(
+                                file=rel_path,
+                                line_num=line_num,
+                                check_type=CheckType.SCRIPT,
+                                message=f'Missing: {script_path}',
+                                similar_files=similar,
+                                target=script_path,
                             )
-            except ValueError:
-                continue
+                        )
 
     def check_relative_path_fragility(self):
         """Check if relative paths are fragile to working directory changes."""
         source_pattern = re.compile(r'source\s+(?:["\']([^"\']+)["\']|([^\s]+))')
 
         for file_path in self.scanning(self.shell_files()):
-            try:
-                rel_path = file_path.relative_to(self.root_dir)
+            rel_path = file_path.relative_to(self.root_dir)
 
-                lines = self.lines_of(file_path)
-                if lines is None:
+            lines = self.lines_of(file_path)
+            if lines is None:
+                continue
+
+            for line_num, line in enumerate(lines, 1):
+                if 'source' not in line:
                     continue
 
-                for line_num, line in enumerate(lines, 1):
-                    if 'source' not in line:
-                        continue
+                match = source_pattern.search(line)
+                if not match:
+                    continue
 
-                    match = source_pattern.search(line)
-                    if not match:
-                        continue
+                source_path = match.group(1) or match.group(2)
+                if not source_path:
+                    continue
 
-                    source_path = match.group(1) or match.group(2)
-                    if not source_path:
-                        continue
+                # A commented `source` has no working directory to be
+                # fragile about. Broken-reference errors still scan
+                # comments, because a stale path in a usage example is
+                # exactly the drift this tool exists to catch.
+                if line.strip().startswith('#'):
+                    continue
 
-                    # A commented `source` has no working directory to be
-                    # fragile about. Broken-reference errors still scan
-                    # comments, because a stale path in a usage example is
-                    # exactly the drift this tool exists to catch.
-                    if line.strip().startswith('#'):
-                        continue
+                if '$' in source_path or source_path.startswith('/') or self.is_dynamic_path(source_path):
+                    continue
 
-                    if '$' in source_path or source_path.startswith('/') or self.is_dynamic_path(source_path):
-                        continue
+                test_dirs = [
+                    self.root_dir,
+                    file_path.parent,
+                    file_path.parent.parent,
+                ]
 
-                    test_dirs = [
-                        self.root_dir,
-                        file_path.parent,
-                        file_path.parent.parent,
-                    ]
+                valid_from = []
+                for test_dir in test_dirs:
+                    resolved = test_dir / source_path
+                    if resolved.exists():
+                        valid_from.append(test_dir)
 
-                    valid_from = []
-                    for test_dir in test_dirs:
-                        resolved = test_dir / source_path
-                        if resolved.exists():
-                            valid_from.append(test_dir)
+                if 0 < len(valid_from) < len(test_dirs):
+                    try:
+                        valid_desc = ', '.join(str(d.relative_to(self.root_dir)) if d != self.root_dir else 'repo root' for d in valid_from)
+                    except ValueError:
+                        valid_desc = ', '.join(str(d) for d in valid_from)
 
-                    if 0 < len(valid_from) < len(test_dirs):
-                        try:
-                            valid_desc = ', '.join(
-                                str(d.relative_to(self.root_dir)) if d != self.root_dir else 'repo root' for d in valid_from
-                            )
-                        except ValueError:
-                            valid_desc = ', '.join(str(d) for d in valid_from)
-
-                        self.warnings.append(
-                            Warning(
-                                file=rel_path,
-                                line_num=line_num,
-                                check_type=CheckType.FRAGILE_CWD,
-                                message=f'Relative path only valid from: {valid_desc}',
-                                suggestion='Use absolute path or root directory variable',
-                            )
+                    self.warnings.append(
+                        Warning(
+                            file=rel_path,
+                            line_num=line_num,
+                            check_type=CheckType.FRAGILE_CWD,
+                            message=f'Relative path only valid from: {valid_desc}',
+                            suggestion='Use absolute path or root directory variable',
                         )
-            except ValueError:
-                continue
+                    )
 
     def check_relative_traversal(self):
         """Detect relative directory traversal patterns fragile to file moves."""
         traversal_pattern = re.compile(r'([A-Z_]+_DIR)=.*\$\(cd.*\.\./.*pwd\)')
 
         for file_path in self.scanning(self.shell_files()):
-            try:
-                rel_path = file_path.relative_to(self.root_dir)
+            rel_path = file_path.relative_to(self.root_dir)
 
-                lines = self.lines_of(file_path)
-                if lines is None:
+            lines = self.lines_of(file_path)
+            if lines is None:
+                continue
+
+            for line_num, line in enumerate(lines, 1):
+                match = traversal_pattern.search(line)
+                if not match:
                     continue
 
-                for line_num, line in enumerate(lines, 1):
-                    match = traversal_pattern.search(line)
-                    if not match:
-                        continue
+                var_name = match.group(1)
 
-                    var_name = match.group(1)
-
-                    self.warnings.append(
-                        Warning(
-                            file=rel_path,
-                            line_num=line_num,
-                            check_type=CheckType.FRAGILE_REFACTOR,
-                            message=(f'{var_name} uses relative directory traversal (../) - fragile to file moves'),
-                            # A bare `git rev-parse --show-toplevel` dies outside a repo under set -e
-                            # and resolves the wrong repo inside another, so the exported value leads.
-                            suggestion=(
-                                'Resolve the root from an exported variable first:\n'
-                                '  ROOT_DIR="${REPO_DIR:-$(git rev-parse --show-toplevel)}"'
-                            ),
-                        )
+                self.warnings.append(
+                    Warning(
+                        file=rel_path,
+                        line_num=line_num,
+                        check_type=CheckType.FRAGILE_REFACTOR,
+                        message=(f'{var_name} uses relative directory traversal (../) - fragile to file moves'),
+                        # A bare `git rev-parse --show-toplevel` dies outside a repo under set -e
+                        # and resolves the wrong repo inside another, so the exported value leads.
+                        suggestion=(
+                            'Resolve the root from an exported variable first:\n  ROOT_DIR="${REPO_DIR:-$(git rev-parse --show-toplevel)}"'
+                        ),
                     )
-            except ValueError:
-                continue
+                )
 
     def run_all_checks(self):
         """Run all validation checks."""

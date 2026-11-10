@@ -1536,23 +1536,13 @@ class ReferenceChecker:
                 if '$' in source_path or source_path.startswith('/') or self.is_dynamic_path(source_path):
                     continue
 
-                test_dirs = [
-                    self.root_dir,
-                    file_path.parent,
-                    file_path.parent.parent,
-                ]
-
-                valid_from = []
-                for test_dir in test_dirs:
-                    resolved = test_dir / source_path
-                    if resolved.exists():
-                        valid_from.append(test_dir)
+                # A script one level down has the root as its grandparent, so the
+                # three working directories collapse to two there.
+                test_dirs = list(dict.fromkeys([self.root_dir, file_path.parent, file_path.parent.parent]))
+                valid_from = [test_dir for test_dir in test_dirs if (test_dir / source_path).exists()]
 
                 if 0 < len(valid_from) < len(test_dirs):
-                    try:
-                        valid_desc = ', '.join(str(d.relative_to(self.root_dir)) if d != self.root_dir else 'repo root' for d in valid_from)
-                    except ValueError:
-                        valid_desc = ', '.join(str(d) for d in valid_from)
+                    valid_desc = ', '.join('repo root' if d == self.root_dir else str(self._as_written(d)) for d in valid_from)
 
                     self.warnings.append(
                         Warning(

@@ -37,6 +37,12 @@ def marked(marker: str, text: str) -> str:
     return '\n'.join([f'{marker} {head}', *(indent + line for line in rest)])
 
 
+def print_suggestion(suggestion: str) -> None:
+    """A suggestion under its finding, any line after the first hanging beneath its text."""
+    for line in marked('→', suggestion).split('\n'):
+        print(f'    {line}')
+
+
 class CheckType(Enum):
     PATTERN = 'old_path_pattern'
     NAME = 'old_name'
@@ -173,7 +179,7 @@ def print_results(
                         for similar in issue.similar_files:
                             print(f'        {similar}')
                     if issue.suggestion:
-                        print(f'    → {issue.suggestion}')
+                        print_suggestion(issue.suggestion)
 
         # Print warnings
         if warnings:
@@ -194,7 +200,7 @@ def print_results(
                     print(f'  {warning.file}:{warning.line_num}')
                     print(f'    {warning.message}')
                     if warning.suggestion:
-                        print(f'    → {warning.suggestion}')
+                        print_suggestion(warning.suggestion)
 
         if set_aside:
             print()
@@ -311,7 +317,7 @@ def print_sweep(
                 print(f'  {result.repo.path / issue.file}:{issue.line_num}')
                 print(f'    {issue.message}')
                 if issue.suggestion:
-                    print(f'    → {issue.suggestion}')
+                    print_suggestion(issue.suggestion)
             print()
 
         print_unreached(sweep)

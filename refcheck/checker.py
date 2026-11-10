@@ -1469,7 +1469,8 @@ class ReferenceChecker:
                             # A bare `git rev-parse --show-toplevel` dies outside a repo under set -e
                             # and resolves the wrong repo inside another, so the exported value leads.
                             suggestion=(
-                                'Resolve the root from an exported variable first: "${REPO_DIR:-$(git rev-parse --show-toplevel)}"'
+                                'Resolve the root from an exported variable first:\n'
+                                '  ROOT_DIR="${REPO_DIR:-$(git rev-parse --show-toplevel)}"'
                             ),
                         )
                     )

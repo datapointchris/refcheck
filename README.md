@@ -179,7 +179,8 @@ Fragile Traversal Path (1):
 ────────────────────────────────────────────────────────────
   scripts/ci/deploy.sh:2
     ROOT_DIR uses relative directory traversal (../) - fragile to file moves
-    → Resolve the root from an exported variable first: "${REPO_DIR:-$(git rev-parse --show-toplevel)}"
+    → Resolve the root from an exported variable first:
+        ROOT_DIR="${REPO_DIR:-$(git rev-parse --show-toplevel)}"
 
 HINT 1 broken reference(s) came up with no suggestions.
      'refcheck learn-rules' reads git's rename history to improve them.

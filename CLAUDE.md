@@ -107,9 +107,11 @@ test stub attaches, once.
   which looks for the `.git` entry git's own discovery looks for. It needs no
   process, and inside a hook it answers about the directory asked rather than
   the repository `GIT_DIR` names.
-- **The one file refcheck writes** is the rules file, written only by
-  `rules.learn_rules_from_git` at the path `rules.get_rules_path` gives, and
-  deleted only by `rules.clear_rules`. Every other file is read.
+- **The one file refcheck writes** is the rules file, at the path
+  `rules.get_rules_path` gives. `rules.write_rules` replaces it whole through a
+  temporary file, `rules.clear_rules` deletes it, and
+  `rules._adopt_the_earlier_layout` moves an earlier release's copy into place.
+  Every other file is read.
 - **The network** is reached only by pyselfupdate: the `update` command and
   the once-a-day release check `notify` runs at a terminal.
 
@@ -176,9 +178,10 @@ it in place.
   refcheck there stops rather than testing an installed release.
 - **Fixtures build their trees under `tmp_path`, with `HOME` pointed there.**
   A test reading a directory on the machine makes its result a property of
-  that machine. The user config sits under `$XDG_CONFIG_HOME` and the rules
-  files under `$XDG_STATE_HOME` when each is set, so the autouse
-  `config_follows_home` unsets both and each follows `HOME`.
+  that machine. A check and every rules command may write under the state
+  directory, so the autouse `config_follows_home` gives each test a HOME of
+  its own and unsets `$XDG_CONFIG_HOME` and `$XDG_STATE_HOME`, which would
+  otherwise outrank it.
 - **A fixture or docstring names a placeholder tool, never a real one.** A real
   tool's old name written here is a hit in every cross-repo sweep for that
   rename.

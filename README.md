@@ -558,13 +558,19 @@ with no suggestion. To catch what a move left behind, reach for `--moves`. It
 reads the change you are making, not history describing moves already
 reconciled.
 
-The rules land at `$XDG_STATE_HOME/refcheck/repos/<path>/rules.json`, where
-`<path>` is the checkout's absolute path without its leading `/`: a checkout at
-`/home/me/src/app` keeps them in `repos/home/me/src/app/rules.json`.
-`~/.local/state` stands in for an unset `$XDG_STATE_HOME`. The file is state:
-refcheck writes it and nobody edits it, so `refcheck rules learn` is how it
-changes. A checkout that moved or was deleted leaves its rules behind until
-`refcheck rules clear` names it.
+The rules land at `$XDG_STATE_HOME/refcheck/checkouts/<path>/rules.json`,
+where `<path>` is the checkout's absolute path without its leading `/`: a
+checkout at `/home/me/src/app` keeps them in
+`checkouts/home/me/src/app/rules.json`. `~/.local/state` stands in for an unset
+`$XDG_STATE_HOME`. The file is state: refcheck writes it and nobody edits it, so
+`refcheck rules learn` is how it changes. A checkout that moved or was deleted
+leaves its rules behind until `refcheck rules clear` names it. Rules files an
+earlier release wrote under `refcheck/repos/` are moved here the first time
+refcheck looks for rules.
+
+A rules file that is there and does not parse is reported, never read as
+empty. `refcheck rules show` exits 1 naming it, and a check prints a notice and
+runs without it.
 
 The user config's `[learn] time_window` sets how far back the history is read,
 six months by default. `refcheck config example user` prints the file with that

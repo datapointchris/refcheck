@@ -40,6 +40,7 @@ from .output import print_sweep
 from .resolved_config import resolved_config
 from .rules import LearnRulesError
 from .rules import NotAGitRepository
+from .rules import RulesFileError
 from .rules import clear_rules
 from .rules import get_rules_path
 from .rules import learn_rules_from_git
@@ -555,6 +556,12 @@ def check(
     failed = bool(checker.issues or (swept and swept.issues) or unreached or (checker.strict and checker.warnings))
     moves_asked = check_moves or bool(moves_since)
 
+    if checker.rules_unreadable:
+        print(
+            f"refcheck: {checker.rules_unreadable}, so no learned rule fed a suggestion. 'refcheck rules learn' writes it again.",
+            file=sys.stderr,
+        )
+
     if as_json:
         print_document(
             check_document.document(
@@ -714,8 +721,11 @@ def rules_show(
     """Where a checkout's rules are, and every mapping in them."""
     root = checkout_or_exit(checkout)
     path = get_rules_path(root)
-    learned = path.exists()
-    rules = read_rules(path) if learned else None
+    try:
+        rules = read_rules(path)
+    except RulesFileError as error:
+        print(f"refcheck: {error}. 'refcheck rules learn' in {root} writes it again.", file=sys.stderr)
+        raise typer.Exit(1) from error
     if as_json:
         print_document({'schema_version': 1, 'checkout': str(root), 'rules_file': str(path), 'rules': rules})
     elif rules is None:
@@ -742,7 +752,11 @@ def rules_list(as_json: Annotated[bool, json_option('rules-list.schema.json')] =
 def rules_clear(checkout: Annotated[Path | None, typer.Argument(help=CHECKOUT_HELP)] = None):
     """Delete a checkout's rules, so a broken reference suggests nothing from them until rules learn runs again."""
     root = checkout_or_exit(checkout)
-    deleted = clear_rules(root)
+    try:
+        deleted = clear_rules(root)
+    except RulesFileError as error:
+        print(f'refcheck: {error}', file=sys.stderr)
+        raise typer.Exit(1) from error
     print(f'Deleted {deleted}' if deleted else f'No rules learned for {root}, so nothing was deleted.')
 
 

@@ -12,10 +12,10 @@ class TestGetRulesPath:
 
     def test_mirrors_the_checkouts_absolute_path(self):
         """A `--` in a directory name cannot then make two checkouts share a file."""
-        repos = Path.home() / '.local/state/refcheck/repos'
+        checkouts = Path.home() / '.local/state/refcheck/checkouts'
 
-        assert get_rules_path(Path('/srv/dev/my--project')) == repos / 'srv/dev/my--project/rules.json'
-        assert get_rules_path(Path('/srv/dev/my/project')) == repos / 'srv/dev/my/project/rules.json'
+        assert get_rules_path(Path('/srv/dev/my--project')) == checkouts / 'srv/dev/my--project/rules.json'
+        assert get_rules_path(Path('/srv/dev/my/project')) == checkouts / 'srv/dev/my/project/rules.json'
 
     def test_rules_are_read_under_the_xdg_state_home(self, temp_git_repo, tmp_path, monkeypatch):
         """HOME points elsewhere, so a path built from HOME finds nothing here."""
@@ -26,18 +26,18 @@ class TestGetRulesPath:
         rules_path.parent.mkdir(parents=True)
         rules_path.write_text(json.dumps({'directory_mappings': {'old/': 'new/'}, 'file_mappings': {}}))
 
-        rules, path = load_rules(temp_git_repo)
+        loaded = load_rules(temp_git_repo)
 
-        assert path == rules_path
-        assert path.is_relative_to(state_home)
-        assert rules['directory_mappings'] == {'old/': 'new/'}
+        assert loaded.path == rules_path
+        assert rules_path.is_relative_to(state_home)
+        assert loaded.rules['directory_mappings'] == {'old/': 'new/'}
 
 
 class TestLoadRules:
     """Tests for load_rules function."""
 
     def test_returns_empty_rules_when_no_file(self, temp_dir):
-        rules, path = load_rules(temp_dir)
+        loaded = load_rules(temp_dir)
 
-        assert rules == {'directory_mappings': {}, 'file_mappings': {}}
-        assert path is None
+        assert loaded.rules == {'directory_mappings': {}, 'file_mappings': {}}
+        assert loaded.path is None

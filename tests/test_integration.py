@@ -531,10 +531,23 @@ class TestRules:
 
         assert result.returncode == 128
 
+    def test_a_rules_file_cut_short_by_a_failed_write_is_reported_rather_than_read_as_empty(self, deployed_repo):
+        rules_file = get_rules_path(deployed_repo)
+        rules_file.parent.mkdir(parents=True)
+        rules_file.write_text('{"dir')
+
+        shown = run_refcheck('rules', 'show', cwd=deployed_repo)
+        checked = run_check(cwd=deployed_repo)
+
+        assert (shown.returncode, shown.stdout) == (1, '')
+        assert str(rules_file) in shown.stderr
+        assert str(rules_file) in checked.stderr
+
     def test_a_gone_checkouts_rules_are_listed_and_cleared_by_name(self, deployed_repo, tmp_path):
         """A checkout that was deleted leaves its rules behind until they are named."""
         run_refcheck('rules', 'learn', cwd=deployed_repo)
-        _, path = load_rules(deployed_repo)
+        path = load_rules(deployed_repo).path
+        assert path is not None
         gone = tmp_path / 'deleted-checkout'
         stale = get_rules_path(gone)
         stale.parent.mkdir(parents=True)

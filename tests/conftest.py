@@ -53,15 +53,16 @@ def refcheck_under_test():
 
 
 @pytest.fixture(autouse=True)
-def config_follows_home(monkeypatch):
-    """Put the user config and the rules files under whatever HOME a test sets.
+def config_follows_home(monkeypatch, tmp_path_factory):
+    """Put the user config and the rules files under a HOME of the test's own.
 
     The config lives under `$XDG_CONFIG_HOME` and the rules under
-    `$XDG_STATE_HOME` when each is set. A test points HOME at its own directory
-    to keep them there, and an inherited XDG_STATE_HOME would send `rules learn`
-    to write into the caller's real state. A test that sets either variable
-    itself does so after this fixture runs.
+    `$XDG_STATE_HOME` when each is set, and under HOME otherwise. Any rules
+    command, and any check, may write there, so a test left on the caller's
+    HOME would change the caller's real state. A test that sets HOME or either
+    variable itself does so after this fixture runs.
     """
+    monkeypatch.setenv('HOME', str(tmp_path_factory.mktemp('home')))
     monkeypatch.delenv('XDG_CONFIG_HOME', raising=False)
     monkeypatch.delenv('XDG_STATE_HOME', raising=False)
 

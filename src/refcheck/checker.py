@@ -284,6 +284,7 @@ class ReferenceChecker:
         self.exclude_patterns = self.DEFAULT_EXCLUDE_PATTERNS.copy()
         self._rules: dict | None = None
         self._rules_path: Path | None = None
+        self.rules_unreadable: str | None = None
         self._borrowed: dict[str, str] | None = None
 
         if not test_mode:
@@ -542,10 +543,11 @@ class ReferenceChecker:
         return stem in self.PLACEHOLDER_STEMS or stem.startswith(self.PLACEHOLDER_PREFIXES)
 
     def load_rules(self) -> dict:
-        """Load rules from config directory."""
+        """The learned rules for this tree, read once. Where the file could not be read, `rules_unreadable` says why."""
         if self._rules is not None:
             return self._rules
-        self._rules, self._rules_path = load_rules(self.root_dir)
+        loaded = load_rules(self.root_dir)
+        self._rules, self._rules_path, self.rules_unreadable = loaded.rules, loaded.path, loaded.unreadable
         return self._rules
 
     def find_similar_files(self, missing_path: str) -> list[str]:

@@ -391,7 +391,7 @@ def check(
     # so beats parsing into a walk of 90 repos that asks them nothing.
     if registry and not (pattern or check_moves or moves_since or name):
         print(
-            '--registry sweeps other repos for what a move or a rename left behind, '
+            'refcheck: --registry sweeps other repos for what a move or a rename left behind, '
             'so it needs --moves, --moves-since, --pattern or --name to say what.',
             file=sys.stderr,
         )
@@ -623,7 +623,7 @@ def load_registries(registries: list[Path]) -> registry_module.Registry:
     try:
         return registry_module.load_all(registries)
     except registry_module.RegistryError as error:
-        print(f'refcheck: {error}', file=sys.stderr)
+        print(f'refcheck: {error}. --registry takes a JSON file listing the repos to sweep.', file=sys.stderr)
         raise typer.Exit(2) from error
 
 

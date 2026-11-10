@@ -74,7 +74,7 @@ class TestRefusals:
     """A registry that is not one says so rather than sweeping nothing."""
 
     def test_missing_file(self, temp_dir):
-        with pytest.raises(registry.RegistryError, match='cannot read'):
+        with pytest.raises(registry.RegistryError, match='does not exist'):
             registry.load(temp_dir / 'absent.json')
 
     def test_invalid_json(self, temp_dir):

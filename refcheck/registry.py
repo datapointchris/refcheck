@@ -67,8 +67,10 @@ def load(registry_path: Path) -> Registry:
     """
     try:
         document = json.loads(registry_path.read_text(encoding='utf-8'))
+    except FileNotFoundError as error:
+        raise RegistryError(f'{registry_path} does not exist') from error
     except OSError as error:
-        raise RegistryError(f'cannot read {registry_path}: {error}') from error
+        raise RegistryError(f'cannot read {registry_path}: {error.strerror or error}') from error
     except json.JSONDecodeError as error:
         raise RegistryError(f'{registry_path} is not valid JSON: {error}') from error
 

@@ -84,7 +84,7 @@ def learn_rules_from_git(time_window: str = '6 months') -> LearnedRules:
     """
     repo_root = get_repo_root()
     if repo_root is None:
-        raise NotAGitRepository('not a git repository (or any of the parent directories): .git')
+        raise NotAGitRepository(f'{Path.cwd()} is in no git repository')
 
     try:
         log = git.run(

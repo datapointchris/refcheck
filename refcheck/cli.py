@@ -457,7 +457,12 @@ def check(
         if check_moves or moves_since:
             repo_root = get_repo_root(root_dir)
             if repo_root is None:
-                print('fatal: not a git repository (or any of the parent directories): .git', file=sys.stderr)
+                flag = '--moves-since' if moves_since else '--moves'
+                print(
+                    f'refcheck: {flag} reads the change from git, and {root_dir} is in no git repository. '
+                    'Run it inside the repository the change is in.',
+                    file=sys.stderr,
+                )
                 raise typer.Exit(128)
 
             # A bare name is asked for only when there are other repos to ask,
@@ -559,7 +564,10 @@ def learn_rules():
     try:
         learned = learn_rules_from_git(load_config(Path.cwd()).time_window)
     except NotAGitRepository as error:
-        print(f'fatal: {error}', file=sys.stderr)
+        print(
+            f"refcheck: learn-rules reads git's rename history, and {error}. Run it inside the repository to learn from.",
+            file=sys.stderr,
+        )
         raise typer.Exit(128) from error
     except LearnRulesError as error:
         print(f'refcheck: {error}', file=sys.stderr)

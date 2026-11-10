@@ -10,6 +10,7 @@ import pytest
 from refcheck import moves
 from refcheck.checker import ReferenceChecker
 from refcheck.config import Config
+from refcheck.rules import load_rules
 
 
 def run_refcheck(*args, cwd=None):
@@ -503,34 +504,14 @@ class TestSuggestionFeature:
 class TestLearnRules:
     """Test 15: learn-rules command."""
 
-    def rules_file_for(self, repo):
-        safe_name = str(repo).lstrip('/').replace('/', '--')
-        return Path.home() / '.local' / 'state' / 'refcheck' / 'repos' / safe_name / 'rules.json'
-
-    def test_runs_learn_rules(self, deployed_repo):
-        result = run_refcheck('learn-rules', cwd=deployed_repo)
-
-        assert result.returncode == 0
-
-    def test_creates_rules_file(self, deployed_repo):
-        run_refcheck('learn-rules', cwd=deployed_repo)
-
-        assert self.rules_file_for(deployed_repo).exists()
-
-    def test_rules_file_valid_json(self, deployed_repo):
-        run_refcheck('learn-rules', cwd=deployed_repo)
-
-        rules = json.loads(self.rules_file_for(deployed_repo).read_text())
-
-        assert 'directory_mappings' in rules
-        assert 'file_mappings' in rules
-
     def test_reads_the_rename_out_of_the_history(self, deployed_repo):
         """Asserting on the shape alone passes over an empty result."""
-        run_refcheck('learn-rules', cwd=deployed_repo)
+        result = run_refcheck('learn-rules', cwd=deployed_repo)
 
-        rules = json.loads(self.rules_file_for(deployed_repo).read_text())
+        rules, path = load_rules(deployed_repo)
 
+        assert result.returncode == 0
+        assert str(path) in result.stdout
         assert rules['file_mappings'] == {'logging.sh': 'log.sh'}
 
     def test_outside_a_repository_exits_as_git_does(self, tmp_path, monkeypatch):

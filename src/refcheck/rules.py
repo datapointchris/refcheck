@@ -31,16 +31,18 @@ class LearnedRules:
 
 
 def get_rules_path(repo_root: Path) -> Path:
-    """Get the rules file path for a given repo root."""
-    safe_name = str(repo_root).lstrip('/').replace('/', '--')
-    return user_state_dir() / 'repos' / safe_name / 'rules.json'
+    """Where a checkout's rules live: its absolute path, mirrored under the state directory's `repos/`.
+
+    Every checkout gets a directory of its own, so no two share a file, and
+    the path can be found by hand from the checkout's.
+    """
+    return user_state_dir() / 'repos' / repo_root.relative_to(repo_root.anchor) / 'rules.json'
 
 
 def load_rules(root_dir: Path) -> tuple[dict, Path | None]:
-    """
-    Load rules from repos/{safe-repo-path}/rules.json under the user state directory.
+    """The rules for the repository holding root_dir, and the path they are read from.
 
-    Returns (rules_dict, rules_path) tuple.
+    Outside a repository the path is None. With no rules file the rules are empty.
     """
     rules: dict = {'directory_mappings': {}, 'file_mappings': {}}
     rules_path = None

@@ -538,7 +538,8 @@ reads the change you are making, not history describing moves already
 reconciled.
 
 The rules land at `$XDG_STATE_HOME/refcheck/repos/<path>/rules.json`, where
-`<path>` is the checkout's absolute path with each `/` written as `--`.
+`<path>` is the checkout's absolute path without its leading `/`: a checkout at
+`/home/me/src/app` keeps them in `repos/home/me/src/app/rules.json`.
 `~/.local/state` stands in for an unset `$XDG_STATE_HOME`. The file is state:
 refcheck writes it and nobody edits it, so `refcheck learn-rules` is how it
 changes. The user config sets how far back the history is read:

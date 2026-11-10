@@ -109,27 +109,31 @@ def print_results(
     search_path: Path,
     unreadable: list[Unreadable] | None = None,
     set_aside: list[SetAside] | None = None,
+    claim: str = 'All file references valid',
+    files_scanned: int = 0,
 ) -> None:
-    """Print validation results."""
+    """Print validation results.
+
+    `claim` is what a clean run asserts, which depends on the question asked:
+    a --pattern run checked no source reference, so it cannot call them valid.
+    """
     unreadable = unreadable or []
     set_aside = set_aside or []
     try:
         search_info = f' in {search_path.relative_to(root_dir)}' if search_path != root_dir else ''
+        clean = f'{claim} — {count(files_scanned, "file")} read{search_info}'
 
-        # If no issues or warnings, success!
-        #
         # Each block below runs on its own condition and none of them returns
         # early. A run can be clean, have set a hit aside and have failed to
         # read a path all at once, and a return in front of the others prints a
         # report that reads complete while carrying one of the three.
         if not issues and not warnings:
             if set_aside:
-                clean = f'No stale references{search_info}, and {count(len(set_aside), "hit")} set aside'
-                print(f'\n{marked(PASS, clean)}\n')
+                print(f'\n{marked(PASS, f"{clean}, and {count(len(set_aside), 'hit')} set aside")}\n')
                 print_set_aside(set_aside)
                 print()
             elif not unreadable:
-                print(f'\n{marked(PASS, f"All file references valid{search_info}")}\n')
+                print(f'\n{marked(PASS, clean)}\n')
             if unreadable:
                 print_unreadable(unreadable)
             return

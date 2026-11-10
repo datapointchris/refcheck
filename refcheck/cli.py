@@ -22,6 +22,7 @@ from .names import FLAG_WORD
 from .names import NAME_WORD
 from .names import SUBCOMMAND_WORD
 from .output import PASS
+from .output import count
 from .output import marked
 from .output import print_config
 from .output import print_results
@@ -527,6 +528,8 @@ def check(
             checker.search_path,
             checker.unreadable,
             checker.set_aside,
+            claim=clean_claim(pattern, name, found if check_moves or moves_since else None, moves_since),
+            files_scanned=len(checker.files_scanned),
         )
 
     if swept is not None:
@@ -578,6 +581,23 @@ def learn_rules():
 add_update_command(app, UPDATE_CONFIG)
 # The library takes no panel, so the command it just registered is placed here.
 app.registered_commands[-1].rich_help_panel = MAINTENANCE_PANEL
+
+
+def clean_claim(pattern: str | None, name: str | None, moved: list[moves_module.Move] | None, moves_since: str | None) -> str:
+    """What a run with nothing to report asserts, named for the question it asked."""
+    if pattern:
+        return f'No stale reference to {pattern}'
+    if name:
+        return f'No line still names {name}'
+    if moved is None:
+        return 'All file references valid'
+    scope = f'since {moves_since}' if moves_since else 'in this change'
+    asked = [move for move in moved if not move.is_bare]
+    if asked:
+        return f'All file references valid, and no stale reference to the {count(len(asked), "path")} moved or deleted {scope}'
+    if moved:
+        return f'All file references valid, and the only paths moved {scope} are bare filenames, which only --registry asks after'
+    return f'All file references valid, and nothing was moved or deleted {scope}'
 
 
 def nothing_left_to_scan(narrowing: list[str], searched: Path | None, swept: bool, searched_text: bool) -> str:

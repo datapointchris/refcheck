@@ -287,7 +287,7 @@ whether each one was repaired or is waiting to be cleaned up. Expect it to
 outnumber the findings in a repo still holding the old name.
 
 ```text
-PASS No stale references, and 1 hit set aside
+PASS No stale reference to markdownlint.json — 2 files read, and 1 hit set aside
 
 1 hit matched the text and resolved to a path on disk, so none was reported:
 ────────────────────────────────────────────────────────────

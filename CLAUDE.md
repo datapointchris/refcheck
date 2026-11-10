@@ -32,9 +32,9 @@ have set hits aside and have failed to read a path, all at once.
 
 ## The tool is worth exactly its false-positive rate
 
-Most built-in exclusions and guards in `checker.py` carry a comment naming the
-measured false positive that put them there. A new one carries its incident
-the same way.
+Most built-in exclusions in `scan_scope.py` and guards in `checker.py` carry a
+comment naming the measured false positive that put them there. A new one
+carries its incident the same way.
 
 Documentation context widens the guards and never skips the line.
 `documents_rather_than_runs` counts markdown, a `#` comment and an
@@ -143,7 +143,10 @@ repos from another's.
 
 ## Exclusions match two ways and prune during the walk
 
-`ScanScope` in `scan_scope.py` decides what a scan reads.
+`ScanScope` in `scan_scope.py` decides what a scan reads. `BUILTIN_LAYERS`
+there is the one list of built-in exclusions: the checker builds its scope from
+it, `config show` prints it, and the sweep's filename index skips its directory
+names.
 `_matches_exclusion` tries `Path.match` and `fnmatch` on every pattern.
 `Path.match` is right-anchored, which fits `*.log` and `CHANGELOG.md`. It reads
 `**` as one component. Alone, it lets `build/reports/**` exclude

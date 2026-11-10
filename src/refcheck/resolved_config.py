@@ -11,14 +11,14 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import repository
-from .checker import ReferenceChecker
 from .config import REPO_CONFIG_NAME
 from .config import USER_CONFIG_TABLES
 from .config import load_config
 from .config import read_toml
 from .config import user_config_path
 from .rules import get_rules_path
-from .scan_scope import CARGO_BUILD_DIR
+from .scan_scope import BUILTIN_LAYERS
+from .scan_scope import BuiltinLayer
 
 
 @dataclass(frozen=True)
@@ -63,9 +63,13 @@ def resolved_config(start: Path) -> list[Resolved]:
         ),
         Resolved('learn.time_window', config.time_window, 'user_config' if 'time_window' in learn else 'the default'),
         Resolved('rules_file', str(rules_file) if rules_file else None, from_environment('XDG_STATE_HOME', '~/.local/state'), rules_note),
-        Resolved('scan.exclude', sorted(ReferenceChecker.DEFAULT_EXCLUDES), 'built-in directory names'),
-        Resolved('scan.exclude', [CARGO_BUILD_DIR], 'built-in build output'),
-        Resolved('scan.exclude', list(ReferenceChecker.DEFAULT_EXCLUDE_PATTERNS), 'built-in patterns'),
-        Resolved('scan.exclude', list(ReferenceChecker.TEST_FIXTURE_PATTERNS), 'built-in recorded fixtures, which check --test-mode reads'),
+        *(builtin_row(layer) for layer in BUILTIN_LAYERS),
         Resolved('scan.exclude', config.exclude, 'repo_config'),
     ]
+
+
+def builtin_row(layer: BuiltinLayer) -> Resolved:
+    """A built-in layer's exclusions, with what reads past it."""
+    value = [layer.rule] if layer.rule else sorted(layer.directories) or list(layer.patterns)
+    label = f'built-in {layer.name}, which check --test-mode reads' if layer.read_under_test_mode else f'built-in {layer.name}'
+    return Resolved('scan.exclude', value, label)

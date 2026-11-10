@@ -26,6 +26,7 @@ from .output import Issue
 from .output import Unreadable
 from .registry import Registry
 from .registry import Repo
+from .scan_scope import EXCLUDED_DIRECTORY_NAMES
 from .scan_scope import is_cargo_build_dir
 
 
@@ -232,7 +233,7 @@ def held_filenames(roots: Sequence[Path]) -> set[str]:
             directories[:] = [
                 directory
                 for directory in directories
-                if directory not in ReferenceChecker.DEFAULT_EXCLUDES and not is_cargo_build_dir(Path(parent) / directory)
+                if directory not in EXCLUDED_DIRECTORY_NAMES and not is_cargo_build_dir(Path(parent) / directory)
             ]
             held.update(files)
     return held

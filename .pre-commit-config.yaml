@@ -290,7 +290,8 @@ repos:
         name: pytest
         entry: uv run pytest --tb=short
         language: system
-        types: [python]
+        # Every file a test imports or reads, so a change to any of them runs the suite.
+        files: ^(src/|tests/|schemas/|README\.md$|\.pre-commit-hooks\.yaml$|pyproject\.toml$|uv\.lock$)
         pass_filenames: false
         always_run: false
         stages: [pre-commit]

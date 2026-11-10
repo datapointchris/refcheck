@@ -160,7 +160,9 @@ at the git root, so a checkout never inherits an enclosing tree's config.
 `task test` runs the suite (`uv run pytest`). `task --list` shows the rest:
 `setup`, `lint`, `format`, `typecheck` and `build`.
 
-pre-commit runs `uv run pytest` on any commit staging a Python file. Git
+pre-commit runs `uv run pytest` on any commit staging a file a test imports or
+reads: `src/`, `tests/`, `schemas/`, the README, the hook manifest,
+`pyproject.toml` and `uv.lock`. Git
 exports `GIT_DIR` and `GIT_INDEX_FILE` to its hooks. Both outrank directory
 discovery. Left in place, a fixture's `git init` reinitializes the repository
 being committed, and its `git add` replaces that repository's index. The
@@ -168,9 +170,10 @@ session fixture `detached_from_the_calling_git` in `tests/conftest.py` strips
 every `GIT_` and `PRE_COMMIT_` variable. `tests/test_suite_isolation.py` holds
 it in place.
 
-- **The CLI tests run `refcheck` from `PATH`.** Under `uv run`, that is the
-  editable install in `.venv`. A bare `pytest` on a machine with refcheck
-  installed tests the installed release instead.
+- **The CLI tests run `refcheck` from `PATH`, and the build under test is
+  first on it.** The session fixture `refcheck_under_test` puts the bin
+  directory beside the interpreter ahead of the rest. A `pytest` with no
+  refcheck there stops rather than testing an installed release.
 - **Fixtures build their trees under `tmp_path`, with `HOME` pointed there.**
   A test reading a directory on the machine makes its result a property of
   that machine. The user config sits under `$XDG_CONFIG_HOME` and the rules

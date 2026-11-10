@@ -2,6 +2,7 @@
 
 import os
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -33,6 +34,22 @@ def detached_from_the_calling_git():
         del os.environ[name]
     yield
     os.environ.update(inherited)
+
+
+@pytest.fixture(scope='session', autouse=True)
+def refcheck_under_test():
+    """Put the refcheck installed beside this interpreter first on PATH.
+
+    The CLI tests run `refcheck` the way a user does. Left to PATH alone, a
+    machine with a release installed tests the release instead of this tree.
+    """
+    bin_dir = Path(sys.executable).parent
+    if not (bin_dir / 'refcheck').exists():
+        pytest.exit(f'no refcheck beside {sys.executable}, so the CLI tests would run another build. Run the suite with `uv run pytest`.')
+    original = os.environ['PATH']
+    os.environ['PATH'] = os.pathsep.join([str(bin_dir), original])
+    yield
+    os.environ['PATH'] = original
 
 
 @pytest.fixture(autouse=True)

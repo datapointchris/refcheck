@@ -15,6 +15,7 @@ from typer.core import TyperGroup
 from . import check_document
 from . import moves as moves_module
 from . import registry as registry_module
+from . import repository
 from . import sweep as sweep_module
 from .checker import ReferenceChecker
 from .config import REPO_CONFIG_NAME
@@ -30,7 +31,6 @@ from .output import print_results
 from .output import print_sweep
 from .rules import LearnRulesError
 from .rules import NotAGitRepository
-from .rules import get_repo_root
 from .rules import learn_rules_from_git
 from .selfupdate import CONFIG as UPDATE_CONFIG
 from .selfupdate import print_version
@@ -440,6 +440,18 @@ def check(
             raise typer.Exit(2)
         name = ' '.join(name.split())
 
+    # Decided from the directory alone, so a run in the wrong place is refused
+    # before it walks a tree it would then throw away.
+    repo_root = repository.root(root_dir)
+    if (check_moves or moves_since) and repo_root is None:
+        flag = '--moves-since' if moves_since else '--moves'
+        print(
+            f'refcheck: {flag} reads the change from git, and {root_dir} is in no git repository. '
+            'Run it inside the repository the change is in.',
+            file=sys.stderr,
+        )
+        raise typer.Exit(128)
+
     checker = ReferenceChecker(
         root_dir=root_dir,
         search_path=search_path,
@@ -455,7 +467,7 @@ def check(
     # With --registry and no path, the current directory is one more tree to
     # ask only when it is a repository. Run from a home directory, it would
     # walk every file under it before asking any listed repo.
-    walks_here = path is not None or not registry or get_repo_root(root_dir) is not None
+    walks_here = path is not None or not registry or repo_root is not None
     sweep_patterns: dict[str, str] = {}
     found: list[moves_module.Move] = []
     gone_filenames: dict[str, str] = {}
@@ -473,17 +485,7 @@ def check(
     else:
         checker.run_all_checks()
 
-        if check_moves or moves_since:
-            repo_root = get_repo_root(root_dir)
-            if repo_root is None:
-                flag = '--moves-since' if moves_since else '--moves'
-                print(
-                    f'refcheck: {flag} reads the change from git, and {root_dir} is in no git repository. '
-                    'Run it inside the repository the change is in.',
-                    file=sys.stderr,
-                )
-                raise typer.Exit(128)
-
+        if (check_moves or moves_since) and repo_root is not None:
             # A bare name is asked for only when there are other repos to ask,
             # where an absolute path settles it. In this repo it stays out.
             try:
@@ -513,7 +515,7 @@ def check(
         # something real.
         candidates, unmatchable = moves_module.old_filenames(found)
         if candidates:
-            roots = [get_repo_root(root_dir) or root_dir, *(repo.path for repo in listed.repos if repo.is_on_disk)]
+            roots = [repo_root or root_dir, *(repo.path for repo in listed.repos if repo.is_on_disk)]
             held = sweep_module.held_filenames(roots)
             gone_filenames = {old: became for old, became in candidates.items() if old not in held}
             filenames_still_held = sorted(set(candidates) - set(gone_filenames))

@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from dataclasses import field
 from pathlib import Path
 
+from . import repository
 from .config import Config
 from .names import LineKind
 from .names import NameShapes
@@ -1215,13 +1216,8 @@ class ReferenceChecker:
         return path
 
     def find_repo_root(self, file_path: Path) -> Path:
-        """Find git repo root from file path."""
-        current = file_path.parent
-        while current != current.parent:
-            if (current / '.git').exists():
-                return current
-            current = current.parent
-        return self.root_dir
+        """The repository holding this file, or the scan root when no repository does."""
+        return repository.root(file_path.parent) or self.root_dir
 
     def parse_variable_assignments(self, file_path: Path) -> dict[str, str]:
         """Parse common shell variable assignment patterns."""

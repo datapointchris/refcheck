@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import git
+from . import repository
 from .config import user_state_dir
 
 
@@ -29,14 +30,6 @@ class LearnedRules:
     file_mappings: int
 
 
-def get_repo_root(cwd: Path | None = None) -> Path | None:
-    """Get git repo root, or None if not in a repo."""
-    try:
-        return Path(git.run(['rev-parse', '--show-toplevel'], cwd=cwd).strip())
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return None
-
-
 def get_rules_path(repo_root: Path) -> Path:
     """Get the rules file path for a given repo root."""
     safe_name = str(repo_root).lstrip('/').replace('/', '--')
@@ -52,7 +45,7 @@ def load_rules(root_dir: Path) -> tuple[dict, Path | None]:
     rules: dict = {'directory_mappings': {}, 'file_mappings': {}}
     rules_path = None
 
-    repo_root = get_repo_root(root_dir)
+    repo_root = repository.root(root_dir)
     if repo_root is None:
         return rules, rules_path
 
@@ -82,7 +75,7 @@ def learn_rules_from_git(time_window: str = '6 months') -> LearnedRules:
     Raises NotAGitRepository outside a repository and LearnRulesError where
     git cannot read the log. The command decides what each means for the run.
     """
-    repo_root = get_repo_root()
+    repo_root = repository.root(Path.cwd())
     if repo_root is None:
         raise NotAGitRepository(f'{Path.cwd()} is in no git repository')
 
@@ -100,6 +93,8 @@ def learn_rules_from_git(time_window: str = '6 months') -> LearnedRules:
         )
     except subprocess.CalledProcessError as error:
         raise LearnRulesError(f'git could not read the rename history: {error.stderr.strip() or error}') from error
+    except FileNotFoundError as error:
+        raise LearnRulesError('git is not installed, so there is no rename history to read') from error
 
     directory_mappings: dict[str, tuple[str, int]] = {}
     file_mappings: dict[str, str] = {}

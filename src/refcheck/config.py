@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from dataclasses import field
 from pathlib import Path
 
+from . import repository
+
 REPO_CONFIG_NAME = '.refcheck.toml'
 
 
@@ -50,16 +52,17 @@ def find_repo_config(start: Path) -> Path | None:
     hand-written one somewhere else. Putting them in the user config would
     silence a path across every repo on the machine.
 
-    The walk stops at the git root so a checkout never inherits the config of
-    whatever encloses it. A file sitting in the root itself is still read,
-    because the directory is tested before it is judged to be the root.
+    The walk stops at the repository's root so a checkout never inherits the
+    config of whatever encloses it. A file sitting in the root itself is still
+    read, because the directory is tested before it is judged to be the root.
     """
     current = start.resolve()
+    top = repository.root(current)
     for directory in (current, *current.parents):
         candidate = directory / REPO_CONFIG_NAME
         if candidate.is_file():
             return candidate
-        if (directory / '.git').exists():
+        if directory == top:
             return None
     return None
 

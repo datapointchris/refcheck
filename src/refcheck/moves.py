@@ -104,6 +104,8 @@ def read(diff_args: list[str], repo_root: Path, include_bare_names: bool = False
         output = git.run(diff_args, cwd=repo_root)
     except subprocess.CalledProcessError as error:
         raise UnreadableChange(error.stderr.strip()) from error
+    except FileNotFoundError as error:
+        raise UnreadableChange('git is not installed') from error
 
     moves = []
     for line in output.splitlines():

@@ -3,25 +3,8 @@
 import json
 from pathlib import Path
 
-from refcheck.rules import get_repo_root
 from refcheck.rules import get_rules_path
 from refcheck.rules import load_rules
-
-
-class TestGetRepoRoot:
-    """Tests for get_repo_root function."""
-
-    def test_returns_path_in_git_repo(self, temp_git_repo):
-        subdir = temp_git_repo / 'subdir'
-        subdir.mkdir()
-
-        root = get_repo_root(subdir)
-        # Resolve both paths to handle macOS /var -> /private/var symlink
-        assert root.resolve() == temp_git_repo.resolve()
-
-    def test_returns_none_outside_git_repo(self, temp_dir):
-        result = get_repo_root(temp_dir)
-        assert result is None
 
 
 class TestGetRulesPath:

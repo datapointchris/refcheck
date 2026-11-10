@@ -95,10 +95,13 @@ Anything that leaves the process goes through one named function, and every
 caller uses it. That function is where a timeout, an environment change or a
 test stub attaches, once.
 
-- **git** runs only through `git.run`. `rules.get_repo_root`,
-  `rules.learn_rules_from_git` and `moves.read` call it, and each decides what
-  a failure means for its own question. No other module imports `subprocess`
-  to run a program.
+- **git** runs only through `git.run`. `rules.learn_rules_from_git` and
+  `moves.read` call it, and each decides what a failure means for its own
+  question. No other module imports `subprocess` to run a program.
+- **Which repository holds a path** is answered only by `repository.root`,
+  which looks for the `.git` entry git's own discovery looks for. It needs no
+  process, and inside a hook it answers about the directory asked rather than
+  the repository `GIT_DIR` names.
 - **The one file refcheck writes** is the rules file, written only by
   `rules.learn_rules_from_git` at the path `rules.get_rules_path` gives. Every
   other file is read.

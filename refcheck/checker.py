@@ -57,6 +57,10 @@ class ReferenceChecker:
         # both the largest thing the scan read and the only source of hits when
         # a skill's helper script was renamed.
         'file-history',
+        # Claude Code keeps each long paste under .claude as paste-cache/<hash>.txt,
+        # a record of what a person typed. Renaming a skill everywhere it is
+        # referenced left one hit, in a paste that named the old skill.
+        'paste-cache',
     }
 
     DEFAULT_EXCLUDE_PATTERNS = [

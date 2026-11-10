@@ -1,5 +1,6 @@
 """Command-line interface for refcheck."""
 
+import os
 import shlex
 import sys
 from pathlib import Path
@@ -509,13 +510,17 @@ def check(
 
     swept = None
     if listed:
+        source_main = main_checkout_of(repo_root) if repo_root is not None and not name else None
+
         # A filename the change took out of use is cited alone as often as by
         # path. It is asked only once neither this tree nor any listed repo
         # holds a file of that name, because until then the citation names
-        # something real.
+        # something real. The main checkout of a worktree's repository still
+        # holds what the worktree deleted, so the worktree answers for it.
         candidates, unmatchable = moves_module.old_filenames(found)
         if candidates:
-            roots = [repo_root or root_dir, *(repo.path for repo in listed.repos if repo.is_on_disk)]
+            others = [repo.path for repo in listed.repos if repo.is_on_disk and Path(os.path.realpath(repo.path)) != source_main]
+            roots = [repo_root or root_dir, *others]
             held = sweep_module.held_filenames(roots)
             gone_filenames = {old: became for old, became in candidates.items() if old not in held}
             filenames_still_held = sorted(set(candidates) - set(gone_filenames))
@@ -528,9 +533,10 @@ def check(
             file_type,
             test_mode,
             flag_patterns,
-            root_dir,
+            repo_root or root_dir,
             search_path if walks_here else None,
             gone_filenames,
+            source_main,
         )
 
     # A filter that leaves no file passes every check over nothing. Unfiltered,
@@ -684,6 +690,7 @@ def sweep_other_repos(
     source_root: Path,
     scanned_here: Path | None,
     filenames: dict[str, str],
+    source_main: Path | None,
 ) -> sweep_module.SweepResult:
     """Ask every repo the registries list what a move or a rename left behind, printing nothing."""
     if by_name:
@@ -707,8 +714,20 @@ def sweep_other_repos(
             source_root=source_root,
             filenames=filenames,
             already_scanned=scanned_here,
+            source_main=source_main,
         )
     return swept
+
+
+def main_checkout_of(repo_root: Path) -> Path:
+    try:
+        return repository.main_checkout(repo_root)
+    except repository.UnknownMainCheckout as error:
+        print(
+            f'refcheck: git could not say which repository {repo_root} belongs to, so no other repo can be checked against it.\n{error}',
+            file=sys.stderr,
+        )
+        raise typer.Exit(2) from error
 
 
 if __name__ == '__main__':

@@ -1354,16 +1354,24 @@ class TestSweepAcrossRepos:
         assert result.returncode == 2
         assert '--moves' in result.stderr
 
-    def test_says_when_the_repo_the_paths_moved_in_is_not_listed(self, tmp_path, temp_git_repo):
-        """A repo the registry never listed can own nothing, and that prints as clean."""
+    def test_a_move_in_a_linked_worktree_is_asked_of_the_worktree(self, tmp_path, temp_git_repo):
+        """Other repos name the main checkout, which still holds the file until the change lands."""
+        (temp_git_repo / 'versions.json').write_text('{}\n')
+        subprocess.run(['git', 'add', 'versions.json'], cwd=temp_git_repo, capture_output=True, check=True)
+        subprocess.run(['git', 'commit', '-m', 'add pins'], cwd=temp_git_repo, capture_output=True, check=True)
+        worktree = tmp_path / 'worktree'
+        subprocess.run(['git', 'worktree', 'add', str(worktree)], cwd=temp_git_repo, capture_output=True, check=True)
+        subprocess.run(['git', 'mv', 'versions.json', 'pinned-versions.json'], cwd=worktree, capture_output=True, check=True)
+        subprocess.run(['git', 'commit', '-m', 'rename'], cwd=worktree, capture_output=True, check=True)
         consumer = tmp_path / 'consumer'
         consumer.mkdir()
         (consumer / 'config.yml').write_text(f'versions_file: {temp_git_repo}/versions.json\n')
-        registry = self.registry_at(tmp_path / 'reg.json', consumer)
+        registry = self.registry_at(tmp_path / 'reg.json', temp_git_repo, consumer)
 
-        result = run_check('--pattern', 'versions.json', '--registry', str(registry), cwd=temp_git_repo)
+        result = run_check('--moves-since', 'HEAD~1', '--registry', str(registry), cwd=worktree)
 
-        assert 'is not in the registry' in result.stdout
+        assert result.returncode == 1
+        assert f'Gone from {temp_git_repo.name}: versions.json' in result.stdout
 
     def test_counts_a_registry_entry_it_could_not_read(self, tmp_path, temp_git_repo):
         """An entry it could not read fails the run, rather than sitting inside the clean total."""

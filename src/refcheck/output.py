@@ -307,7 +307,6 @@ def print_sweep(
             partial = f'{repos} swept, {asked}{skipped} — but the sweep could not read everything it was given'
             print(marked(FAIL, partial))
 
-        print_unlisted_source(sweep)
         print()
 
         for result in sweep.with_issues:
@@ -356,21 +355,6 @@ def print_unreached(sweep: 'SweepResult') -> None:
         print(f'  {entry.path}')
         print(f'    {entry.reason}')
     print()
-
-
-def print_unlisted_source(sweep: 'SweepResult') -> None:
-    """Say when the repo the paths moved in is not one the sweep can credit.
-
-    A hit is credited to the repo holding the path that went away, so a repo the
-    registry never listed can own nothing and its renames are unanswerable. Left
-    unsaid that prints the same tick as a machine with no stale references, and
-    a registry omitting one repo silently answers a different question.
-    """
-    if sweep.source_is_listed or sweep.source_root is None:
-        return
-
-    unlisted = f'{sweep.source_root} is not in the registry, so a path that moved here can be credited to no repo.'
-    print(marked(WARN, unlisted))
 
 
 def print_config(repo_config: Path | None, layers: list[tuple[str, list[str]]]) -> None:

@@ -18,6 +18,7 @@ from dataclasses import field
 from itertools import chain
 from pathlib import Path
 
+from .checker import MovedIn
 from .checker import ReferenceChecker
 from .config import load_config
 from .output import Issue
@@ -41,11 +42,13 @@ class RepoResult:
 class SweepResult:
     """The sweep's findings, and what it did not look at.
 
-    Four things stop a repo owning a gone path and they arrive from three
-    places: never listed, listed but unreadable, listed and retired, listed and
-    not on disk. All four end in the same tick unless each is counted, and a
-    reader cannot then tell "no stale references" from "the repo the file left
-    was not in the map".
+    Three things stop a listed repo being read: an entry that names no path,
+    a repo marked retired, and a directory that is not on disk. All three end
+    in the same tick unless each is counted, and a reader cannot then tell "no
+    stale references" from "the repo holding one was never opened".
+
+    `source_is_listed` says whether the registry lists the repo the paths
+    moved in. Unlisted, that repo is credited under its directory's name.
     """
 
     results: list[RepoResult] = field(default_factory=list)
@@ -128,12 +131,20 @@ def across_repos(
     source_root: Path | None = None,
     filenames: dict[str, str] | None = None,
     already_scanned: Path | None = None,
+    source_main: Path | None = None,
 ) -> SweepResult:
     """Ask every listed repo what it still points at, in one walk each.
 
+    `source_root` is the checkout the patterns moved in and `source_main` the
+    main checkout of its repository, the one other repos name. That repo can
+    always own a gone path. Listed, it keeps its registry name. Unlisted, it
+    is added under its directory's name, since a hit naming a path that left
+    it is stale whether or not the registry lists it.
+
     `filenames` are old filenames to ask in the same read, each cited alone.
     Their hits inside `already_scanned`, the tree the local run read, are left
-    out, since the local run reported them.
+    out, since the local run reported them. So are hits in the same tree of
+    the main checkout, which holds the same files before the change.
 
     A repo whose directory is not there is reported rather than skipped in
     silence: a registry naming a path this machine does not hold is drift of its
@@ -168,18 +179,32 @@ def across_repos(
     # against. A repo reached through a symlink is then credited to the repo
     # that holds the file rather than to nothing.
     homes = homes_by_path(registry)
-    sweep.source_is_listed = source_root is None or Path(os.path.realpath(source_root)) in homes
     paths = homes_by_name(registry)
+    moved_in = None
+    if source_root is not None:
+        checkout = Path(os.path.realpath(source_root))
+        main = Path(os.path.realpath(source_main)) if source_main is not None else checkout
+        sweep.source_is_listed = main in homes
+        if not sweep.source_is_listed:
+            homes[main] = main.name
+            paths.setdefault(main.name, main)
+        moved_in = MovedIn(name=homes[main], home=main, checkout=checkout)
 
-    scanned = Path(os.path.realpath(already_scanned)) if already_scanned is not None else None
+    scanned_trees = []
+    if already_scanned is not None:
+        scanned = Path(os.path.realpath(already_scanned))
+        scanned_trees.append(scanned)
+        if moved_in is not None and moved_in.home != moved_in.checkout and scanned.is_relative_to(moved_in.checkout):
+            scanned_trees.append(moved_in.home / scanned.relative_to(moved_in.checkout))
+
     for repo in live:
         checker = checker_for(repo, skip_docs, file_type, test_mode, flag_excludes)
-        checker.check_patterns_across_repos(patterns, homes, paths)
+        checker.check_patterns_across_repos(patterns, homes, paths, moved_in)
         if filenames:
             before = len(checker.issues)
             checker.check_filenames(filenames)
             home = Path(os.path.realpath(repo.path))
-            checker.issues[before:] = [issue for issue in checker.issues[before:] if not inside(home / issue.file, scanned)]
+            checker.issues[before:] = [issue for issue in checker.issues[before:] if not inside(home / issue.file, scanned_trees)]
         sweep.results.append(
             RepoResult(repo=repo, issues=checker.issues, unreadable=checker.unreadable, files_scanned=len(checker.files_scanned))
         )
@@ -208,8 +233,9 @@ def held_filenames(roots: Sequence[Path]) -> set[str]:
     return held
 
 
-def inside(path: Path, tree: Path | None) -> bool:
-    return tree is not None and Path(os.path.realpath(path)).is_relative_to(tree)
+def inside(path: Path, trees: Sequence[Path]) -> bool:
+    physical = Path(os.path.realpath(path))
+    return any(physical.is_relative_to(tree) for tree in trees)
 
 
 def names_across_repos(

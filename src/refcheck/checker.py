@@ -4,9 +4,11 @@ import os
 import re
 from collections.abc import Callable
 from collections.abc import Iterator
+from collections.abc import Sequence
 from dataclasses import dataclass
 from dataclasses import field
 from pathlib import Path
+from pathlib import PurePosixPath
 
 from . import repository
 from .config import Config
@@ -33,6 +35,33 @@ class Verdict:
 
     message: str | None = None
     set_aside: list[tuple[str, Path]] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class MovedIn:
+    """The repo a sweep's paths moved in, as other repos name it and as the change holds it.
+
+    `home` is the main checkout, the one every other repo's paths spell, and
+    `name` is what the report credits. `checkout` holds the change. The two
+    differ for a linked worktree, whose main checkout still holds what the
+    change moved, so a path inside `home` is asked of `checkout` instead.
+    Both are physical.
+    """
+
+    name: str
+    home: Path
+    checkout: Path
+
+
+def block_around(lines: Sequence[str], index: int) -> Sequence[str]:
+    """The lines around one, out to the nearest blank line on each side: a paragraph, a list or a record."""
+    start = index
+    while start > 0 and lines[start - 1].strip():
+        start -= 1
+    end = index + 1
+    while end < len(lines) and lines[end].strip():
+        end += 1
+    return lines[start:end]
 
 
 class ReferenceChecker:
@@ -895,19 +924,23 @@ class ReferenceChecker:
     def _reaches_a_gone_path_in(
         self,
         pattern: str,
-        line: str,
+        lines: Sequence[str],
+        index: int,
         repo_homes: dict[Path, str],
         repo_paths: dict[str, Path],
         from_file: Path | None = None,
+        moved_in: MovedIn | None = None,
     ) -> str | None:
         """The repo a hit on this line names a missing file in, if it names one.
 
-        A reference from one repo to another reaches it in one of two ways. It
+        A reference from one repo to another reaches it in one of three ways. It
         spells a location on this machine — an absolute path, `~`, or a variable
         holding one — or it names the repo and the path inside it, which is what
         prose does. Either way the existence test is exact instead of textual:
         resolve the token, and report it only when the path it names is inside a
-        repo the caller listed and is not there.
+        repo the caller listed and is not there. Or it spells the moved path
+        itself, relative to the repo it belongs to, as a manifest does beside a
+        `repo:` key; `_names_a_moved_path` judges that one.
 
         This is the whole defense against a basename sweeping 90 repos for
         `versions.json`. Every mention that is a filename literal, a fixture
@@ -923,8 +956,12 @@ class ReferenceChecker:
         reports a file that is on disk, and comparing an unwalked path places a
         real file outside every repo that holds it.
         """
-        for token, begins_the_token in self._path_tokens_around(pattern, line):
-            if begins_the_token or not token:
+        for token, begins_the_token in self._path_tokens_around(pattern, lines[index]):
+            if not token:
+                continue
+            if begins_the_token:
+                if moved_in is not None and self._names_a_moved_path(pattern, token, lines, index, from_file, moved_in):
+                    return moved_in.name
                 continue
 
             target = self._on_this_filesystem(token)
@@ -932,18 +969,71 @@ class ReferenceChecker:
                 if self._is_this_repos_own(token, from_file):
                     continue
                 target = self._in_a_named_repo(token, repo_paths)
-            if target is None or target.exists():
+            if target is None:
                 continue
 
             physical = Path(os.path.realpath(target))
+            home = self._home_holding(physical, repo_homes)
+            if home is None:
+                continue
 
-            # Longest match wins, so a repo checked out inside another is
-            # credited to the inner one rather than to whatever encloses it.
-            for home in sorted(repo_homes, key=lambda home: len(home.parts), reverse=True):
-                if home != self.physical_root and physical.is_relative_to(home):
-                    return repo_homes[home]
+            # The change's own checkout says what is gone from the repo it
+            # moved in, since the main checkout others name may predate it.
+            if moved_in is not None and home == moved_in.home:
+                still_there = (moved_in.checkout / physical.relative_to(home)).exists()
+            else:
+                still_there = target.exists()
+            if not still_there:
+                return repo_homes[home]
 
         return None
+
+    def _home_holding(self, physical: Path, repo_homes: dict[Path, str]) -> Path | None:
+        """The listed repo holding a physical path, never the one being scanned.
+
+        Longest match wins, so a repo checked out inside another is credited to
+        the inner one rather than to whatever encloses it.
+        """
+        for home in sorted(repo_homes, key=lambda home: len(home.parts), reverse=True):
+            if home != self.physical_root and physical.is_relative_to(home):
+                return home
+        return None
+
+    def _names_a_moved_path(
+        self, pattern: str, token: str, lines: Sequence[str], index: int, from_file: Path | None, moved_in: MovedIn
+    ) -> bool:
+        """True when a token spells the moved path relative to the repo it moved in.
+
+        A manifest names another repo's file the way that repo names it, with
+        the repo beside it in a key of its own: `repo: projects` above
+        `- db/schema.sql`. Nothing on the line resolves, so the location test
+        above cannot read it. Across 400 moved paths, 4 were cited this way in
+        another repo, and 3 of the 4 were stale references.
+
+        Four things make the token that citation. It is the moved path whole,
+        or a path under a moved directory, with at least two segments, since
+        `db/` alone is as generic as a bare filename. The repo holding it has
+        no directory of its first segment, so it is not that repo's own path.
+        The change's checkout does not hold it. And the block around it, up to
+        the nearest blank lines, names the repo. Without that name, a list of
+        other tools' sources was credited with gdu's `tui/keys.go` when a repo
+        moved its own `tui/keys.go`.
+
+        The repo the change is in is never asked, because the local run
+        reported its own lines.
+        """
+        if len(PurePosixPath(pattern).parts) < 2:
+            return False
+        if token != pattern and not (pattern.endswith('/') and token.startswith(pattern)):
+            return False
+        if self.physical_root in (moved_in.home, moved_in.checkout):
+            return False
+        if self._is_this_repos_own(token, from_file):
+            return False
+        if (moved_in.checkout / token).exists():
+            return False
+        names_the_repo = re.compile(rf'(?<![\w.-]){re.escape(moved_in.name)}(?![\w-])')
+        return any(names_the_repo.search(line) for line in block_around(lines, index))
 
     def check_pattern(self, pattern: str, description: str | None = None):
         """Check for old path pattern references."""
@@ -967,7 +1057,8 @@ class ReferenceChecker:
         """
         replacements = replacements or {}
 
-        def stale(pattern: str, line: str, from_file: Path) -> Verdict:
+        def stale(pattern: str, lines: Sequence[str], index: int, from_file: Path) -> Verdict:
+            line = lines[index]
             hits = self._resolved_hits(pattern, line, from_file)
             if hits is None:
                 return Verdict(message=f'Found: {pattern}')
@@ -1089,7 +1180,13 @@ class ReferenceChecker:
         text = line.strip()
         return text if len(text) <= cls.EVIDENCE_WIDTH else f'{text[: cls.EVIDENCE_WIDTH - 1]}…'
 
-    def check_patterns_across_repos(self, patterns: dict[str, str], repo_homes: dict[Path, str], repo_paths: dict[str, Path]):
+    def check_patterns_across_repos(
+        self,
+        patterns: dict[str, str],
+        repo_homes: dict[Path, str],
+        repo_paths: dict[str, Path],
+        moved_in: MovedIn | None = None,
+    ):
         """Check this tree for paths that moved in one of the other repos.
 
         The renaming repo cannot see its consumers. Run with this repo as the
@@ -1107,16 +1204,17 @@ class ReferenceChecker:
         answers where a named repo sits. Both are needed and neither is the
         other's inverse: a registry may declare one repo at a symlink and
         another at the directory it points to, so the physical key is not a name
-        and the name is not a physical key.
+        and the name is not a physical key. `moved_in` is the repo the patterns
+        moved in, which `MovedIn` describes.
         """
 
-        def stale(pattern: str, line: str, from_file: Path) -> Verdict:
-            owner = self._reaches_a_gone_path_in(pattern, line, repo_homes, repo_paths, from_file)
+        def stale(pattern: str, lines: Sequence[str], index: int, from_file: Path) -> Verdict:
+            owner = self._reaches_a_gone_path_in(pattern, lines, index, repo_homes, repo_paths, from_file, moved_in)
             return Verdict(message=f'Gone from {owner}: {pattern}' if owner else None)
 
         self._scan_for_patterns(patterns, stale)
 
-    def _scan_for_patterns(self, patterns: dict[str, str], stale: Callable[[str, str, Path], Verdict]) -> list[SetAside]:
+    def _scan_for_patterns(self, patterns: dict[str, str], stale: Callable[[str, Sequence[str], int, Path], Verdict]) -> list[SetAside]:
         """One walk of the tree, asking `stale` of every hit it finds.
 
         Findings go straight onto self.issues, because every caller reports
@@ -1143,7 +1241,7 @@ class ReferenceChecker:
                 for pattern, description in patterns.items():
                     if pattern not in line:
                         continue
-                    verdict = stale(pattern, line, file_path)
+                    verdict = stale(pattern, lines, line_num - 1, file_path)
                     if verdict.message:
                         self.issues.append(
                             Issue(

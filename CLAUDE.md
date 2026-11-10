@@ -70,7 +70,12 @@ change to one is a change to the other.
   which set-aside hits are listed, never what is reported.
 - **`--registry`** reports a hit only when the path it names sits inside a
   listed repo and is not there (`_reaches_a_gone_path_in`). That rule is what
-  makes a bare basename safe to sweep.
+  makes a bare basename safe to sweep. The repo the paths moved in is always a
+  listed repo, under its directory's name where the registry omits it. Whether
+  its path is gone is asked of the change's checkout (`MovedIn`), because a
+  linked worktree's main checkout still holds what the change moved. A
+  relative token spelling a moved path counts only where its block names that
+  repo (`_names_a_moved_path`).
 - **`--name`** resolves nothing. The shape is the whole judgment, and the
   shapes that count depend on whether the line is prose, shell or code
   (`NameShapes.names_it`). Shell is what a file declares by suffix or shebang,

@@ -430,6 +430,14 @@ bare `versions.json` safe to sweep. Across many repos, nearly every hit on a
 bare basename is noise. This rule reports none of those, and reports the
 reference that broke.
 
+A manifest names another repo's file a third way: as that repo spells it, with
+the repo in a key beside it. `repo: store` above `- config/versions.json` is
+one. That token is reported when it is a moved path of two or more segments,
+the scanned repo has no directory of its first segment, the change no longer
+holds it, and the block around it, out to the nearest blank lines, names the
+repo the paths moved in. Without the name, a list of other tools' sources is
+read as that repo's.
+
 A token is repo-qualified only when the scanned repo has no directory of its
 first segment. Repo names and directory names collide constantly: `docs`,
 `assets`, `tools`. So the scanned repo answers first. Only a path it cannot
@@ -448,6 +456,8 @@ the repo holding it.
 | ``The reader is `store/versions.json` ``, naming a listed repo | reported |
 | `versions_file: ~/…/store/pinned-versions.json`, the corrected path | silent |
 | ``The reader is `store/pinned-versions.json` ``, the corrected citation | silent |
+| `- config/versions.json` under `repo: store`, after `store` moved it | reported |
+| ``- othertool `config/versions.json` ``, in a list naming no repo | silent |
 | `PINS = "versions.json"`, a filename literal | silent while a listed repo holds a `versions.json`, reported once none does |
 | `The pins live in versions.json`, prose | silent |
 | `store renamed versions.json last week`, a bare repo name | silent |
@@ -487,8 +497,13 @@ resolve, and the fix lands in the live repo.
 
 Everything else that shrinks the sweep fails the run with its own row: an entry
 naming no path, a listed repo with no directory here, a directory or file that
-will not open. Where the repo you are standing in is itself unlisted, the sweep
-says so. Nothing it finds can then be credited to the renames you just made.
+will not open.
+
+**The repo the paths moved in owns them whether or not the registry lists it.**
+Unlisted, it is credited under its directory's name. Other repos name its main
+checkout. From a linked worktree, that checkout still holds what the change
+moved until the change lands, so whether a path is gone is asked of the
+worktree.
 
 Every filter reaches every swept repo. Each swept repo still reads its own
 `.refcheck.toml`, with `--exclude` added on top. A change that moved nothing

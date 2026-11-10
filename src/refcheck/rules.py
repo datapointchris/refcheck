@@ -30,13 +30,32 @@ class LearnedRules:
     file_mappings: int
 
 
+def rules_root() -> Path:
+    """The directory every checkout's rules sit under."""
+    return user_state_dir() / 'repos'
+
+
 def get_rules_path(repo_root: Path) -> Path:
-    """Where a checkout's rules live: its absolute path, mirrored under the state directory's `repos/`.
+    """Where a checkout's rules live: its absolute path, mirrored under `rules_root`.
 
     Every checkout gets a directory of its own, so no two share a file, and
     the path can be found by hand from the checkout's.
     """
-    return user_state_dir() / 'repos' / repo_root.relative_to(repo_root.anchor) / 'rules.json'
+    return rules_root() / repo_root.relative_to(repo_root.anchor) / 'rules.json'
+
+
+def no_rules() -> dict:
+    return {'directory_mappings': {}, 'file_mappings': {}}
+
+
+def read_rules(rules_path: Path) -> dict:
+    """The rules in one file, or empty mappings where there is none or it will not parse."""
+    try:
+        with rules_path.open() as f:
+            loaded = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return no_rules()
+    return loaded or no_rules()
 
 
 def load_rules(root_dir: Path) -> tuple[dict, Path | None]:
@@ -44,25 +63,38 @@ def load_rules(root_dir: Path) -> tuple[dict, Path | None]:
 
     Outside a repository the path is None. With no rules file the rules are empty.
     """
-    rules: dict = {'directory_mappings': {}, 'file_mappings': {}}
-    rules_path = None
-
     repo_root = repository.root(root_dir)
     if repo_root is None:
-        return rules, rules_path
-
+        return no_rules(), None
     rules_path = get_rules_path(repo_root)
+    return read_rules(rules_path), rules_path
 
-    if rules_path.exists():
+
+def learned_checkouts() -> list[tuple[Path, Path]]:
+    """Every checkout with rules on this machine, beside its rules file, in path order."""
+    root = rules_root()
+    return sorted((Path(root.anchor) / path.parent.relative_to(root), path) for path in root.rglob('rules.json'))
+
+
+def clear_rules(checkout: Path) -> Path | None:
+    """Delete a checkout's rules and the directories that leaves empty, returning the file deleted.
+
+    None where the checkout had no rules.
+    """
+    path = get_rules_path(checkout)
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        return None
+    root = rules_root()
+    for parent in path.parents:
+        if parent == root or not parent.is_relative_to(root):
+            break
         try:
-            with rules_path.open() as f:
-                loaded = json.load(f)
-                if loaded:
-                    rules = loaded
-        except (OSError, json.JSONDecodeError):
-            return rules, rules_path
-
-    return rules, rules_path
+            parent.rmdir()
+        except OSError:
+            break
+    return path
 
 
 def learn_rules_from_git(time_window: str = '6 months') -> LearnedRules:

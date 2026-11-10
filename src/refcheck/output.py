@@ -1,5 +1,6 @@
 """Output formatting and result printing."""
 
+import json
 import sys
 from dataclasses import dataclass
 from dataclasses import field
@@ -9,6 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from .resolved_config import Resolved
     from .sweep import SweepResult
 
 
@@ -357,24 +359,45 @@ def print_unreached(sweep: 'SweepResult') -> None:
     print()
 
 
-def print_config(repo_config: Path | None, layers: list[tuple[str, list[str]]]) -> None:
-    """Print every exclusion in force, grouped by the layer that set it.
+def print_document(record: dict) -> None:
+    """Print a --json document on stdout, the one way every command emits one."""
+    print(json.dumps(record, indent=2))
 
-    The layer is the half of the answer that says whether a skipped file was
-    asked for. A built-in pattern, a repo declaration and a --exclude flag all
-    produce the same silence, and only the source tells them apart.
+
+def print_rules(path: Path, rules: dict) -> None:
+    """Print where a rules file is, what it was learned from, and every mapping in it."""
+    print(path)
+    metadata = rules.get('_metadata', {})
+    if metadata:
+        print(
+            f'Learned {metadata.get("generated")} from {count(metadata.get("commits_analyzed", 0), "commit")} '
+            f'over {metadata.get("time_window")} of history'
+        )
+    for heading, key in (('Directory mappings', 'directory_mappings'), ('File mappings', 'file_mappings')):
+        mappings = rules.get(key, {})
+        print(f'\n{heading} ({len(mappings)}):')
+        for old, new in mappings.items():
+            print(f'  {old} → {new}')
+
+
+def print_resolved(rows: 'list[Resolved]') -> None:
+    """Print each resolved value under its key, with the layer that set it.
+
+    The layer is the half of the answer that says whether a value was asked
+    for. A built-in pattern and a repo declaration produce the same silence,
+    and only the source tells them apart.
     """
-    print()
-    print(f'Repo config: {repo_config if repo_config else "none found"}')
-
-    for label, patterns in layers:
-        if not patterns:
+    width = max(len(row.key) for row in rows)
+    for row in rows:
+        if isinstance(row.value, list):
+            print(f'{row.key:<{width}}  {count(len(row.value), "pattern")} from {row.layer}')
+            for item in row.value:
+                print(f'{"":<{width}}    {item}')
             continue
-        print(f'\n{label} ({len(patterns)}):')
-        print('─' * 60)
-        for pattern in patterns:
-            print(f'  {pattern}')
-    print()
+        print(f'{row.key:<{width}}  {row.value if row.value is not None else "none"}')
+        if row.note:
+            print(f'{"":<{width}}    {row.note}')
+        print(f'{"":<{width}}    from {row.layer}')
 
 
 def print_rules_hint(issues: list[Issue], rules_path: Path | None) -> None:
@@ -399,6 +422,6 @@ def print_rules_hint(issues: list[Issue], rules_path: Path | None) -> None:
 
     hint = (
         f'{len(unsuggested)} broken reference(s) came up with no suggestions.\n'
-        "'refcheck learn-rules' reads git's rename history to improve them."
+        "'refcheck rules learn' reads git's rename history to improve them."
     )
     print(f'\n{marked(HINT, hint)}')

@@ -61,7 +61,7 @@ Each release rewrites that `rev:` line, so it names the latest tag.
 refcheck --version                 # the release installed, and the commit it was built from
 cd path/to/repo                    # the repo root, which refcheck takes to be the repo
 refcheck check                     # every source and bash target resolved; exit 1 names each miss
-refcheck check --show-config       # what the scan skipped, and which layer skipped it
+refcheck config show               # what the scan skips, and which layer skips it
 
 git mv lib/log.sh lib/logging.sh   # any staged rename or deletion
 refcheck check --moves             # every file still naming lib/log.sh, in any file type
@@ -84,7 +84,11 @@ errors. Warnings exit 0. `--strict` fails on them and `--no-warn` drops them.
 
 ## The grammar
 
-`check` is the tool. `learn-rules` and `update` maintain it.
+`check` is the tool. `config`, `rules` and `update` maintain it. `config` and
+`rules` are namespaces, each holding the verbs over its resource:
+`config show|example` and `rules learn|show|list|clear`. Every read takes
+`--json` and prints one document in the shape its file under `schemas/`
+publishes.
 
 `refcheck check` with no question validates every `source` and `bash` target in
 the tree, and warns on fragile paths. Three flags each ask a different question
@@ -107,10 +111,11 @@ Exit codes:
   not reach, or a warning under `--strict`.
 - `2`: refused before the scan. That is a directory that is not there, a
   `--registry` that cannot be read as one, `--registry` with no question, two
-  questions in one run, a `--name` that is not a name, or a range git cannot
-  diff.
-- `128`: `--moves`, `--moves-since` or `learn-rules` outside a git repository,
-  which is git's own code for it.
+  questions in one run, a `--name` that is not a name, a range git cannot
+  diff, or a config file refcheck cannot take as written.
+- `128`: `--moves`, `--moves-since`, `rules learn`, or `rules show` or
+  `rules clear` with no checkout named, outside a git repository, which is
+  git's own code for it.
 
 ## Which surface answers which question
 
@@ -123,8 +128,8 @@ Exit codes:
 | What still names an old path I type in | `check --pattern` | every file, each hit resolved on disk |
 | Where is a renamed tool, subcommand or flag still named | `check --name` | every file, judged by the shape of the line |
 | What did a move or a rename break in other repos | `--registry` beside any of the three | every repo the registry lists |
-| What did the scan skip | `check --show-config` | the built-ins, `.refcheck.toml` and `--exclude` |
-| What did a missing file probably become | `learn-rules` | git's rename history |
+| What will a run resolve, and from which layer | `config show` | the user config, the repo config and the built-ins |
+| What did a missing file probably become | `rules learn` | git's rename history |
 | Is a newer release out | `update --check` | GitHub releases |
 
 ## `check` — a `source` or `bash` target is resolved on disk, not matched as text
@@ -183,7 +188,7 @@ Fragile Traversal Path (1):
         ROOT_DIR="${REPO_DIR:-$(git rev-parse --show-toplevel)}"
 
 HINT 1 broken reference(s) came up with no suggestions.
-     'refcheck learn-rules' reads git's rename history to improve them.
+     'refcheck rules learn' reads git's rename history to improve them.
 ```
 
 **A path hangs off one of three anchors.** A `~` path hangs off the home
@@ -300,8 +305,8 @@ PASS No stale reference to markdownlint.json — 2 files read, and 1 hit set asi
 
 The list covers the resolver's guesses, not every occurrence of the string. A
 hit inside a URL is dropped, because a URL names no file whatever the tree
-holds. A file the scan never opened is not listed either. `--show-config` prints
-every exclusion in force.
+holds. A file the scan never opened is not listed either. `refcheck config show`
+prints every exclusion in force.
 
 Two spellings of one name are not ordered. `--pattern .markdownlint.json` finds
 nothing on a line spelling it without the dot. `--pattern markdownlint.json`
@@ -476,7 +481,7 @@ It asks only once no file in this tree or any listed repo has that name. Until
 then the citation names something real: `main.go` leaving one repo is not news
 to the others. That walk ignores a repo's `[scan] exclude` and `--type`, because
 an excluded file is still a file. It skips the built-in excluded directories
-that `--show-config` lists, such as `node_modules` and `.venv`. A dependency's
+that `refcheck config show` lists, such as `node_modules` and `.venv`. A dependency's
 `ci.yml` is not the one a citation names. The run prints the filenames it left
 out for that reason. A move that keeps the filename, `docs/setup.md` to
 `setup.md`, asks nothing more.
@@ -525,10 +530,14 @@ and prints no document.
 `urn:refcheck:check:v1`, and every document carries `schema_version`. A test
 validates real runs against it.
 
-## `learn-rules` — learned renames suggest a fix and detect nothing
+## `rules` — learned renames suggest a fix and detect nothing
 
 ```bash
-refcheck learn-rules     # write this checkout's rules.json from git's rename history
+refcheck rules learn               # write this checkout's rules from git's rename history
+refcheck rules show                # where they are, and every mapping in them
+refcheck rules list                # every checkout with rules on this machine, marking the gone ones
+refcheck rules clear               # delete this checkout's rules
+refcheck rules clear /old/checkout # delete the rules of a checkout rules list marks gone
 ```
 
 Learned rules feed only the **Possible matches** line under a broken `source` or
@@ -541,19 +550,18 @@ The rules land at `$XDG_STATE_HOME/refcheck/repos/<path>/rules.json`, where
 `<path>` is the checkout's absolute path without its leading `/`: a checkout at
 `/home/me/src/app` keeps them in `repos/home/me/src/app/rules.json`.
 `~/.local/state` stands in for an unset `$XDG_STATE_HOME`. The file is state:
-refcheck writes it and nobody edits it, so `refcheck learn-rules` is how it
-changes. The user config sets how far back the history is read:
+refcheck writes it and nobody edits it, so `refcheck rules learn` is how it
+changes. A checkout that moved or was deleted leaves its rules behind until
+`refcheck rules clear` names it.
 
-```toml
-# $XDG_CONFIG_HOME/refcheck/config.toml, or ~/.config/refcheck/config.toml
-[learn]
-time_window = "6 months"  # the default, handed to git log --since
-```
+The user config's `[learn] time_window` sets how far back the history is read,
+six months by default. `refcheck config example user` prints the file with that
+key, and `refcheck config show` names where it is read from.
 
 ## Exclusions — history is skipped, and each repo names its own generated output
 
 ```bash
-refcheck check --show-config                  # every exclusion in force, and the layer that set it
+refcheck config show                          # every exclusion in force, and the layer that set it
 refcheck check --exclude "build/reports/**"   # one more pattern, for one run
 refcheck check --test-mode                    # read the recorded fixtures too
 ```
@@ -568,7 +576,8 @@ byte near its start is binary and is skipped, the heuristic git uses. A
 symlinked directory is not followed.
 
 Which of *this* repo's directories hold generated output is a fact only the repo
-knows. It says so in `.refcheck.toml` at its root:
+knows. It says so in `.refcheck.toml` at its root, which
+`refcheck config example repo` starts:
 
 ```toml
 [scan]

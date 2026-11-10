@@ -41,7 +41,7 @@ def config_follows_home(monkeypatch):
 
     The config lives under `$XDG_CONFIG_HOME` and the rules under
     `$XDG_STATE_HOME` when each is set. A test points HOME at its own directory
-    to keep them there, and an inherited XDG_STATE_HOME would send `learn-rules`
+    to keep them there, and an inherited XDG_STATE_HOME would send `rules learn`
     to write into the caller's real state. A test that sets either variable
     itself does so after this fixture runs.
     """
@@ -239,7 +239,7 @@ def deployed_repo(tmp_path, monkeypatch):
 
     It carries what those seven need and nothing else: a clean shell directory,
     a fixtures directory holding a reference that does not resolve, and a
-    rename in its history for `learn-rules` to read. HOME points at `tmp_path`
+    rename in its history for `rules learn` to read. HOME points at `tmp_path`
     so the rules file lands under the test's own directory instead of the
     caller's config.
     """
@@ -260,7 +260,7 @@ def deployed_repo(tmp_path, monkeypatch):
     git('add', '-A')
     git('commit', '-m', 'add the shell library')
 
-    # A rename in the history is the whole input to learn-rules, so a fixture
+    # A rename in the history is the whole input to rules learn, so a fixture
     # without one exercises the command and asserts on an empty result.
     git('mv', 'shell/logging.sh', 'shell/log.sh')
     (repo / 'apps' / 'run.sh').write_text('#!/usr/bin/env bash\nsource "$DOTFILES_DIR/shell/log.sh"\n')

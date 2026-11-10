@@ -51,7 +51,7 @@ still fire.
 
 `ReferenceChecker` holds every judgment about one tree. `sweep.py` builds one
 per listed repo. `names.py` holds the name shapes, `moves.py` reads git, and
-`cli.py` decides which questions a run asks. `check_document.py` builds what
+`main.py` decides which questions a run asks. `check_document.py` builds what
 `--json` prints, and `schemas/check.schema.json` is its published shape, so a
 change to one is a change to the other.
 
@@ -108,8 +108,8 @@ test stub attaches, once.
   process, and inside a hook it answers about the directory asked rather than
   the repository `GIT_DIR` names.
 - **The one file refcheck writes** is the rules file, written only by
-  `rules.learn_rules_from_git` at the path `rules.get_rules_path` gives. Every
-  other file is read.
+  `rules.learn_rules_from_git` at the path `rules.get_rules_path` gives, and
+  deleted only by `rules.clear_rules`. Every other file is read.
 - **The network** is reached only by pyselfupdate: the `update` command and
   the once-a-day release check `notify` runs at a terminal.
 
@@ -218,7 +218,7 @@ miss the whole class of bug.
 
 ## Typer's private Click is imported on purpose
 
-`cli.py` imports `Context`, `NoSuchOption` and `TyperGroup` from
+`main.py` imports `Context`, `NoSuchOption` and `TyperGroup` from
 `typer._click` and `typer.core`. Typer bundles its own copy of Click. It
 exports no public path to these names, so a Typer upgrade can move them.
 `RootGroup` uses them to answer a `check` flag given at the root with the call

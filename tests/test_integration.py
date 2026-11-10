@@ -6,11 +6,26 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from jsonschema import Draft7Validator
 
 from refcheck import moves
 from refcheck.checker import ReferenceChecker
+from refcheck.config import REPO_CONFIG_TABLES
+from refcheck.config import USER_CONFIG_TABLES
 from refcheck.config import Config
+from refcheck.config import user_config_path
+from refcheck.rules import get_rules_path
 from refcheck.rules import load_rules
+
+SCHEMAS = Path(__file__).resolve().parents[1] / 'schemas'
+
+
+def published_document(result: subprocess.CompletedProcess, schema: str) -> dict:
+    """A command's --json document, after checking it against the schema the repo publishes for it."""
+    assert result.returncode == 0, result.stderr
+    document = json.loads(result.stdout)
+    Draft7Validator(json.loads((SCHEMAS / f'{schema}.schema.json').read_text())).validate(document)
+    return document
 
 
 def run_refcheck(*args, cwd=None):
@@ -501,25 +516,42 @@ class TestSuggestionFeature:
         assert 'name variant' in result.stdout
 
 
-class TestLearnRules:
-    """Test 15: learn-rules command."""
+class TestRules:
+    """The rules namespace: learn a checkout's rules, find them, and delete them."""
 
     def test_reads_the_rename_out_of_the_history(self, deployed_repo):
         """Asserting on the shape alone passes over an empty result."""
-        result = run_refcheck('learn-rules', cwd=deployed_repo)
+        learned = run_refcheck('rules', 'learn', cwd=deployed_repo)
 
-        rules, path = load_rules(deployed_repo)
+        shown = published_document(run_refcheck('rules', 'show', '--json', cwd=deployed_repo), 'rules-show')
 
-        assert result.returncode == 0
-        assert str(path) in result.stdout
-        assert rules['file_mappings'] == {'logging.sh': 'log.sh'}
+        assert learned.returncode == 0
+        assert shown['rules_file'] in learned.stdout
+        assert shown['rules']['file_mappings'] == {'logging.sh': 'log.sh'}
 
     def test_outside_a_repository_exits_as_git_does(self, tmp_path, monkeypatch):
         monkeypatch.setenv('HOME', str(tmp_path))
 
-        result = run_refcheck('learn-rules', cwd=tmp_path)
+        result = run_refcheck('rules', 'learn', cwd=tmp_path)
 
         assert result.returncode == 128
+
+    def test_a_gone_checkouts_rules_are_listed_and_cleared_by_name(self, deployed_repo, tmp_path):
+        """A checkout that was deleted leaves its rules behind until they are named."""
+        run_refcheck('rules', 'learn', cwd=deployed_repo)
+        _, path = load_rules(deployed_repo)
+        gone = tmp_path / 'deleted-checkout'
+        stale = get_rules_path(gone)
+        stale.parent.mkdir(parents=True)
+        stale.write_text(path.read_text())
+
+        listed = published_document(run_refcheck('rules', 'list', '--json', cwd=tmp_path), 'rules-list')
+        cleared = run_refcheck('rules', 'clear', str(gone), cwd=tmp_path)
+
+        assert {row['checkout']: row['checkout_is_there'] for row in listed['checkouts']} == {str(deployed_repo): True, str(gone): False}
+        assert cleared.returncode == 0
+        assert not stale.exists()
+        assert path.exists()
 
 
 class TestLearnedRulesHint:
@@ -530,7 +562,7 @@ class TestLearnedRulesHint:
 
         result = run_check(cwd=temp_git_repo)
         assert result.returncode == 0
-        assert 'learn-rules' not in result.stdout
+        assert 'rules learn' not in result.stdout
 
     def test_offered_when_a_broken_reference_has_no_suggestion(self, temp_git_repo, monkeypatch, tmp_path):
         monkeypatch.setenv('HOME', str(tmp_path))
@@ -538,7 +570,7 @@ class TestLearnedRulesHint:
 
         result = run_check(cwd=temp_git_repo)
         assert result.returncode == 1
-        assert 'learn-rules' in result.stdout
+        assert 'rules learn' in result.stdout
 
     def test_silent_when_a_suggestion_already_landed(self, temp_git_repo, monkeypatch, tmp_path):
         monkeypatch.setenv('HOME', str(tmp_path))
@@ -549,7 +581,7 @@ class TestLearnedRulesHint:
         result = run_check(cwd=temp_git_repo)
         assert result.returncode == 1
         assert 'Possible matches' in result.stdout
-        assert 'learn-rules' not in result.stdout
+        assert 'rules learn' not in result.stdout
 
 
 def test_every_way_of_sourcing_a_file_is_validated(tmp_path):
@@ -922,16 +954,21 @@ def test_exclude_flag_skips_a_subtree_without_declaring_it(temp_git_repo):
     assert narrowed.returncode == 0
 
 
-def test_show_config_names_the_layer_each_exclusion_came_from(temp_git_repo):
+def test_config_show_has_a_row_for_every_key_and_file_it_resolves(temp_git_repo):
+    """A missing row reads the same as a value that does not exist, so the keys come from what the files may hold."""
     (temp_git_repo / '.refcheck.toml').write_text('[scan]\nexclude = ["build/reports/**"]\n')
 
-    result = run_check('--show-config', '--exclude', 'tmp/**', cwd=temp_git_repo)
+    shown = published_document(run_refcheck('config', 'show', '--json', cwd=temp_git_repo), 'config-show')
 
-    assert result.returncode == 0
-    assert '.refcheck.toml' in result.stdout
-    assert 'build/reports/**' in result.stdout
-    assert 'tmp/**' in result.stdout
-    assert 'CHANGELOG.md' in result.stdout
+    values = {}
+    for row in shown['rows']:
+        values.setdefault(row['key'], []).append(row['value'])
+    keys = [f'{table}.{key}' for tables in (USER_CONFIG_TABLES, REPO_CONFIG_TABLES) for table, body in tables.items() for key in body]
+    assert [key for key in keys if key not in values] == []
+    assert values['user_config'] == [str(user_config_path())]
+    assert values['repo_config'] == [str(temp_git_repo / '.refcheck.toml')]
+    assert values['rules_file'] == [str(get_rules_path(temp_git_repo))]
+    assert ['build/reports/**'] in values['scan.exclude']
 
 
 def test_pattern_ignores_hits_inside_tool_caches(tmp_path):

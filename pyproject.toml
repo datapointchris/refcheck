@@ -15,7 +15,7 @@ dependencies = [
 Repository = "https://github.com/datapointchris/refcheck"
 
 [project.scripts]
-refcheck = "refcheck.cli:app"
+refcheck = "refcheck.main:app"
 
 [dependency-groups]
 dev = [

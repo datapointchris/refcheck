@@ -135,6 +135,36 @@ def read_toml(path: Path, tables: dict[str, dict[str, str]]) -> dict[str, dict]:
     return data
 
 
+def user_config_example() -> str:
+    """An annotated user config holding every key refcheck reads from it, each at its default."""
+    return '\n'.join(
+        [
+            "# refcheck's user config. `refcheck config show` names where it is read from.",
+            '',
+            '[learn]',
+            "# How far back `refcheck rules learn` reads git's rename history, in git log --since's terms.",
+            f'time_window = "{Config().time_window}"',
+            '',
+        ]
+    )
+
+
+def repo_config_example() -> str:
+    """An annotated repo config holding every key refcheck reads from it, each at its default."""
+    return '\n'.join(
+        [
+            f"# A repository's refcheck config, read from {REPO_CONFIG_NAME} at the repository's root.",
+            '',
+            '[scan]',
+            '# Globs matched against the repo-relative path, added to the built-in exclusions',
+            '# `refcheck config show` lists. `**` crosses directory separators. Name the',
+            '# directories this repo fills with generated output, such as test reports.',
+            f'exclude = {Config().exclude}',
+            '',
+        ]
+    )
+
+
 def load_config(start: Path | None = None) -> Config:
     """Merge the per-user config with the repo config found from start.
 

@@ -47,10 +47,10 @@ def test_a_source_statement_in_a_non_shell_block_is_not_read_as_shell(tmp_path: 
 
 
 def test_a_bash_block_is_still_read(tmp_path: Path) -> None:
-    """The half that matters after a false-positive fix.
+    """The case that must still fire beside the quiet one.
 
-    Suppressing a block stops the noise the same way resolving a path does. The
-    difference only shows on a block that is genuinely shell.
+    Skipping a block silences it the same way resolving a path does. Only a
+    block that is genuinely shell tells them apart.
     """
     issues = check(tmp_path, '# Guide\n\n```bash\nbash tests/helpers.sh\nsource tests/helpers.sh\n```\n')
 

@@ -452,9 +452,9 @@ class ReferenceChecker:
         """Where a referenced path actually lives, absolute.
 
         Three anchors, not two. An absolute path is itself and a bare one hangs
-        off the repo — but a `~/` path hangs off the *home directory*, and joining
-        it to the repo root produces `<repo>/~/…`, which cannot exist for any
-        input. Every tilde reference was therefore reported missing, always.
+        off the repo — but a `~/` path hangs off the *home directory*. Joined to
+        the repo root it would produce `<repo>/~/…`, which cannot exist for any
+        input, so every tilde reference would read as missing.
 
         Measured on a repo whose only three errors were these: one test script
         sourced three deployed shell libraries by their `~/.local/shell/` paths,
@@ -557,21 +557,18 @@ class ReferenceChecker:
         """Files whose source/script references get validated.
 
         Markdown is in because a usage example naming a library is exactly the
-        drift this tool exists to catch, and for a long time it was scanned by
-        nothing: these checks globbed `**/*.sh`, so `refcheck docs/` reported
-        "all references valid" over five copies of a documented
-        `source "$SOME_DIR/lib/error-handling.sh"` pointing at a path no code
-        had used in months. A false clean is worse than a false positive,
-        because it certifies the rot.
+        drift this tool exists to catch. Five copies of a documented
+        `source "$SOME_DIR/lib/error-handling.sh"` can point at a path no code
+        has used in months, and a scan of shell files alone calls that tree
+        clean. A false clean is worse than a false positive, because it
+        certifies the rot.
 
         Shell is what `kind_of_file` reads as shell, so a script installed as a
         command, with no suffix and a shell shebang, is checked like a `.sh`
         file. A file with no suffix and any other first line is not read.
 
-        Filtering one full listing rather than globbing per suffix is what makes
-        a single-file argument behave: find_files ignores its pattern in that
-        case and returns the file, so two globs returned it twice and scanned
-        it twice, and --skip-docs could never exclude it.
+        One listing is filtered rather than one listing per suffix, so a
+        single-file argument is read once and --skip-docs can exclude it.
         """
         reads_markdown = not self.skip_docs
         return [f for f in self.find_files() if (reads_markdown and f.suffix == '.md') or self.declares_shell(f)]
@@ -621,8 +618,9 @@ class ReferenceChecker:
     def lines_of(self, file_path: Path) -> list[str] | None:
         """The file's lines, or None when it could not be read as text.
 
-        The one place a scanned file is opened, so `encoding` and `errors` are
-        decided once for every check that reads one. Left to each call site
+        The one place a scanned file is read as text, so `encoding` and `errors`
+        are decided once for every check that reads one. `ScanScope`'s binary
+        sniff opens a file too, for its first block, and decodes nothing. Left to each call site
         they diverge, and `errors='ignore'` is the divergence that matters: it
         drops the bytes it cannot decode and hands the rest on as the line, so
         a directory name carrying an accent arrives with that letter missing and
@@ -1048,9 +1046,9 @@ class ReferenceChecker:
         """Check for several old paths in one walk of the tree.
 
         A commit that moves a directory stages a rename per file in it, and
-        --moves turns each into a pattern. Walking once per pattern made the
-        cost of the check scale with the size of the move, which is backwards:
-        the large refactor is exactly the one worth checking.
+        --moves turns each into a pattern. One walk serves them all, so the cost
+        does not grow with the size of the move. The large refactor is exactly
+        the one worth checking.
 
         `replacements` maps a pattern to the path it became, which git records
         for a rename and a typed-in --pattern cannot supply. It decides only

@@ -18,7 +18,6 @@ from refcheck.checker import ReferenceChecker
 
 
 def test_a_tilde_path_is_looked_for_under_home(tmp_path: Path) -> None:
-    """Not under the repo, which is where every one of them was looked for."""
     checker = ReferenceChecker(root_dir=tmp_path)
 
     anchored = checker.anchor('~/.local/shell/logging.sh')
@@ -41,11 +40,10 @@ def test_a_bare_path_hangs_off_the_repo(tmp_path: Path) -> None:
 
 
 def test_a_tilde_path_that_is_not_there_is_still_reported(tmp_path: Path) -> None:
-    """The half that matters after a false-positive fix.
+    """The case that must still fire beside the quiet one.
 
-    Expanding `~` stops the noise by making the reference resolvable, which is
-    the same shape as stopping it by not looking. The difference is only visible
-    on a path that genuinely is not there.
+    Expanding `~` silences a reference by making it resolvable, which looks the
+    same as not looking at it. Only a path that is not there tells them apart.
     """
     checker = ReferenceChecker(root_dir=tmp_path)
 

@@ -103,7 +103,7 @@ def test_version_is_a_root_option(tmp_path):
 
 
 def test_the_hook_entry_runs_the_check():
-    """.pre-commit-hooks.yaml names the invocation, and bare refcheck no longer scans."""
+    """Bare refcheck prints help, so the hook has to name the subcommand that scans."""
 
     hooks = yaml.safe_load((Path(__file__).parent.parent / '.pre-commit-hooks.yaml').read_text())
 

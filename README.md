@@ -224,7 +224,9 @@ list, or a file that will not open, is a finding. Three things are not
 shortfalls. A subtree the exclusions skip is never entered. A file deleted
 mid-run left nothing to miss. A file that is not UTF-8 text still arrived. A
 directory named on the command line and not there exits 2, since walking it
-would pass every check over nothing.
+would pass every check over nothing. So does a path, `--type`, `--exclude` or
+`--skip-docs` that leaves no file to read. `--type` takes the extension with or
+without its dot.
 
 ## `--moves` — git names the old paths, so the hook asks while fixing them is free
 

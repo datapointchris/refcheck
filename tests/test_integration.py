@@ -71,6 +71,7 @@ class TestPatternChecking:
         assert result.returncode == 1
 
     def test_pattern_with_skip_docs(self, test_fixtures):
+        (test_fixtures / 'docs' / 'notes.txt').write_text('nothing old here\n')
         result = run_check('--pattern', 'management/tests/', 'docs/', '--skip-docs', cwd=test_fixtures)
         assert result.returncode == 0
 
@@ -103,14 +104,19 @@ class TestPatternWithDescription:
 class TestTypeFiltering:
     """Test 5: Type filtering."""
 
-    def test_filters_by_shell_scripts(self, test_fixtures):
-        result = run_check('--type', 'sh', 'src/', cwd=test_fixtures)
+    @pytest.mark.parametrize('spelling', ['sh', '.sh'])
+    def test_filters_by_shell_scripts(self, test_fixtures, spelling):
+        result = run_check('--type', spelling, 'src/', cwd=test_fixtures)
         assert result.returncode == 1
+        assert 'nonexistent' in result.stdout
 
-    def test_filters_by_python_files(self, test_fixtures):
+    def test_a_filter_that_leaves_no_file_refuses_the_run(self, test_fixtures):
+        """The reference check reads markdown and shell, so --type py hands it nothing to pass."""
         (test_fixtures / 'src' / 'test.py').write_text('# Python file\nimport nonexistent_module\n')
         result = run_check('--type', 'py', 'src/', cwd=test_fixtures)
-        assert result.returncode == 0
+        assert result.returncode == 2
+        assert '--type py' in result.stderr
+        assert result.stdout == ''
 
 
 class TestSkipDocs:
@@ -223,8 +229,9 @@ class TestMarkdownReferences:
         assert 'script.sh' in result.stdout
 
     def test_skip_docs_excludes_markdown_references(self, test_fixtures):
-        result = run_check('stale-docs/stale-source.md', '--skip-docs', cwd=test_fixtures)
-        assert result.returncode == 0
+        result = run_check('stale-docs/', '--skip-docs', cwd=test_fixtures)
+        assert 'documented-stale.sh' in result.stdout
+        assert 'stale-source.md' not in result.stdout
 
     def test_other_projects_trees_are_not_reported(self, test_fixtures):
         """Docs quote other people's layouts; none of it is a claim about this repo."""

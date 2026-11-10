@@ -267,7 +267,7 @@ def check(
     ] = None,
     file_type: Annotated[
         str | None,
-        typer.Option('--type', '-t', help="Only files of this extension, e.g. 'sh' or 'py'.", rich_help_panel='Filters'),
+        typer.Option('--type', '-t', help="Only files of this extension, e.g. 'sh' or '.sh'.", rich_help_panel='Filters'),
     ] = None,
     skip_docs: Annotated[
         bool,
@@ -348,6 +348,8 @@ def check(
 ):
     root_dir = Path.cwd()
     search_path = path.resolve() if path else root_dir
+    # `.sh` is how a suffix is usually written, and the walk compares the part after the dot.
+    file_type = file_type.removeprefix('.') if file_type else None
 
     # A directory that is not there holds no references, so walking it finds
     # nothing, every check passes over nothing, and the run reports valid. That
@@ -503,6 +505,19 @@ def check(
             gone_filenames,
         )
 
+    # A filter that leaves no file passes every check over nothing. Unfiltered,
+    # an empty tree had nothing to check; filtered, the filter selected nothing.
+    files_scanned = (len(checker.files_scanned) if walks_here else 0) + (swept.files_scanned if swept else 0)
+    narrowing = [
+        *([f'--type {file_type} (files named *.{file_type})'] if file_type else []),
+        *(['--skip-docs'] if skip_docs else []),
+        *(f'--exclude {shlex.quote(glob)}' for glob in flag_patterns),
+    ]
+    if not files_scanned and (narrowing or path is not None):
+        searched_text = bool(pattern or name or any(not move.is_bare for move in found))
+        print(nothing_left_to_scan(narrowing, search_path if walks_here else None, bool(swept), searched_text), file=sys.stderr)
+        raise typer.Exit(2)
+
     if walks_here:
         print_results(
             checker.issues,
@@ -563,6 +578,16 @@ def learn_rules():
 add_update_command(app, UPDATE_CONFIG)
 # The library takes no panel, so the command it just registered is placed here.
 app.registered_commands[-1].rich_help_panel = MAINTENANCE_PANEL
+
+
+def nothing_left_to_scan(narrowing: list[str], searched: Path | None, swept: bool, searched_text: bool) -> str:
+    """The refusal for a run its filters left with no file to read."""
+    where = ' or '.join([*([f'under {searched}'] if searched else []), *(['in any listed repo'] if swept else [])])
+    head = f'{" and ".join(narrowing)} left no file to read {where}' if narrowing else f'there is no file to read {where}'
+    lines = [f'refcheck: {head}, so the run would pass over nothing.']
+    if not searched_text:
+        lines.append('Without --pattern or --name, the check reads only markdown and shell files.')
+    return '\n'.join(lines)
 
 
 def load_registries(registries: list[Path]) -> registry_module.Registry:

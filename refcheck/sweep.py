@@ -34,6 +34,7 @@ class RepoResult:
     repo: Repo
     issues: list[Issue] = field(default_factory=list)
     unreadable: list[Unreadable] = field(default_factory=list)
+    files_scanned: int = 0
 
 
 @dataclass
@@ -57,6 +58,10 @@ class SweepResult:
     @property
     def scanned(self) -> int:
         return len(self.results)
+
+    @property
+    def files_scanned(self) -> int:
+        return sum(result.files_scanned for result in self.results)
 
     @property
     def issues(self) -> list[Issue]:
@@ -175,7 +180,9 @@ def across_repos(
             checker.check_filenames(filenames)
             home = Path(os.path.realpath(repo.path))
             checker.issues[before:] = [issue for issue in checker.issues[before:] if not inside(home / issue.file, scanned)]
-        sweep.results.append(RepoResult(repo=repo, issues=checker.issues, unreadable=checker.unreadable))
+        sweep.results.append(
+            RepoResult(repo=repo, issues=checker.issues, unreadable=checker.unreadable, files_scanned=len(checker.files_scanned))
+        )
 
     return sweep
 
@@ -240,7 +247,9 @@ def names_across_repos(
             skip = [inside, f'{inside}/**']
         checker = checker_for(repo, skip_docs, file_type, test_mode, [*flag_excludes, *skip])
         checker.check_names(names)
-        sweep.results.append(RepoResult(repo=repo, issues=checker.issues, unreadable=checker.unreadable))
+        sweep.results.append(
+            RepoResult(repo=repo, issues=checker.issues, unreadable=checker.unreadable, files_scanned=len(checker.files_scanned))
+        )
 
     return sweep
 

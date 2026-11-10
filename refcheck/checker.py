@@ -252,6 +252,9 @@ class ReferenceChecker:
         self.warnings: list[Warning] = []
         self.unreadable: list[Unreadable] = []
         self.set_aside: list[SetAside] = []
+        # Every file a check set out to read. A run that read none passes over
+        # nothing, so the command needs the count to tell that from a clean run.
+        self.files_scanned: set[Path] = set()
         self._found_files: dict[str | None, list[Path]] = {}
         self.exclude_dirs = self.DEFAULT_EXCLUDES.copy()
         self.exclude_patterns = self.DEFAULT_EXCLUDE_PATTERNS.copy()
@@ -549,6 +552,15 @@ class ReferenceChecker:
     def shell_files(self) -> list[Path]:
         """Every file the walk yields that `declares_shell` reads as shell."""
         return [f for f in self.find_files() if self.declares_shell(f)]
+
+    def text_search_files(self) -> list[Path]:
+        """Every file a pattern or a name is looked for in: the whole walk, less markdown under --skip-docs."""
+        return [f for f in self.find_files() if not (self.skip_docs and f.suffix == '.md')]
+
+    def scanning(self, files: list[Path]) -> list[Path]:
+        """These files, counted in `files_scanned` before a check reads them."""
+        self.files_scanned.update(files)
+        return files
 
     def note_unreadable(self, path: Path, error: OSError) -> None:
         """Record a path the walk was handed and could not read.
@@ -1010,10 +1022,7 @@ class ReferenceChecker:
         if not shapes:
             return
 
-        for file_path in self.find_files():
-            if self.skip_docs and file_path.suffix == '.md':
-                continue
-
+        for file_path in self.scanning(self.text_search_files()):
             lines = self.lines_of(file_path)
             if lines is None:
                 continue
@@ -1088,10 +1097,7 @@ class ReferenceChecker:
 
         set_aside: list[SetAside] = []
 
-        for file_path in self.find_files():
-            if self.skip_docs and file_path.suffix == '.md':
-                continue
-
+        for file_path in self.scanning(self.text_search_files()):
             lines = self.lines_of(file_path)
             if lines is None:
                 continue
@@ -1233,7 +1239,7 @@ class ReferenceChecker:
 
     def check_source_statements(self):
         """Check that source statements point to existing files."""
-        for file_path in self.reference_check_files():
+        for file_path in self.scanning(self.reference_check_files()):
             try:
                 rel_path = file_path.relative_to(self.root_dir)
                 symbol_table = self.parse_variable_assignments(file_path)
@@ -1298,7 +1304,7 @@ class ReferenceChecker:
         # otherwise read as an invocation of a script that was never referenced.
         script_pattern = re.compile(r'(?<![\w.-])(?:bash|sh)\s+["\']?([^\s"\']+\.sh)["\']?')
 
-        for file_path in self.reference_check_files():
+        for file_path in self.scanning(self.reference_check_files()):
             try:
                 rel_path = file_path.relative_to(self.root_dir)
                 lines = self.lines_of(file_path)
@@ -1345,7 +1351,7 @@ class ReferenceChecker:
         """Check if relative paths are fragile to working directory changes."""
         source_pattern = re.compile(r'source\s+(?:["\']([^"\']+)["\']|([^\s]+))')
 
-        for file_path in self.shell_files():
+        for file_path in self.scanning(self.shell_files()):
             try:
                 rel_path = file_path.relative_to(self.root_dir)
 
@@ -1411,7 +1417,7 @@ class ReferenceChecker:
         """Detect relative directory traversal patterns fragile to file moves."""
         traversal_pattern = re.compile(r'([A-Z_]+_DIR)=.*\$\(cd.*\.\./.*pwd\)')
 
-        for file_path in self.shell_files():
+        for file_path in self.scanning(self.shell_files()):
             try:
                 rel_path = file_path.relative_to(self.root_dir)
 

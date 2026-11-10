@@ -11,7 +11,9 @@ deletions out of git and asks what still names each old path.
 A false clean is worse than a false positive, because it certifies the rot.
 Every path the walk cannot read goes through `note_unreadable` and fails the
 run with exit 1. A directory named on the command line and not there exits 2.
-Walking it would pass every check over nothing. A range git cannot diff raises
+Walking it would pass every check over nothing. A path or filter that leaves
+no file to read exits 2 the same way. Each check counts what it reads into
+`files_scanned` through `scanning`. A range git cannot diff raises
 `UnreadableChange` and exits 2 rather than reading as no moves. A sweep that
 could not reach a listed repo prints no tick (`SweepResult.unreached`).
 

@@ -48,12 +48,15 @@ class CheckType(Enum):
 
 @dataclass
 class Issue:
+    """A finding. `target` is the path or name it says is gone: a source or bash target as resolved, or the old path or name found."""
+
     file: Path
     line_num: int
     check_type: CheckType
     message: str
     suggestion: str | None = None
     similar_files: list[str] = field(default_factory=list)
+    target: str | None = None
 
 
 @dataclass
@@ -396,7 +399,11 @@ def print_rules_hint(issues: list[Issue], rules_path: Path | None) -> None:
     if rules_path is None or rules_path.exists():
         return
 
-    unsuggested = [issue for issue in issues if issue.check_type in (CheckType.SOURCE, CheckType.SCRIPT) and not issue.similar_files]
+    unsuggested = [
+        issue
+        for issue in issues
+        if issue.check_type in (CheckType.SOURCE, CheckType.SCRIPT) and not issue.similar_files and not issue.suggestion
+    ]
     if not unsuggested:
         return
 

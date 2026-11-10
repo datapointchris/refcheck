@@ -975,6 +975,32 @@ class ReferenceChecker:
 
         self.set_aside.extend(self._scan_for_patterns(patterns, stale))
 
+    def credit_moves(self, moved: dict[str, str]) -> None:
+        """Give a broken source or bash reference to a moved path what git says it became.
+
+        `moved` maps each old path to its description, `now <new>` or `deleted
+        in this change`. The pattern scan finds the same line as an old path,
+        and the reference row says more: the line fails when it runs. So the
+        reference takes the move's answer and the old-path row on its line goes.
+        """
+        by_target = {self._anchored(old): (old, description) for old, description in moved.items()}
+        credited: set[tuple[Path, int, str]] = set()
+        for issue in self.issues:
+            if issue.check_type not in (CheckType.SOURCE, CheckType.SCRIPT) or not issue.target:
+                continue
+            move = by_target.get(self._anchored(issue.target))
+            if move:
+                old, issue.suggestion = move
+                credited.add((issue.file, issue.line_num, old))
+        self.issues = [
+            issue
+            for issue in self.issues
+            if not (issue.check_type is CheckType.PATTERN and (issue.file, issue.line_num, issue.target) in credited)
+        ]
+
+    def _anchored(self, path: str) -> Path:
+        return Path(os.path.normpath(self.anchor(path)))
+
     def check_filenames(self, filenames: dict[str, str]) -> None:
         """Report every line citing an old filename, as `check_names` does a tool.
 
@@ -1018,7 +1044,7 @@ class ReferenceChecker:
         The rule is the same in this repo and in any other, because a renamed
         tool is stale wherever it is still named.
         """
-        shapes = [(shapes_of(name), description) for name, description in names.items()]
+        shapes = [(shapes_of(name), name, description) for name, description in names.items()]
         if not shapes:
             return
 
@@ -1033,11 +1059,11 @@ class ReferenceChecker:
                 continue
 
             for line_num, line, kind in self.classified_lines(file_path, lines):
-                present = [(shape, description) for shape, description in shapes if shape.first_word in line]
+                present = [(shape, name, description) for shape, name, description in shapes if shape.first_word in line]
                 if not present:
                     continue
                 asked = unjudged(line)
-                for shape, description in present:
+                for shape, name, description in present:
                     if shape.names_it(asked, kind):
                         self.issues.append(
                             Issue(
@@ -1046,6 +1072,7 @@ class ReferenceChecker:
                                 check_type=CheckType.NAME,
                                 message=f'Found: {self._evidence(line)}',
                                 suggestion=description or None,
+                                target=name,
                             )
                         )
 
@@ -1120,6 +1147,7 @@ class ReferenceChecker:
                                 check_type=CheckType.PATTERN,
                                 message=verdict.message,
                                 suggestion=description,
+                                target=pattern,
                             )
                         )
                     for token, target in dict.fromkeys(verdict.set_aside):
@@ -1290,8 +1318,8 @@ class ReferenceChecker:
                                 line_num=line_num,
                                 check_type=CheckType.SOURCE,
                                 message=f'Missing: {original_path}' + (f' → {source_path}' if original_path != source_path else ''),
-                                suggestion='Verify path exists or update reference',
                                 similar_files=similar,
+                                target=source_path,
                             )
                         )
             except ValueError:
@@ -1340,8 +1368,8 @@ class ReferenceChecker:
                                     line_num=line_num,
                                     check_type=CheckType.SCRIPT,
                                     message=f'Missing: {script_path}',
-                                    suggestion='Verify script exists or update reference',
                                     similar_files=similar,
+                                    target=script_path,
                                 )
                             )
             except ValueError:

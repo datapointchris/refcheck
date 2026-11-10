@@ -478,6 +478,7 @@ def check(
                 {move.old: move.description for move in found if not move.is_bare},
                 {move.old: move.new for move in found if move.new},
             )
+            checker.credit_moves({move.old: move.description for move in found})
             sweep_patterns = {move.old: move.description for move in found}
 
     swept = None

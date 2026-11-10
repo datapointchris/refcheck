@@ -171,7 +171,6 @@ Broken Source Command (1):
 ────────────────────────────────────────────────────────────
   install.sh:4
     Missing: $SCRIPT_DIR/lib/missing.sh → /path/to/repo/lib/missing.sh
-    → Verify path exists or update reference
 
 Warnings:
 ────────────────────────────────────────────────────────────
@@ -244,7 +243,9 @@ evidence. `--registry` asks it anyway.
 
 git also records what each path became. A hit spelling that path is a repair the
 run can prove, so it is not listed. Every other hit that resolves on disk is
-set aside and listed, as `--pattern` does.
+set aside and listed, as `--pattern` does. A `source` or `bash` line naming a
+moved path is reported once, as the broken reference, with what git says the
+path became.
 
 **The hook asks it on every commit.** `args: [--moves]` is what makes the hook
 worth having. Without it the hook validates `source` and `bash` targets, which on

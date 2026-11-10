@@ -20,6 +20,8 @@ from . import repository
 from . import sweep as sweep_module
 from .checker import ReferenceChecker
 from .config import REPO_CONFIG_NAME
+from .config import Config
+from .config import ConfigError
 from .config import load_config
 from .names import FLAG_WORD
 from .names import NAME_WORD
@@ -378,7 +380,7 @@ def check(
 
     # Discovery starts at the repo root rather than the cwd, so narrowing the
     # scan to a subdirectory reads the same declarations as a whole-repo run.
-    config = load_config(root_dir)
+    config = config_or_exit(root_dir)
     repo_patterns = list(config.exclude)
     flag_patterns = list(exclude or [])
     config.exclude = [*repo_patterns, *flag_patterns]
@@ -614,7 +616,7 @@ def check(
 def learn_rules():
     """Write rules.json from git's rename history, so a miss can suggest what replaced it."""
     try:
-        learned = learn_rules_from_git(load_config(Path.cwd()).time_window)
+        learned = learn_rules_from_git(config_or_exit(Path.cwd()).time_window)
     except NotAGitRepository as error:
         print(
             f"refcheck: learn-rules reads git's rename history, and {error}. Run it inside the repository to learn from.",
@@ -717,6 +719,14 @@ def sweep_other_repos(
             source_main=source_main,
         )
     return swept
+
+
+def config_or_exit(start: Path) -> Config:
+    try:
+        return load_config(start)
+    except ConfigError as error:
+        print(f'refcheck: {error}', file=sys.stderr)
+        raise typer.Exit(2) from error
 
 
 def main_checkout_of(repo_root: Path) -> Path:

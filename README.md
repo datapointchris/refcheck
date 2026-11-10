@@ -584,6 +584,12 @@ refcheck reads the nearest `.refcheck.toml` at or above the directory it runs
 in, and stops at the git root. A checkout never inherits the config of whatever
 encloses it.
 
+A config file that is not TOML, or that holds a table, key or type refcheck does
+not read, stops the run with exit 2 and names what it found. The repo config
+holds only `[scan] exclude`, and the user config only `[learn] time_window`. A
+swept repo whose config fails this way is listed as unread, which fails the
+sweep. Read on the defaults instead, it would report what it declared excluded.
+
 ## Development
 
 ```bash

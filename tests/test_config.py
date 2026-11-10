@@ -1,20 +1,10 @@
 """Tests for config module."""
 
+import pytest
+
 from refcheck.config import REPO_CONFIG_NAME
-from refcheck.config import Config
+from refcheck.config import ConfigError
 from refcheck.config import load_config
-
-
-class TestConfig:
-    """Tests for Config dataclass."""
-
-    def test_defaults(self):
-        config = Config()
-        assert config.time_window == '6 months'
-
-    def test_custom_values(self):
-        config = Config(time_window='1 year')
-        assert config.time_window == '1 year'
 
 
 class TestLoadConfig:
@@ -32,19 +22,12 @@ class TestLoadConfig:
         config = load_config()
         assert config.time_window == '3 months'
 
-    def test_loads_full_config(self, config_dir):
-        config_file = config_dir / 'config.toml'
-        config_file.write_text('[learn]\ntime_window = "1 year"\n')
+    def test_a_user_config_that_is_not_toml_is_refused(self, config_dir):
+        """Running on the defaults would look like every other run."""
+        (config_dir / 'config.toml').write_text('this is not valid toml {{{')
 
-        config = load_config()
-        assert config.time_window == '1 year'
-
-    def test_invalid_toml_returns_defaults(self, config_dir):
-        config_file = config_dir / 'config.toml'
-        config_file.write_text('this is not valid toml {{{')
-
-        config = load_config()
-        assert config.time_window == '6 months'
+        with pytest.raises(ConfigError, match='is not TOML'):
+            load_config()
 
 
 class TestRepoConfig:
@@ -84,14 +67,17 @@ class TestRepoConfig:
         assert config.exclude == []
         assert config.config_path is None
 
-    def test_invalid_repo_toml_leaves_exclusions_empty(self, tmp_path):
-        (tmp_path / '.git').mkdir()
-        (tmp_path / REPO_CONFIG_NAME).write_text('this is not valid toml {{{')
-
-        assert load_config(tmp_path).exclude == []
-
-    def test_a_config_without_a_scan_table_leaves_exclusions_empty(self, tmp_path):
+    def test_a_table_the_repo_config_does_not_hold_is_refused(self, tmp_path):
+        """The history window is a person's setting, so a repo config naming it is a mistake."""
         (tmp_path / '.git').mkdir()
         (tmp_path / REPO_CONFIG_NAME).write_text('[learn]\ntime_window = "1 year"\n')
 
-        assert load_config(tmp_path).exclude == []
+        with pytest.raises(ConfigError, match='unknown table "learn" .*; known tables: scan'):
+            load_config(tmp_path)
+
+    def test_an_exclusion_written_as_one_string_is_refused(self, tmp_path):
+        (tmp_path / '.git').mkdir()
+        (tmp_path / REPO_CONFIG_NAME).write_text('[scan]\nexclude = "build/**"\n')
+
+        with pytest.raises(ConfigError, match='"scan.exclude" .* is a string; refcheck reads an array of strings there'):
+            load_config(tmp_path)

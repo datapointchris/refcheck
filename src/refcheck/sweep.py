@@ -20,6 +20,7 @@ from pathlib import Path
 
 from .checker import MovedIn
 from .checker import ReferenceChecker
+from .config import ConfigError
 from .config import load_config
 from .output import Issue
 from .output import Unreadable
@@ -198,7 +199,11 @@ def across_repos(
             scanned_trees.append(moved_in.home / scanned.relative_to(moved_in.checkout))
 
     for repo in live:
-        checker = checker_for(repo, skip_docs, file_type, test_mode, flag_excludes)
+        try:
+            checker = checker_for(repo, skip_docs, file_type, test_mode, flag_excludes)
+        except ConfigError as error:
+            sweep.results.append(unread_config(repo, error))
+            continue
         checker.check_patterns_across_repos(patterns, homes, paths, moved_in)
         if filenames:
             before = len(checker.issues)
@@ -271,7 +276,11 @@ def names_across_repos(
                 continue
             inside = scanned.relative_to(home).as_posix()
             skip = [inside, f'{inside}/**']
-        checker = checker_for(repo, skip_docs, file_type, test_mode, [*flag_excludes, *skip])
+        try:
+            checker = checker_for(repo, skip_docs, file_type, test_mode, [*flag_excludes, *skip])
+        except ConfigError as error:
+            sweep.results.append(unread_config(repo, error))
+            continue
         checker.check_names(names)
         sweep.results.append(
             RepoResult(repo=repo, issues=checker.issues, unreadable=checker.unreadable, files_scanned=len(checker.files_scanned))
@@ -291,6 +300,14 @@ def partition(registry: Registry, sweep: SweepResult) -> list[Repo]:
         else:
             live.append(repo)
     return live
+
+
+def unread_config(repo: Repo, error: ConfigError) -> RepoResult:
+    """A repo left unread because its config could not be taken as written.
+
+    Read on the defaults, it would report what it declared excluded.
+    """
+    return RepoResult(repo=repo, unreadable=[Unreadable(path=error.path, reason=str(error))])
 
 
 def checker_for(

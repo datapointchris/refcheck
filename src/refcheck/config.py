@@ -67,33 +67,90 @@ def find_repo_config(start: Path) -> Path | None:
     return None
 
 
-def read_toml(path: Path) -> dict:
-    """Parse a TOML file, treating anything unreadable as absent."""
+class ConfigError(Exception):
+    """A config file refcheck could not take as written, and the file it was."""
+
+    def __init__(self, path: Path, message: str):
+        super().__init__(message)
+        self.path = path
+
+
+USER_CONFIG_TABLES = {'learn': {'time_window': 'a string'}}
+REPO_CONFIG_TABLES = {'scan': {'exclude': 'an array of strings'}}
+
+READS_AS = {
+    'a string': lambda value: isinstance(value, str),
+    'an array of strings': lambda value: isinstance(value, list) and all(isinstance(item, str) for item in value),
+}
+
+
+def toml_kind(value: object) -> str:
+    """What TOML calls a parsed value's type."""
+    match value:
+        case bool():
+            return 'a boolean'
+        case str():
+            return 'a string'
+        case int():
+            return 'an integer'
+        case float():
+            return 'a float'
+        case list():
+            return 'an array'
+        case dict():
+            return 'a table'
+        case _:
+            return 'a date or time'
+
+
+def read_toml(path: Path, tables: dict[str, dict[str, str]]) -> dict[str, dict]:
+    """A config file's tables, checked against what refcheck reads from it. An absent file is empty.
+
+    Anything else it cannot take as written raises ConfigError. Running on the
+    defaults instead would scan what a repo declared excluded, or read history
+    from a window nobody asked for, and the run would look like every other.
+    """
     try:
         with path.open('rb') as handle:
-            return tomllib.load(handle)
-    except (OSError, tomllib.TOMLDecodeError):
+            data = tomllib.load(handle)
+    except FileNotFoundError:
         return {}
+    except OSError as error:
+        raise ConfigError(path, f'{path} could not be read: {error.strerror}') from error
+    except tomllib.TOMLDecodeError as error:
+        raise ConfigError(path, f'{path} is not TOML: {error}') from error
+
+    for table, body in data.items():
+        if table not in tables:
+            raise ConfigError(path, f'unknown table "{table}" in {path}; known tables: {", ".join(tables)}')
+        if not isinstance(body, dict):
+            raise ConfigError(path, f'"{table}" in {path} is {toml_kind(body)}; refcheck reads a table there')
+        for key, value in body.items():
+            expected = tables[table].get(key)
+            if expected is None:
+                known = ', '.join(tables[table])
+                raise ConfigError(path, f'unknown key "{table}.{key}" in {path}; known keys: {known}')
+            if not READS_AS[expected](value):
+                raise ConfigError(path, f'"{table}.{key}" in {path} is {toml_kind(value)}; refcheck reads {expected} there')
+    return data
 
 
 def load_config(start: Path | None = None) -> Config:
     """Merge the per-user config with the repo config found from start.
 
-    Returns default config where a file is missing or cannot be parsed.
+    A file that is not there leaves its defaults. One that is there and cannot
+    be taken as written raises ConfigError.
     """
     config = Config()
 
-    learn = read_toml(user_config_path()).get('learn')
-    if isinstance(learn, dict) and isinstance(learn.get('time_window'), str):
-        config.time_window = learn['time_window']
+    learn = read_toml(user_config_path(), USER_CONFIG_TABLES).get('learn', {})
+    config.time_window = learn.get('time_window', config.time_window)
 
     repo_config = find_repo_config(start or Path.cwd())
     if repo_config is None:
         return config
 
     config.config_path = repo_config
-    scan = read_toml(repo_config).get('scan')
-    if isinstance(scan, dict) and isinstance(scan.get('exclude'), list):
-        config.exclude = [str(pattern) for pattern in scan['exclude']]
+    config.exclude = list(read_toml(repo_config, REPO_CONFIG_TABLES).get('scan', {}).get('exclude', []))
 
     return config

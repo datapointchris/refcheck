@@ -919,6 +919,16 @@ def test_repo_config_excludes_a_subtree(temp_git_repo):
     assert run_check('--pattern', 'lib/helpers.sh', cwd=temp_git_repo).returncode == 0
 
 
+def test_a_repo_config_it_cannot_take_as_written_refuses_the_run(temp_git_repo):
+    """Scanning on the defaults would report what the repo declared excluded."""
+    (temp_git_repo / '.refcheck.toml').write_text('[scan]\nexclude = ["build/reports/**"\n')
+
+    result = run_check('--pattern', 'lib/helpers.sh', cwd=temp_git_repo)
+
+    assert result.returncode == 2
+    assert '.refcheck.toml is not TOML' in result.stderr
+
+
 def test_exclude_flag_skips_a_subtree_without_declaring_it(temp_git_repo):
     reports = temp_git_repo / 'build' / 'reports'
     reports.mkdir(parents=True)

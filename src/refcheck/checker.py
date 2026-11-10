@@ -1353,7 +1353,10 @@ class ReferenceChecker:
                 continue
             name, value = match.groups()
             directory = self._directory_named_by(value.strip('"'), file_path, symbol_table)
-            if directory is not None:
+            if directory is None:
+                # A later value this run cannot name replaces the earlier one in the shell too.
+                symbol_table.pop(name, None)
+            else:
                 symbol_table[name] = directory
         return symbol_table
 
@@ -1399,13 +1402,16 @@ class ReferenceChecker:
             return self.shell_files()
         return ReferenceChecker(self.root_dir, test_mode=self.test_mode, config=self.config).shell_files()
 
-    def resolve_path(self, path_str: str, symbol_table: dict[str, str], file_path: Path) -> str:
-        """Resolve a path containing shell variables."""
-        resolved = path_str
+    # `$NAME` runs to the first character that cannot be in a name, `${NAME}` to its brace.
+    VARIABLE_REFERENCE = re.compile(r'\$(?:\{(\w+)\}|(\w+))')
 
-        for var_name, var_value in symbol_table.items():
-            resolved = resolved.replace(f'${var_name}', var_value)
-            resolved = resolved.replace(f'${{{var_name}}}', var_value)
+    def resolve_path(self, path_str: str, symbol_table: dict[str, str]) -> str:
+        """The path with each variable the symbol table holds replaced, matched by its whole name.
+
+        Raises ValueError where a reference is left, so a path behind a variable
+        this run cannot name is skipped rather than guessed.
+        """
+        resolved = self.VARIABLE_REFERENCE.sub(lambda match: symbol_table.get(match.group(1) or match.group(2), match.group(0)), path_str)
 
         if '$' in resolved:
             raise ValueError(f'Cannot resolve variables in: {path_str}')
@@ -1441,7 +1447,7 @@ class ReferenceChecker:
                 original_path = source_path
                 if '$' in source_path:
                     try:
-                        source_path = self.resolve_path(source_path, symbol_table, file_path)
+                        source_path = self.resolve_path(source_path, symbol_table)
                     except ValueError:
                         continue
 

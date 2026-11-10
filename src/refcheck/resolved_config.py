@@ -18,7 +18,7 @@ from .config import load_config
 from .config import read_toml
 from .config import user_config_path
 from .rules import get_rules_path
-from .suggestions import CARGO_BUILD_DIR
+from .scan_scope import CARGO_BUILD_DIR
 
 
 @dataclass(frozen=True)

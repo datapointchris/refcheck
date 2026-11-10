@@ -26,7 +26,7 @@ from .output import Issue
 from .output import Unreadable
 from .registry import Registry
 from .registry import Repo
-from .suggestions import is_cargo_build_dir
+from .scan_scope import is_cargo_build_dir
 
 
 @dataclass

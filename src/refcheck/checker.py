@@ -20,6 +20,7 @@ from .output import SetAside
 from .output import Unreadable
 from .output import Warning
 from .rules import load_rules
+from .scan_scope import ScanScope
 from .suggestions import FileSuggestions
 
 
@@ -293,11 +294,8 @@ class ReferenceChecker:
         # knows, so it declares them and they arrive here through the config.
         self.exclude_patterns.extend(self.config.exclude)
 
-        self._suggestions = FileSuggestions(self.root_dir, self.exclude_dirs, self.exclude_patterns)
-
-    def should_skip_file(self, file_path: Path) -> bool:
-        """Determine if file should be skipped."""
-        return self._suggestions.should_skip_file(file_path)
+        self.scope = ScanScope(self.root_dir, self.exclude_dirs, self.exclude_patterns)
+        self._suggestions = FileSuggestions(self.scope)
 
     def is_dynamic_path(self, path: str) -> bool:
         """Check if path is dynamic/runtime-generated."""
@@ -693,7 +691,7 @@ class ReferenceChecker:
                         rel_path = entry.relative_to(self.root_dir)
                     except ValueError:
                         continue
-                    if not self._suggestions.should_skip_directory(rel_path):
+                    if not self.scope.should_skip_directory(rel_path):
                         stack.append(entry)
                 elif entry.is_file():
                     yield entry
@@ -720,7 +718,7 @@ class ReferenceChecker:
                 rel_path = search_root.relative_to(self.root_dir)
             except ValueError:
                 return files
-            if not self.should_skip_file(rel_path):
+            if not self.scope.should_skip_file(rel_path):
                 files.append(search_root)
             return files
 
@@ -730,7 +728,7 @@ class ReferenceChecker:
             except ValueError:
                 continue
 
-            if self.should_skip_file(rel_path):
+            if self.scope.should_skip_file(rel_path):
                 continue
 
             if suffix and file_path.suffix != suffix:

@@ -141,6 +141,7 @@ repos from another's.
 
 ## Exclusions match two ways and prune during the walk
 
+`ScanScope` in `scan_scope.py` decides what a scan reads.
 `_matches_exclusion` tries `Path.match` and `fnmatch` on every pattern.
 `Path.match` is right-anchored, which fits `*.log` and `CHANGELOG.md`. It reads
 `**` as one component. Alone, it lets `build/reports/**` exclude

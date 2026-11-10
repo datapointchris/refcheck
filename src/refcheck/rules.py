@@ -87,7 +87,8 @@ def learn_rules_from_git(time_window: str = '6 months') -> LearnedRules:
                 '--diff-filter=R',
                 '-M',
                 '--name-status',
-                '--format=%H %aI',
+                '-z',
+                '--format=%H',
             ],
             cwd=repo_root,
         )
@@ -100,41 +101,33 @@ def learn_rules_from_git(time_window: str = '6 months') -> LearnedRules:
     file_mappings: dict[str, str] = {}
     commits_analyzed: set[str] = set()
 
-    for line in log.splitlines():
-        line = line.strip()
-        if not line:
+    for status, old_path, new_path in git.name_status(log):
+        if not status:
+            commits_analyzed.add(old_path[:8])
+            continue
+        if not status.startswith('R') or new_path is None:
             continue
 
-        if ' ' in line and len(line.split()[0]) == 40:
-            commits_analyzed.add(line.split()[0][:8])
-            continue
+        old_name = Path(old_path).name
+        new_name = Path(new_path).name
+        old_dir = str(Path(old_path).parent)
+        new_dir = str(Path(new_path).parent)
 
-        if line.startswith('R'):
-            parts = line.split('\t')
-            if len(parts) == 3:
-                old_path = parts[1]
-                new_path = parts[2]
+        if old_name != new_name:
+            file_mappings[old_name] = new_name
 
-                old_name = Path(old_path).name
-                new_name = Path(new_path).name
-                old_dir = str(Path(old_path).parent)
-                new_dir = str(Path(new_path).parent)
+        if old_dir != new_dir and old_dir != '.':
+            old_parts = old_dir.split('/')
+            new_parts = new_dir.split('/')
 
-                if old_name != new_name:
-                    file_mappings[old_name] = new_name
-
-                if old_dir != new_dir and old_dir != '.':
-                    old_parts = old_dir.split('/')
-                    new_parts = new_dir.split('/')
-
-                    if old_parts[0] != new_parts[0] or len(old_parts) != len(new_parts):
-                        old_key = f'{old_dir}/'
-                        new_val = f'{new_dir}/'
-                        if old_key in directory_mappings:
-                            existing_new, count = directory_mappings[old_key]
-                            directory_mappings[old_key] = (existing_new, count + 1)
-                        else:
-                            directory_mappings[old_key] = (new_val, 1)
+            if old_parts[0] != new_parts[0] or len(old_parts) != len(new_parts):
+                old_key = f'{old_dir}/'
+                new_val = f'{new_dir}/'
+                if old_key in directory_mappings:
+                    existing_new, count = directory_mappings[old_key]
+                    directory_mappings[old_key] = (existing_new, count + 1)
+                else:
+                    directory_mappings[old_key] = (new_val, 1)
 
     rules_path = get_rules_path(repo_root)
     rules_path.parent.mkdir(parents=True, exist_ok=True)

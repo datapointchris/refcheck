@@ -19,17 +19,18 @@ def commit(repo, message):
 class TestStagedMoves:
     """What a pre-commit hook sees in the index."""
 
-    def test_reads_a_staged_rename(self, temp_git_repo):
+    def test_reads_a_staged_rename_with_its_names_as_written(self, temp_git_repo):
+        """git C-quotes a non-ASCII name in a line-based listing, and the quoted form names no file."""
         (temp_git_repo / 'lib').mkdir()
-        (temp_git_repo / 'lib' / 'helpers.sh').write_text('echo hi\n')
+        (temp_git_repo / 'lib' / 'hélpers.sh').write_text('echo hi\n')
         commit(temp_git_repo, 'add helpers')
 
         (temp_git_repo / 'shared').mkdir()
-        git(temp_git_repo, 'mv', 'lib/helpers.sh', 'shared/helpers.sh')
+        git(temp_git_repo, 'mv', 'lib/hélpers.sh', 'shared/hélpers.sh')
 
         found = moves.staged(temp_git_repo)
-        assert [(m.old, m.new) for m in found] == [('lib/helpers.sh', 'shared/helpers.sh')]
-        assert found[0].description == 'now shared/helpers.sh'
+        assert [(m.old, m.new) for m in found] == [('lib/hélpers.sh', 'shared/hélpers.sh')]
+        assert found[0].description == 'now shared/hélpers.sh'
 
     def test_reads_a_staged_deletion(self, temp_git_repo):
         (temp_git_repo / 'lib').mkdir()

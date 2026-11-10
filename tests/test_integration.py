@@ -505,7 +505,7 @@ class TestRules:
         shown = published_document(run_refcheck('rules', 'show', '--json', cwd=deployed_repo), 'rules-show')
 
         assert learned.returncode == 0
-        assert shown['rules_file'] in learned.stdout
+        assert shown['rules_file'] in learned.stderr
         assert shown['rules']['file_mappings'] == {'logging.sh': 'log.sh'}
 
     def test_outside_a_repository_exits_as_git_does(self, tmp_path, monkeypatch):
@@ -541,7 +541,7 @@ class TestLearnedRulesHint:
 
         result = run_check(cwd=temp_git_repo)
         assert result.returncode == 0
-        assert 'rules learn' not in result.stdout
+        assert 'rules learn' not in result.stderr
 
     def test_offered_when_a_broken_reference_has_no_suggestion(self, temp_git_repo, monkeypatch, tmp_path):
         monkeypatch.setenv('HOME', str(tmp_path))
@@ -549,7 +549,7 @@ class TestLearnedRulesHint:
 
         result = run_check(cwd=temp_git_repo)
         assert result.returncode == 1
-        assert 'rules learn' in result.stdout
+        assert 'rules learn' in result.stderr
 
     def test_silent_when_a_suggestion_already_landed(self, temp_git_repo, monkeypatch, tmp_path):
         monkeypatch.setenv('HOME', str(tmp_path))
@@ -560,7 +560,7 @@ class TestLearnedRulesHint:
         result = run_check(cwd=temp_git_repo)
         assert result.returncode == 1
         assert 'Possible matches' in result.stdout
-        assert 'rules learn' not in result.stdout
+        assert 'rules learn' not in result.stderr
 
 
 def test_every_way_of_sourcing_a_file_is_validated(tmp_path):

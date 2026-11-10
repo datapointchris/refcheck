@@ -703,7 +703,7 @@ def rules_learn():
             f'File mappings: {learned.file_mappings}',
         ]
     )
-    print(marked(PASS, summary))
+    print(marked(PASS, summary), file=sys.stderr)
 
 
 @rules_app.command(name='show', epilog=RULES_EPILOG)

@@ -167,7 +167,7 @@ Warnings exit 0 unless `--strict`:
   moves.
 
 ```text
-FAIL Found 1 error(s) and 1 warning(s)
+FAIL Found 1 error and 1 warning
 
 Errors:
 ────────────────────────────────────────────────────────────
@@ -187,9 +187,12 @@ Fragile Traversal Path (1):
     → Resolve the root from an exported variable first:
         ROOT_DIR="${REPO_DIR:-$(git rev-parse --show-toplevel)}"
 
-HINT 1 broken reference(s) came up with no suggestions.
-     'refcheck rules learn' reads git's rename history to improve them.
+HINT 1 broken reference came up with no suggestion.
+     'refcheck rules learn' reads git's rename history to suggest where each went.
 ```
+
+The report is stdout. The `HINT` line and the `rules learn` summary are
+notices, so they go to stderr.
 
 **A path hangs off one of three anchors.** A `~` path hangs off the home
 directory. An absolute path is itself. Anything else hangs off the repo root. A

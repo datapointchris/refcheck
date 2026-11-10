@@ -154,12 +154,12 @@ def print_results(
         warning_count = len(warnings)
 
         if error_count > 0 and warning_count > 0:
-            both = f'Found {error_count} error(s) and {warning_count} warning(s){search_info}'
+            both = f'Found {count(error_count, "error")} and {count(warning_count, "warning")}{search_info}'
             print(f'\n{marked(FAIL, both)}\n')
         elif error_count > 0:
-            print(f'\n{marked(FAIL, f"Found {error_count} error(s){search_info}")}\n')
+            print(f'\n{marked(FAIL, f"Found {count(error_count, 'error')}{search_info}")}\n')
         else:
-            print(f'\n{marked(WARN, f"Found {warning_count} warning(s){search_info}")}\n')
+            print(f'\n{marked(WARN, f"Found {count(warning_count, 'warning')}{search_info}")}\n')
 
         # Print errors
         if issues:
@@ -245,7 +245,7 @@ def print_unreadable(unreadable: list[Unreadable]) -> None:
     tree it could only partly open cannot support one. Naming what it could not
     reach is what keeps the tick honest for the files it did read.
     """
-    unread = f'{len(unreadable)} path(s) could not be read, so this scan covered less than the tree'
+    unread = f'{count(len(unreadable), "path")} could not be read, so this scan covered less than the tree'
     print(f'\n{marked(FAIL, unread)}\n')
     print('Unreadable:')
     print('─' * 60)
@@ -290,17 +290,17 @@ def print_sweep(
             asked = f'old name {looked_for}'
         elif filenames:
             clean_claim = 'No repo names a path that moved or an old filename'
-            asked = f'{len(patterns)} moved path(s), old filename {", ".join(filenames)}'
+            asked = f'{count(len(patterns), "moved path")}, old filename {", ".join(filenames)}'
         else:
             clean_claim = 'No repo names a path that moved'
-            asked = f'{len(patterns)} moved path(s)'
+            asked = count(len(patterns), 'moved path')
 
         # The tick is a claim about every repo the caller named, so a run that
         # could not read one of them has no tick to print. Saying "no repo names
         # a path that moved" above a repo the sweep never opened is the false
         # clean in one line.
         if sweep.issues:
-            stale = f'Found {len(sweep.issues)} stale reference(s) in {len(sweep.with_issues)} of {repos}{skipped}'
+            stale = f'Found {count(len(sweep.issues), "stale reference")} in {len(sweep.with_issues)} of {repos}{skipped}'
             print(marked(FAIL, stale))
         elif not sweep.unreached:
             clean = f'{clean_claim} — {repos}, {asked}{skipped}'
@@ -421,7 +421,7 @@ def print_rules_hint(issues: list[Issue], rules_path: Path | None) -> None:
         return
 
     hint = (
-        f'{len(unsuggested)} broken reference(s) came up with no suggestions.\n'
-        "'refcheck rules learn' reads git's rename history to improve them."
+        f'{count(len(unsuggested), "broken reference")} came up with no suggestion.\n'
+        "'refcheck rules learn' reads git's rename history to suggest where each went."
     )
-    print(f'\n{marked(HINT, hint)}')
+    print(f'\n{marked(HINT, hint)}', file=sys.stderr)

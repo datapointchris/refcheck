@@ -494,6 +494,22 @@ Every filter reaches every swept repo. Each swept repo still reads its own
 `.refcheck.toml`, with `--exclude` added on top. A change that moved nothing
 prints `Nothing moved, so no repo was swept` and reads no other repo.
 
+## `--json` — the report as one document, in a published shape
+
+```bash
+refcheck check --moves --json | jq '.tree.issues'
+```
+
+`--json` prints the same report as one JSON document on stdout and nothing
+else. Refusals and the update notice stay on stderr. The document names the
+question asked, the findings in the tree walked, and what a `--registry` sweep
+found. `exit_code` repeats the process's exit status. A refused run exits 2
+and prints no document.
+
+`schemas/check.schema.json` is the shape. It carries `$id`
+`urn:refcheck:check:v1`, and every document carries `schema_version`. A test
+validates real runs against it.
+
 ## `learn-rules` — learned renames suggest a fix and detect nothing
 
 ```bash

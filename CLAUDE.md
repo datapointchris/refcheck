@@ -51,7 +51,9 @@ still fire.
 
 `ReferenceChecker` holds every judgment about one tree. `sweep.py` builds one
 per listed repo. `names.py` holds the name shapes, `moves.py` reads git, and
-`cli.py` decides which questions a run asks.
+`cli.py` decides which questions a run asks. `check_document.py` builds what
+`--json` prints, and `schemas/check.schema.json` is its published shape, so a
+change to one is a change to the other.
 
 - **`source` and `bash` targets** resolve through `anchor`. A `~` path hangs
   off home, an absolute path is itself, and anything else hangs off the repo

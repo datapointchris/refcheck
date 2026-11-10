@@ -1,0 +1,186 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "urn:refcheck:check:v1",
+  "title": "refcheck check --json",
+  "description": "One run of refcheck check: the question it asked, what it found in the tree it walked, and what a --registry sweep found in the repos it lists. exit_code is the process's own exit status. A refused run exits 2 and prints no document.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "question", "pattern", "name", "description", "moves_since", "moves", "tree", "sweep", "exit_code"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "question": {
+      "description": "What the run asked. references validates every source and bash target. pattern asks what still names an old path, name what still names an old tool, subcommand or flag, and moves asks pattern's question of every path git recorded as moved or deleted, beside references.",
+      "enum": ["references", "pattern", "name", "moves"]
+    },
+    "pattern": {"description": "The old path --pattern asked after.", "type": ["string", "null"]},
+    "name": {"description": "The old name --name asked after, its words joined by single spaces.", "type": ["string", "null"]},
+    "description": {"description": "What --desc said the pattern or name became.", "type": ["string", "null"]},
+    "moves_since": {"description": "The ref --moves-since diffed from. Null under --moves, which reads the staged change or the range pre-commit names.", "type": ["string", "null"]},
+    "moves": {
+      "description": "Every rename and deletion git recorded, under --moves or --moves-since. Null for any other question.",
+      "type": ["array", "null"],
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["old", "new", "asked_in_tree"],
+        "properties": {
+          "old": {"description": "The path before the change, relative to the repository root.", "type": "string"},
+          "new": {"description": "What the path became, or null where the change deleted it.", "type": ["string", "null"]},
+          "asked_in_tree": {"description": "False for a filename with no directory, which only a --registry sweep asks after.", "type": "boolean"}
+        }
+      }
+    },
+    "tree": {
+      "description": "The tree this run walked. Null where a --registry run from outside any repository walked only the repos it lists.",
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["root", "searched", "files_scanned", "issues", "warnings", "set_aside", "unreadable"],
+      "properties": {
+        "root": {"description": "The directory every file below is relative to.", "type": "string"},
+        "searched": {"description": "The directory or file the walk started from: root, or the path the run was given.", "type": "string"},
+        "files_scanned": {"description": "How many files a check set out to read.", "type": "integer", "minimum": 0},
+        "issues": {"description": "Errors. Any one fails the run.", "type": "array", "items": {"$ref": "#/definitions/finding"}},
+        "warnings": {
+          "description": "Fragile paths. They fail the run only under --strict.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["file", "line", "kind", "message", "suggestion"],
+            "properties": {
+              "file": {"description": "The file holding the line, relative to root.", "type": "string"},
+              "line": {"type": "integer", "minimum": 1},
+              "kind": {"enum": ["fragile_cwd_path", "fragile_traversal_path"]},
+              "message": {"type": "string"},
+              "suggestion": {"type": ["string", "null"]}
+            }
+          }
+        },
+        "set_aside": {
+          "description": "Hits on a pattern whose whole path resolved on disk, so none was reported. A reader judges whether each was repaired.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["file", "line", "pattern", "token", "target"],
+            "properties": {
+              "file": {"description": "The file holding the line, relative to root.", "type": "string"},
+              "line": {"type": "integer", "minimum": 1},
+              "pattern": {"description": "The old path the line matched.", "type": "string"},
+              "token": {"description": "The whole path around the match.", "type": "string"},
+              "target": {"description": "Where the token resolved.", "type": "string"}
+            }
+          }
+        },
+        "unreadable": {"description": "Paths the walk could not read. Any one fails the run.", "type": "array", "items": {"$ref": "#/definitions/unreadable"}}
+      }
+    },
+    "sweep": {
+      "description": "What the repos --registry lists still name. Null without --registry.",
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["repos_scanned", "files_scanned", "source_root", "source_is_listed", "retired", "absent", "unusable", "issues", "unreadable", "old_filenames"],
+      "properties": {
+        "repos_scanned": {"type": "integer", "minimum": 0},
+        "files_scanned": {"description": "How many files the sweep set out to read, across every repo.", "type": "integer", "minimum": 0},
+        "source_root": {"description": "The tree the paths moved in, for a sweep after moved paths. Null for a sweep after a name.", "type": ["string", "null"]},
+        "source_is_listed": {"description": "False where the registry does not list source_root, so no hit can be credited to it.", "type": "boolean"},
+        "retired": {"description": "Repos the registry marks retired, which the sweep skips on purpose.", "type": "array", "items": {"$ref": "#/definitions/repo"}},
+        "absent": {"description": "Repos the registry lists and this machine does not hold. Any one fails the run.", "type": "array", "items": {"$ref": "#/definitions/repo"}},
+        "unusable": {"description": "Registry entries naming no usable path. Any one fails the run.", "type": "array", "items": {"type": "string"}},
+        "issues": {
+          "description": "Stale references in the listed repos. Any one fails the run.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["repo", "repo_path", "file", "line", "kind", "message", "suggestion", "similar_files", "target"],
+            "properties": {
+              "repo": {"description": "The repo's name in the registry.", "type": "string"},
+              "repo_path": {"description": "Where this machine holds the repo. file is relative to it.", "type": "string"},
+              "file": {"type": "string"},
+              "line": {"type": "integer", "minimum": 1},
+              "kind": {"$ref": "#/definitions/issue_kind"},
+              "message": {"type": "string"},
+              "suggestion": {"type": ["string", "null"]},
+              "similar_files": {"type": "array", "items": {"type": "string"}},
+              "target": {"type": ["string", "null"]}
+            }
+          }
+        },
+        "unreadable": {
+          "description": "Paths in the listed repos the sweep could not read. Any one fails the run.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["repo", "path", "reason"],
+            "properties": {
+              "repo": {"type": "string"},
+              "path": {"type": "string"},
+              "reason": {"type": "string"}
+            }
+          }
+        },
+        "old_filenames": {
+          "description": "Filenames a move took out of use, which the sweep asks after cited alone.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["asked", "still_held", "unmatchable"],
+          "properties": {
+            "asked": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["filename", "description"],
+                "properties": {
+                  "filename": {"type": "string"},
+                  "description": {"description": "What the file became, as now <name> or deleted in this change.", "type": "string"}
+                }
+              }
+            },
+            "still_held": {"description": "Old filenames not asked, because a file of that name is still on disk.", "type": "array", "items": {"type": "string"}},
+            "unmatchable": {"description": "Old filenames not asked, because no shape can match them.", "type": "array", "items": {"type": "string"}}
+          }
+        }
+      }
+    },
+    "exit_code": {"description": "0 for a clean run, 1 for one with a finding, an unread path, or a warning under --strict.", "enum": [0, 1]}
+  },
+  "definitions": {
+    "issue_kind": {"enum": ["old_path_pattern", "old_name", "broken_source_command", "broken_bash_command"]},
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "line", "kind", "message", "suggestion", "similar_files", "target"],
+      "properties": {
+        "file": {"description": "The file holding the line, relative to root.", "type": "string"},
+        "line": {"type": "integer", "minimum": 1},
+        "kind": {"$ref": "#/definitions/issue_kind"},
+        "message": {"type": "string"},
+        "suggestion": {"description": "What the target became, or another fix. Null where refcheck knows none.", "type": ["string", "null"]},
+        "similar_files": {"description": "Files learned rules or name variants say may have replaced a missing target.", "type": "array", "items": {"type": "string"}},
+        "target": {"description": "The path or name the finding says is gone: a source or bash target as resolved, or the old path or name found.", "type": ["string", "null"]}
+      }
+    },
+    "unreadable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "reason"],
+      "properties": {
+        "path": {"type": "string"},
+        "reason": {"description": "What the kernel said.", "type": "string"}
+      }
+    },
+    "repo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "path"],
+      "properties": {
+        "name": {"type": "string"},
+        "path": {"type": "string"}
+      }
+    }
+  }
+}

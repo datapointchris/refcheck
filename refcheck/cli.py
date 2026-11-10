@@ -12,6 +12,7 @@ from typer._click.core import Context
 from typer._click.exceptions import NoSuchOption
 from typer.core import TyperGroup
 
+from . import check_document
 from . import moves as moves_module
 from . import registry as registry_module
 from . import sweep as sweep_module
@@ -94,6 +95,7 @@ CHECK_EXAMPLES = [
         '[b]refcheck check --name "tool oldsub" --desc "now newtool sub" --registry <repos.json> --registry <stores.json>[/b] '
         '— after renaming, moving or removing a subcommand, every caller and every mention of it'
     ),
+    '[b]refcheck check --moves --json[/b] — the same report as one JSON document on stdout, for a script to read',
     '[b]refcheck check --show-config[/b] — every exclusion in force, and the layer that set it',
 ]
 
@@ -346,6 +348,14 @@ def check(
             '--show-config', help='Print the exclusions in force and where each came from, then exit.', rich_help_panel='Maintenance'
         ),
     ] = False,
+    as_json: Annotated[
+        bool,
+        typer.Option(
+            '--json',
+            help='Print the report as one JSON document on stdout, in the shape schemas/check.schema.json publishes.',
+            rich_help_panel='Output',
+        ),
+    ] = False,
 ):
     root_dir = Path.cwd()
     search_path = path.resolve() if path else root_dir
@@ -371,6 +381,10 @@ def check(
     repo_patterns = list(config.exclude)
     flag_patterns = list(exclude or [])
     config.exclude = [*repo_patterns, *flag_patterns]
+
+    if show_config and as_json:
+        print('refcheck: --json prints the check report, and --show-config prints the exclusions instead of one.', file=sys.stderr)
+        raise typer.Exit(2)
 
     if show_config:
         print_config(
@@ -530,37 +544,62 @@ def check(
         print(nothing_left_to_scan(narrowing, search_path if walks_here else None, bool(swept), searched_text), file=sys.stderr)
         raise typer.Exit(2)
 
-    if walks_here:
-        print_results(
-            checker.issues,
-            checker.warnings,
-            checker.get_rules_path(),
-            checker.root_dir,
-            checker.search_path,
-            checker.unreadable,
-            checker.set_aside,
-            claim=clean_claim(pattern, name, found if check_moves or moves_since else None, moves_since),
-            files_scanned=len(checker.files_scanned),
-        )
-
-    if swept is not None:
-        print_sweep(swept, sweep_patterns, by_name=bool(name), filenames=gone_filenames)
-        if filenames_still_held:
-            print(f'Not asked as old filenames, because this tree or a listed repo still holds one: {", ".join(filenames_still_held)}')
-        if unmatchable:
-            print(f'Not asked as old filenames, because no shape can match them: {", ".join(unmatchable)}')
-        if filenames_still_held or unmatchable:
-            print()
-
-    notify(UPDATE_CONFIG)
-
     # A path the run was handed and could not read fails it, the same as a
     # finding. Both mean the tick would be a lie, and the tick is the product.
     unreached = bool(checker.unreadable) or bool(swept and swept.unreached)
+    failed = bool(checker.issues or (swept and swept.issues) or unreached or (checker.strict and checker.warnings))
+    moves_asked = check_moves or bool(moves_since)
 
-    if checker.issues or (swept and swept.issues) or unreached or (checker.strict and checker.warnings):
-        raise typer.Exit(1)
-    raise typer.Exit(0)
+    if as_json:
+        check_document.print_document(
+            check_document.document(
+                question='pattern' if pattern else 'name' if name else 'moves' if moves_asked else 'references',
+                pattern=pattern,
+                name=name,
+                description=desc,
+                moves_since=moves_since,
+                moves=found if moves_asked else None,
+                tree=check_document.tree_record(
+                    checker.root_dir,
+                    checker.search_path,
+                    len(checker.files_scanned),
+                    checker.issues,
+                    checker.warnings,
+                    checker.set_aside,
+                    checker.unreadable,
+                )
+                if walks_here
+                else None,
+                sweep=None if swept is None else check_document.sweep_record(swept, gone_filenames, filenames_still_held, unmatchable),
+                exit_code=int(failed),
+            )
+        )
+    else:
+        if walks_here:
+            print_results(
+                checker.issues,
+                checker.warnings,
+                checker.get_rules_path(),
+                checker.root_dir,
+                checker.search_path,
+                checker.unreadable,
+                checker.set_aside,
+                claim=clean_claim(pattern, name, found if moves_asked else None, moves_since),
+                files_scanned=len(checker.files_scanned),
+            )
+
+        if swept is not None:
+            print_sweep(swept, sweep_patterns, by_name=bool(name), filenames=gone_filenames)
+            if filenames_still_held:
+                print(f'Not asked as old filenames, because this tree or a listed repo still holds one: {", ".join(filenames_still_held)}')
+            if unmatchable:
+                print(f'Not asked as old filenames, because no shape can match them: {", ".join(unmatchable)}')
+            if filenames_still_held or unmatchable:
+                print()
+
+    notify(UPDATE_CONFIG)
+
+    raise typer.Exit(int(failed))
 
 
 @app.command(name='learn-rules', epilog=LEARN_RULES_EPILOG, rich_help_panel=MAINTENANCE_PANEL)

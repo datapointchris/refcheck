@@ -20,6 +20,7 @@ refcheck = "refcheck.cli:app"
 [dependency-groups]
 dev = [
     "bandit>=1.7.8",
+    "jsonschema>=4.0",
     "mypy>=1.10.0",
     "pre-commit>=4.3.0",
     "pytest>=8.0.0",

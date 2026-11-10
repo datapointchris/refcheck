@@ -220,6 +220,19 @@ The hook sets `pass_filenames: false` and `always_run: true`. A reference
 breaks in the file that was not edited, so a scan of the staged files would
 miss the whole class of bug.
 
+## Two runtime dependencies, each for one job
+
+Everything else is the standard library. The hook's `language: python` builds
+a virtualenv in every consumer, so a runtime dependency is installed wherever
+the hook runs.
+
+- **Typer** builds the command tree: the `config` and `rules` namespaces, the
+  help panels, and the shared `--json` option. argparse needs subparsers and
+  hand-written help groups for the same surface.
+- **pyselfupdate** is the `update` command and the once-a-day release check.
+  The network code and the install's step order live in that library rather
+  than in this one.
+
 ## Typer's private Click is imported on purpose
 
 `main.py` imports `Context`, `NoSuchOption` and `TyperGroup` from

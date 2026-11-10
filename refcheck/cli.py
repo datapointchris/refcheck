@@ -299,7 +299,7 @@ def check(
     ] = None,
     desc: Annotated[
         str | None,
-        typer.Option('--desc', help='What the pattern became, shown alongside each hit.', rich_help_panel='Pattern search'),
+        typer.Option('--desc', help='What the --pattern or --name became, shown beside each hit.', rich_help_panel='Pattern search'),
     ] = None,
     check_moves: Annotated[
         bool,
@@ -402,6 +402,11 @@ def check(
     asked = [flag for flag, given in (('--pattern', pattern), ('--name', name), ('--moves', check_moves or moves_since)) if given]
     if len(asked) > 1:
         print(f'refcheck: {" and ".join(asked)} each ask a different question, so pass one per run.', file=sys.stderr)
+        raise typer.Exit(2)
+
+    if desc is not None and not (pattern or name):
+        from_git = ' --moves reads what each path became from git.' if check_moves or moves_since else ''
+        print(f'refcheck: --desc labels the hits of --pattern or --name, so it needs one of them.{from_git}', file=sys.stderr)
         raise typer.Exit(2)
 
     # A slash makes it a path, which --pattern resolves and --name would only

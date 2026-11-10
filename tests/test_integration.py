@@ -100,6 +100,12 @@ class TestPatternWithDescription:
         )
         assert result.returncode == 1
 
+    def test_desc_without_a_question_is_refused(self, test_fixtures):
+        result = run_check('--desc', 'now new/path/', cwd=test_fixtures)
+        assert result.returncode == 2
+        assert '--desc' in result.stderr
+        assert result.stdout == ''
+
 
 class TestTypeFiltering:
     """Test 5: Type filtering."""

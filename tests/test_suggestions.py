@@ -29,18 +29,18 @@ class TestFileSuggestions:
 
     def test_subtree_patterns_reach_every_depth(self, temp_dir):
         """Path.match reads `**` as one component, so a subtree pattern only
-        excluded the files sitting directly in it: `.claude/metrics/top.json`
-        was skipped while `.claude/metrics/a/b.json` beside it was scanned."""
+        excluded the files sitting directly in it: `build/reports/top.json`
+        was skipped while `build/reports/a/b.json` beside it was scanned."""
         suggestions = FileSuggestions(
             root_dir=temp_dir,
             exclude_dirs=set(),
-            exclude_patterns=['.claude/metrics/**', '**/fixtures/**'],
+            exclude_patterns=['build/reports/**', '**/fixtures/**'],
         )
-        assert suggestions.should_skip_file(Path('.claude/metrics/top.json'))
-        assert suggestions.should_skip_file(Path('.claude/metrics/a/b.json'))
-        assert suggestions.should_skip_file(Path('.claude/metrics/a/deep/nested.json'))
+        assert suggestions.should_skip_file(Path('build/reports/top.json'))
+        assert suggestions.should_skip_file(Path('build/reports/a/b.json'))
+        assert suggestions.should_skip_file(Path('build/reports/a/deep/nested.json'))
         assert suggestions.should_skip_file(Path('tests/stats/fixtures/tool_outputs/tokei.json'))
-        assert not suggestions.should_skip_file(Path('claude/metrics/notes.md'))
+        assert not suggestions.should_skip_file(Path('mybuild/reports/notes.md'))
         assert not suggestions.should_skip_file(Path('src/main.py'))
 
     def test_bare_filename_patterns_still_match_at_any_depth(self, temp_dir):

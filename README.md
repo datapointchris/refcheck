@@ -199,14 +199,23 @@ segments: `home/.local/lib/log.sh` satisfies `~/.local/lib/log.sh`. A CI
 runner's home holds nothing the repo deploys, so this keeps its answer the same
 as a desk that ran the install. A file sharing only the basename does not count.
 
-**Two variables are resolved.** `$SCRIPT_DIR` is the script's directory when the
-script sets it from `BASH_SOURCE` with `cd … && pwd`. `$DOTFILES_DIR` is the
-directory `$(cd "$SCRIPT_DIR/../.." && pwd)` names when the script derives it
-that way. It is the repo root when the script defaults it as
-`${DOTFILES_DIR:-$HOME/dotfiles}`. In markdown, `$DOTFILES_DIR` is always the
-repo root. `$SCRIPT_DIR` stays unresolved there, because a doc has no one script
-for it to be relative to. A path behind any other variable is skipped rather
-than guessed. A miss prints both forms, as above.
+**A variable is resolved where the script derives it from a directory refcheck
+can name.** Any name counts, in four shapes:
+
+- **The script's own directory.** `cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd`
+  walks from it, and so does the same with `$0`.
+- **An earlier variable.** `cd "$SCRIPT_DIR/../.." && pwd` walks from one the
+  script already resolved.
+- **The repo root.** `$(git rev-parse --show-toplevel)` names it.
+- **A `${NAME:-…}` default of any of these.** A default under `$HOME` whose last
+  directory has the repo's own name, as in `${APP_DIR:-$HOME/app}` inside a
+  checkout named `app`, is the repo itself.
+
+Markdown has no assignments of its own. It borrows each variable the repo's
+scripts set to the root and to nothing else. A variable some script sets to its
+own directory stays unresolved there, because a doc has no one script for it to
+be relative to. A path behind any other variable is skipped rather than
+guessed. A miss prints both forms, as above.
 
 **Documentation widens the guards and never skips the line.** Markdown, a `#`
 comment and an `echo` or `printf` line are documentation. There, a path whose

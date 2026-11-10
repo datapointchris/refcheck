@@ -81,21 +81,10 @@ class ReferenceChecker:
         '.pytest_cache',
         '.ruff_cache',
         '.mypy_cache',
-        # A per-session snapshot store holds what a file contained at a point in
-        # time, so a snapshot naming a path is a record and never a reference.
-        # Claude Code writes one under .claude as <hash>@vN; at 245 MB it was
-        # both the largest thing the scan read and the only source of hits when
-        # a skill's helper script was renamed.
-        'file-history',
-        # Claude Code keeps each long paste under .claude as paste-cache/<hash>.txt,
-        # a record of what a person typed. Renaming a skill everywhere it is
-        # referenced left one hit, in a paste that named the old skill.
-        'paste-cache',
     }
 
     DEFAULT_EXCLUDE_PATTERNS = [
         '*.pyc',
-        '.claude/metrics/**',
         'site/**',
         # Append-only event logs record what a path *was*, not what should
         # exist. A 197 MB log naming every file a hook had ever checked reported
@@ -294,6 +283,7 @@ class ReferenceChecker:
         self.exclude_patterns = self.DEFAULT_EXCLUDE_PATTERNS.copy()
         self._rules: dict | None = None
         self._rules_path: Path | None = None
+        self._borrowed: dict[str, str] | None = None
 
         if not test_mode:
             self.exclude_patterns.extend(self.TEST_FIXTURE_PATTERNS)
@@ -505,9 +495,9 @@ class ReferenceChecker:
         Callers gate this on documents_rather_than_runs: in code the same bare
         filename is a real invocation that has to resolve.
         """
-        # $DOTFILES_DIR is already resolved to an absolute path by this point,
-        # and it is repo-rooted by construction — judge it on the part below the
-        # root, not on the leading slash.
+        # A variable naming the repo root is already resolved to an absolute
+        # path by this point. Judge it on the part below the root, not on the
+        # leading slash.
         candidate = path
         if path.startswith('/'):
             try:
@@ -814,7 +804,7 @@ class ReferenceChecker:
 
         A bare filename is resolved the same way, because a rename whose new
         name ends in the old one is the common case rather than the exotic one
-        — `tools.json` to `built-tools.json` puts the pattern inside every
+        — `versions.json` to `pinned-versions.json` puts the pattern inside every
         site that was just repaired. A hit standing alone as its own token is
         still reported, so `--pattern oldname` finds `Run oldname`.
 
@@ -1306,49 +1296,95 @@ class ReferenceChecker:
         except ValueError:
             return target
 
-    def go_up_n_levels(self, file_path: Path, n: int) -> Path:
-        """Go up N directory levels from file_path."""
-        path = file_path.parent
-        for _ in range(n - 1):
-            path = path.parent
-        return path
-
     def find_repo_root(self, file_path: Path) -> Path:
         """The repository holding this file, or the scan root when no repository does."""
         return repository.root(file_path.parent) or self.root_dir
 
+    # NAME=value as a script assigns it, behind any declaration keyword.
+    ASSIGNMENT = re.compile(r'^\s*(?:(?:export|local|readonly|declare(?:\s+-\w+)?)\s+)?([A-Za-z_]\w*)=(\S.*?)\s*$')
+    # `$(cd "<base><rel>" && pwd)`, where base is the script's own directory or a variable.
+    CD_AND_PWD = re.compile(
+        r'^\$\(\s*cd\s+(?:--\s+)?"?'
+        r'(?P<base>\$\(\s*dirname\s+(?:--\s+)?"?\$\{?(?:BASH_SOURCE(?:\[0\])?|0)\}?"?\s*\)|\$\{?\w+\}?)'
+        r'(?P<rel>[^"\s)]*)"?'
+        r'(?:\s*&?>\s*/dev/null(?:\s*2>&1)?)?'
+        r'\s*&&\s*pwd(?:\s+-P)?\s*\)$'
+    )
+    TOPLEVEL = re.compile(r'^\$\(\s*git\s+rev-parse\s+--show-toplevel\s*\)$')
+    DEFAULTED = re.compile(r'^\$\{\w+:?-(.+)\}$')
+    UNDER_HOME = re.compile(r'^(?:\$HOME|\$\{HOME\}|~)/(.+)$')
+
     def parse_variable_assignments(self, file_path: Path) -> dict[str, str]:
-        """Parse common shell variable assignment patterns."""
-        symbol_table: dict[str, str] = {}
+        """The directory each of a script's variables holds, where the script derives it from one this run can name.
 
-        # Prose has no assignments to parse, but its $DOTFILES_DIR names the
-        # same repo root every script's does, and without seeding it every
-        # documented `source "$DOTFILES_DIR/..."` fails to resolve and is
-        # skipped. $SCRIPT_DIR stays unresolved on purpose: in prose there is
-        # no one script for it to be relative to, so guessing would invent
-        # misses.
+        A value is resolved when it is the script's own directory walked to
+        with `cd ... && pwd` from `dirname "${BASH_SOURCE[0]}"` or `$0`, an
+        earlier variable walked the same way, the repository root from
+        `git rev-parse --show-toplevel`, or a `${NAME:-...}` default of one of
+        those. A default under `$HOME` whose last directory has the
+        repository's own name is that repository, checked out where the script
+        expects it. Anything else stays unresolved, and a reference through it
+        is skipped rather than guessed.
+
+        Prose has no assignments, so it borrows `_root_variables`.
+        """
         if file_path.suffix == '.md':
-            symbol_table['DOTFILES_DIR'] = str(self.find_repo_root(file_path))
-            return symbol_table
-
+            return dict(self._root_variables())
         lines = self.lines_of(file_path)
         if lines is None:
-            return symbol_table
-        content = ''.join(lines)
-
-        if re.search(r'SCRIPT_DIR="\$\(cd.*BASH_SOURCE', content):
-            symbol_table['SCRIPT_DIR'] = str(file_path.parent)
-
-        match = re.search(r'DOTFILES_DIR="\$\(cd "\$SCRIPT_DIR/((?:\.\./?)+)" && pwd\)"', content)
-        if match:
-            relative_path = match.group(1)
-            levels_up = relative_path.count('..')
-            symbol_table['DOTFILES_DIR'] = str(self.go_up_n_levels(file_path, levels_up + 1))
-
-        if re.search(r'DOTFILES_DIR="\$\{DOTFILES_DIR:-\$HOME/dotfiles\}"', content):
-            symbol_table['DOTFILES_DIR'] = str(self.find_repo_root(file_path))
-
+            return {}
+        symbol_table: dict[str, str] = {}
+        for line in lines:
+            match = self.ASSIGNMENT.match(line)
+            if match is None:
+                continue
+            name, value = match.groups()
+            directory = self._directory_named_by(value.strip('"'), file_path, symbol_table)
+            if directory is not None:
+                symbol_table[name] = directory
         return symbol_table
+
+    def _directory_named_by(self, value: str, file_path: Path, known: dict[str, str]) -> str | None:
+        defaulted = self.DEFAULTED.match(value)
+        if defaulted:
+            value = defaulted.group(1).strip('"')
+            under_home = self.UNDER_HOME.match(value)
+            if under_home:
+                root = self.find_repo_root(file_path)
+                return str(root) if PurePosixPath(under_home.group(1)).name == root.name else None
+        if self.TOPLEVEL.match(value):
+            return str(self.find_repo_root(file_path))
+        walked = self.CD_AND_PWD.match(value)
+        if walked is None:
+            return None
+        base = walked.group('base')
+        start = str(file_path.parent) if base.startswith('$(') else known.get(base.strip('${}'))
+        if start is None:
+            return None
+        return os.path.normpath(start + walked.group('rel'))
+
+    def _root_variables(self) -> dict[str, str]:
+        """Variables the repo's scripts assign to its root and to nothing else, which prose borrows.
+
+        A document has no assignments, and `source "$ROOT/lib/x.sh"` in one
+        names the file the scripts' `$ROOT` does. A variable some script
+        assigns elsewhere, such as its own directory, has no one value a
+        document could mean, so it stays unresolved in prose.
+        """
+        if self._borrowed is None:
+            root = str(repository.root(self.root_dir) or self.root_dir)
+            values: dict[str, set[str]] = {}
+            for script in self._repo_shell_files():
+                for name, value in self.parse_variable_assignments(script).items():
+                    values.setdefault(name, set()).add(value)
+            self._borrowed = {name: root for name, held in values.items() if held == {root}}
+        return self._borrowed
+
+    def _repo_shell_files(self) -> list[Path]:
+        """Every shell file in the tree, whatever the run was narrowed to, so prose read alone borrows the same variables."""
+        if self.search_path == self.root_dir:
+            return self.shell_files()
+        return ReferenceChecker(self.root_dir, test_mode=self.test_mode, config=self.config).shell_files()
 
     def resolve_path(self, path_str: str, symbol_table: dict[str, str], file_path: Path) -> str:
         """Resolve a path containing shell variables."""

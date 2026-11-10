@@ -221,21 +221,12 @@ class TestValidReferences:
 class TestMarkdownReferences:
     """Docs carry the same references as code and must be resolved the same way."""
 
-    def test_finds_stale_source_in_markdown(self, test_fixtures):
-        """The regression: these checks globbed **/*.sh, so docs were never read."""
+    def test_finds_a_stale_source_and_invocation_in_markdown(self, test_fixtures):
+        """Read alone, the document still borrows the root variable the repo's scripts set."""
         result = run_check('stale-docs/stale-source.md', cwd=test_fixtures)
         assert result.returncode == 1
-        assert 'gone.sh' in result.stdout
-
-    def test_finds_stale_script_invocation_in_markdown(self, test_fixtures):
-        result = run_check('stale-docs/stale-source.md', cwd=test_fixtures)
-        assert 'also-gone.sh' in result.stdout
-
-    def test_resolves_dotfiles_dir_in_markdown(self, test_fixtures):
-        """Prose has no assignments to parse, so $DOTFILES_DIR must be seeded."""
-        result = run_check('docs/live-source.md', cwd=test_fixtures)
-        assert result.returncode == 0
-        assert 'helpers.sh' not in result.stdout
+        assert '$PROJECT_ROOT/valid/gone.sh' in result.stdout
+        assert 'valid/also-gone.sh' in result.stdout
 
     def test_placeholders_are_not_reported(self, test_fixtures):
         """A how-to naming toolname.sh describes a file it never intended to ship."""
@@ -391,18 +382,6 @@ class TestMovesEndToEnd:
         self._repo_with_a_staged_move(temp_git_repo)
 
         result = run_check(cwd=temp_git_repo)
-        assert result.returncode == 0
-
-    def test_a_file_history_snapshot_is_not_a_stale_reference(self, temp_git_repo):
-        """A snapshot holds what a file said at a point in time, not where it should be."""
-        self._repo_with_a_staged_move(temp_git_repo)
-        (temp_git_repo / 'deploy.yml').write_text('script: shared/helpers.sh\n')
-        history = temp_git_repo / 'file-history' / 'a-session'
-        history.mkdir(parents=True)
-        (history / 'abc123@v1').write_text('script: lib/helpers.sh\n')
-        subprocess.run(['git', 'add', '-A'], cwd=temp_git_repo, capture_output=True, check=True)
-
-        result = run_check('--moves', cwd=temp_git_repo)
         assert result.returncode == 0
 
     def test_changelog_entries_are_not_stale_references(self, temp_git_repo):
@@ -670,22 +649,31 @@ def test_a_dot_argument_is_judged_by_the_same_tree_rule_as_bash(tmp_path):
     assert checker.issues == []
 
 
-def test_an_unquoted_variable_source_resolves_instead_of_going_absolute(tmp_path):
-    """The old pattern captured from the slash on, so `$DIR/lib/x.sh` became `/lib/x.sh`.
-
-    That reported a path nobody wrote, and would have passed silently on a
-    machine that happened to have one at the root.
-    """
+def test_prose_borrows_only_a_variable_every_script_sets_to_the_root(tmp_path):
+    """`$ROOT` in a document names what the scripts' `$ROOT` does; a script's own directory names nothing there."""
     (tmp_path / 'lib').mkdir()
+    (tmp_path / 'tools').mkdir()
     (tmp_path / 'docs').mkdir()
-    (tmp_path / 'docs' / 'guide.md').write_text('# Guide\n\n```bash\nsource $DOTFILES_DIR/lib/gone.sh\n```\n')
+    (tmp_path / 'env.sh').write_text('PROJECT_ROOT="${PROJECT_ROOT:-$(git rev-parse --show-toplevel)}"\n')
+    (tmp_path / 'tools' / 'run.sh').write_text('HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"\n')
+    (tmp_path / 'docs' / 'guide.md').write_text('# Guide\n\n```bash\nsource $PROJECT_ROOT/lib/gone.sh\nsource "$HERE/gone.sh"\n```\n')
 
     checker = ReferenceChecker(tmp_path)
     checker.check_source_statements()
 
-    assert len(checker.issues) == 1
-    assert '$DOTFILES_DIR/lib/gone.sh' in checker.issues[0].message
-    assert str(tmp_path / 'lib' / 'gone.sh') in checker.issues[0].message
+    assert [issue.target for issue in checker.issues] == [str(tmp_path / 'lib' / 'gone.sh')]
+
+
+def test_a_variable_a_script_walks_to_from_its_own_directory_resolves(tmp_path):
+    (tmp_path / 'bin').mkdir()
+    (tmp_path / 'bin' / 'run.sh').write_text(
+        '#!/usr/bin/env bash\nROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." &> /dev/null && pwd)"\nsource "$ROOT/lib/gone.sh"\n'
+    )
+
+    checker = ReferenceChecker(tmp_path)
+    checker.check_source_statements()
+
+    assert [issue.target for issue in checker.issues] == [str(tmp_path / 'lib' / 'gone.sh')]
 
 
 def test_a_system_file_under_etc_is_not_a_repo_reference(tmp_path):

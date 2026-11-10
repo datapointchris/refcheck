@@ -20,12 +20,22 @@ from refcheck.rules import load_rules
 SCHEMAS = Path(__file__).resolve().parents[1] / 'schemas'
 
 
-def published_document(result: subprocess.CompletedProcess, schema: str) -> dict:
-    """A command's --json document, after checking it against the schema the repo publishes for it."""
-    assert result.returncode == 0, result.stderr
-    document = json.loads(result.stdout)
+def matches_its_schema(document: dict, schema: str) -> dict:
+    """The document, after checking it against the schema the repo publishes for it."""
     Draft7Validator(json.loads((SCHEMAS / f'{schema}.schema.json').read_text())).validate(document)
     return document
+
+
+def published_document(result: subprocess.CompletedProcess, schema: str) -> dict:
+    """A command's --json document from a run that succeeded."""
+    assert result.returncode == 0, result.stderr
+    return matches_its_schema(json.loads(result.stdout), schema)
+
+
+def checked_tree(*args, cwd=None) -> tuple[int, dict]:
+    """A check run's exit code beside the tree its --json document reports."""
+    result = run_check('--json', *args, cwd=cwd)
+    return result.returncode, matches_its_schema(json.loads(result.stdout), 'check')['tree']
 
 
 def run_refcheck(*args, cwd=None):
@@ -144,14 +154,13 @@ class TestTypeFiltering:
 class TestSkipDocs:
     """Test 6: Skip docs flag."""
 
-    def test_skip_docs_reduces_pattern_matches(self, test_fixtures):
-        with_docs = run_check('--pattern', 'management/tests/', cwd=test_fixtures)
-        without_docs = run_check('--pattern', 'management/tests/', '--skip-docs', cwd=test_fixtures)
+    def test_skip_docs_leaves_markdown_out_of_a_pattern_search(self, test_fixtures):
+        def reported(*flags):
+            _, tree = checked_tree('--pattern', 'management/tests/', *flags, cwd=test_fixtures)
+            return {issue['file'] for issue in tree['issues']}
 
-        with_count = with_docs.stdout.count('management/tests/')
-        without_count = without_docs.stdout.count('management/tests/')
-
-        assert without_count < with_count or without_count == 0
+        assert reported() == {'docs/readme.md', 'src/old-pattern.sh'}
+        assert reported('--skip-docs') == {'src/old-pattern.sh'}
 
 
 class TestCombinedFilters:
@@ -213,9 +222,8 @@ class TestValidReferences:
 
     def test_commented_source_is_not_flagged_as_fragile(self, test_fixtures):
         """A source in a usage comment has no working directory to be fragile about."""
-        result = run_check('valid/documented-usage.sh', cwd=test_fixtures)
-        assert result.returncode == 0
-        assert 'Fragile' not in result.stdout
+        code, tree = checked_tree('valid/documented-usage.sh', cwd=test_fixtures)
+        assert (code, tree['warnings']) == (0, [])
 
 
 class TestMarkdownReferences:
@@ -256,6 +264,7 @@ class TestMarkdownReferences:
     def test_resource_is_not_a_source_statement(self, test_fixtures):
         """`resource "aws_lambda_function"` ends in `source "..."` without a boundary."""
         result = run_check('docs/other-trees.md', cwd=test_fixtures)
+        assert result.returncode == 0
         assert 'aws_lambda_function' not in result.stdout
         assert 'freshrss' not in result.stdout
 
@@ -313,10 +322,9 @@ class TestScriptsDeclaredShell:
         (tmp_path / 'bin').mkdir()
         (tmp_path / 'bin' / 'deploy').write_text('#!/usr/bin/env bash\nsource lib/helpers.sh\n')
 
-        result = run_check(cwd=tmp_path)
+        _, tree = checked_tree(cwd=tmp_path)
 
-        assert 'Relative path only valid from' in result.stdout
-        assert 'bin/deploy' in result.stdout
+        assert [(warning['file'], warning['kind']) for warning in tree['warnings']] == [('bin/deploy', 'fragile_cwd_path')]
 
     def test_a_file_without_a_suffix_or_a_shell_shebang_is_not_read(self, tmp_path, monkeypatch):
         monkeypatch.setenv('HOME', str(tmp_path))
@@ -414,9 +422,8 @@ class TestSelfReferences:
     """Test 9: Self-references in comments should be ignored."""
 
     def test_ignores_self_references(self, test_fixtures):
-        result = run_check('src/self-ref.sh', cwd=test_fixtures)
-        assert result.returncode == 0
-        assert 'self-ref.sh' not in result.stdout or 'Missing' not in result.stdout
+        code, tree = checked_tree('src/self-ref.sh', cwd=test_fixtures)
+        assert (code, tree['files_scanned'], tree['issues']) == (0, 1, [])
 
 
 class TestExitCodes:
@@ -429,6 +436,18 @@ class TestExitCodes:
     def test_exit_1_for_broken(self, test_fixtures):
         result = run_check('src/', cwd=test_fixtures)
         assert result.returncode == 1
+
+    def test_warnings_alone_fail_only_under_strict(self, tmp_path, monkeypatch):
+        """--strict is the CI contract, and --no-warn takes the warnings it would fail on out of the run."""
+        monkeypatch.setenv('HOME', str(tmp_path))
+        (tmp_path / 'lib').mkdir()
+        (tmp_path / 'lib' / 'helpers.sh').write_text('#!/usr/bin/env bash\n')
+        (tmp_path / 'bin').mkdir()
+        (tmp_path / 'bin' / 'deploy.sh').write_text('#!/usr/bin/env bash\nsource lib/helpers.sh\n')
+
+        exits = [run_check(*flags, cwd=tmp_path).returncode for flags in ([], ['--strict'], ['--strict', '--no-warn'])]
+
+        assert exits == [0, 1, 0]
 
 
 class TestHelpFlag:
@@ -482,17 +501,14 @@ class TestVariablePathResolution:
 class TestSuggestionFeature:
     """Test 14: Suggestion feature."""
 
-    def test_shows_possible_matches(self, suggestion_fixtures):
-        result = run_check(str(suggestion_fixtures / 'suggestions'), cwd=suggestion_fixtures)
-        assert 'Possible matches:' in result.stdout
+    def test_a_broken_reference_carries_the_file_it_probably_meant(self, suggestion_fixtures):
+        code, tree = checked_tree(str(suggestion_fixtures / 'suggestions'), cwd=suggestion_fixtures)
 
-    def test_shows_basename_match(self, suggestion_fixtures):
-        result = run_check(str(suggestion_fixtures / 'suggestions'), cwd=suggestion_fixtures)
-        assert 'basename match' in result.stdout
-
-    def test_shows_name_variant(self, suggestion_fixtures):
-        result = run_check(str(suggestion_fixtures / 'suggestions'), cwd=suggestion_fixtures)
-        assert 'name variant' in result.stdout
+        assert code == 1
+        assert {issue['file']: issue['similar_files'] for issue in tree['issues']} == {
+            'suggestions/broken-variant.sh': ['suggestions/my-script.sh (name variant)'],
+            'suggestions/broken-with-similar.sh': ['suggestions/update.sh (basename match)'],
+        }
 
 
 class TestRules:
@@ -559,7 +575,7 @@ class TestLearnedRulesHint:
 
         result = run_check(cwd=temp_git_repo)
         assert result.returncode == 1
-        assert 'Possible matches' in result.stdout
+        assert 'lib/helpers.sh' in result.stdout
         assert 'rules learn' not in result.stderr
 
 

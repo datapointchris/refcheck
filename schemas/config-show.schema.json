@@ -16,10 +16,10 @@
         "additionalProperties": false,
         "required": ["key", "value", "layer", "note"],
         "properties": {
-          "key": {"description": "A config key as table.key, or user_config, repo_config or rules_file for a file refcheck reads or writes.", "type": "string"},
-          "value": {"description": "The resolved value. Null where no such file applies, such as a repo with no repo config.", "type": ["string", "array", "null"], "items": {"type": "string"}},
-          "layer": {"description": "What set the value: a config file, an environment variable, a default or a built-in list.", "type": "string"},
-          "note": {"description": "What a reader should know about the value, such as the file not being there. Null where there is nothing.", "type": ["string", "null"]}
+          "key": {"description": "A config key as table.key, or user_config_file, repo_config_file or rules_file for a file refcheck reads or writes.", "type": "string"},
+          "value": {"description": "The resolved value. Null where no such file applies, such as a repo with no repo config, and for a built-in exclusion decided by a rule rather than patterns, which its note states.", "type": ["string", "array", "null"], "items": {"type": "string"}},
+          "layer": {"description": "What set the value. default: refcheck's own default. builtin: a built-in exclusion list. environment: an environment variable, which the note names. discovered: found by searching from the start directory. user_config or repo_config: that config file.", "enum": ["default", "builtin", "environment", "discovered", "user_config", "repo_config"]},
+          "note": {"description": "Prose for a reader, never a value to branch on: which variable or search found a file, that it is not there, or which built-in list a row is. Null where there is nothing.", "type": ["string", "null"]}
         }
       }
     }

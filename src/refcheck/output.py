@@ -390,14 +390,12 @@ def print_resolved(rows: 'list[Resolved]') -> None:
     width = max(len(row.key) for row in rows)
     for row in rows:
         if isinstance(row.value, list):
-            print(f'{row.key:<{width}}  {count(len(row.value), "pattern")} from {row.layer}')
+            print(f'{row.key:<{width}}  {count(len(row.value), "pattern")}')
             for item in row.value:
                 print(f'{"":<{width}}    {item}')
-            continue
-        print(f'{row.key:<{width}}  {row.value if row.value is not None else "none"}')
-        if row.note:
-            print(f'{"":<{width}}    {row.note}')
-        print(f'{"":<{width}}    from {row.layer}')
+        else:
+            print(f'{row.key:<{width}}  {row.value if row.value is not None else "none"}')
+        print(f'{"":<{width}}    from {row.layer}' + (f': {row.note}' if row.note else ''))
 
 
 def print_rules_hint(issues: list[Issue], rules_path: Path | None) -> None:

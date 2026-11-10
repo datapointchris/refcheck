@@ -980,8 +980,8 @@ def test_config_show_has_a_row_for_every_key_and_file_it_resolves(temp_git_repo)
     for row in shown['rows']:
         values.setdefault(row['key'], []).append(row['value'])
     assert [key.dotted for key in KEYS if key.dotted not in values] == []
-    assert values['user_config'] == [str(user_config_path())]
-    assert values['repo_config'] == [str(temp_git_repo / '.refcheck.toml')]
+    assert values['user_config_file'] == [str(user_config_path())]
+    assert values['repo_config_file'] == [str(temp_git_repo / '.refcheck.toml')]
     assert values['rules_file'] == [str(get_rules_path(temp_git_repo))]
     assert ['build/reports/**'] in values['scan.exclude']
 

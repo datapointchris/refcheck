@@ -4,6 +4,10 @@ A key appears once per layer that contributes to it, so `scan.exclude` has a
 row for each built-in list and one for the repo's own. A row with an empty
 value is printed rather than dropped: an absent row reads the same as a layer
 that does not exist.
+
+`layer` is one word from LAYERS, for a script to branch on. Everything a
+reader should know beyond it, such as which variable named a directory or that
+a file is not there, is prose in `note`.
 """
 
 import os
@@ -19,6 +23,8 @@ from .rules import get_rules_path
 from .scan_scope import BUILTIN_LAYERS
 from .scan_scope import BuiltinLayer
 
+LAYERS = ('default', 'builtin', 'environment', 'discovered', 'user_config', 'repo_config')
+
 
 @dataclass(frozen=True)
 class Resolved:
@@ -30,8 +36,16 @@ class Resolved:
     note: str | None = None
 
 
-def from_environment(variable: str, fallback: str) -> str:
-    return f'${variable}' if os.environ.get(variable) else f'{fallback}, as ${variable} is unset'
+def joined(*notes: str | None) -> str | None:
+    present = [note for note in notes if note]
+    return '; '.join(present) or None
+
+
+def base_directory(variable: str, fallback: str) -> tuple[str, str]:
+    """The layer that chose an XDG base directory, and which directory it was."""
+    if os.environ.get(variable):
+        return 'environment', f'under ${variable}'
+    return 'default', f'under {fallback}, as ${variable} is unset'
 
 
 def resolved_config(start: Path) -> list[Resolved]:
@@ -46,27 +60,33 @@ def resolved_config(start: Path) -> list[Resolved]:
     else:
         rules_note = None if rules_file.exists() else "not learned yet: 'refcheck rules learn' writes it"
 
+    config_layer, config_base = base_directory('XDG_CONFIG_HOME', '~/.config')
+    state_layer, state_base = base_directory('XDG_STATE_HOME', '~/.local/state')
+
     return [
         Resolved(
-            'user_config',
+            'user_config_file',
             str(user_config),
-            from_environment('XDG_CONFIG_HOME', '~/.config'),
-            None if user_config.exists() else 'not there, so every key it holds is at its default',
+            config_layer,
+            joined(config_base, None if user_config.exists() else 'not there, so every key it holds is at its default'),
         ),
         Resolved(
-            'repo_config',
+            'repo_config_file',
             str(config.config_path) if config.config_path else None,
-            f'the nearest {REPO_CONFIG_NAME} at or above {start}, stopping at the git root',
-            None if config.config_path else "none found: 'refcheck config example repo' starts one",
+            'discovered',
+            joined(
+                f'the nearest {REPO_CONFIG_NAME} at or above {start}, stopping at the git root',
+                None if config.config_path else "none found: 'refcheck config example repo' starts one",
+            ),
         ),
-        Resolved('rules_file', str(rules_file) if rules_file else None, from_environment('XDG_STATE_HOME', '~/.local/state'), rules_note),
+        Resolved('rules_file', str(rules_file) if rules_file else None, state_layer, joined(state_base, rules_note)),
         *(builtin_row(layer) for layer in BUILTIN_LAYERS),
-        *(Resolved(key.dotted, getattr(config, key.name), config.set_by.get(key.dotted, 'the default')) for key in KEYS),
+        *(Resolved(key.dotted, getattr(config, key.name), config.set_by.get(key.dotted, 'default')) for key in KEYS),
     ]
 
 
 def builtin_row(layer: BuiltinLayer) -> Resolved:
-    """A built-in layer's exclusions, with what reads past it."""
-    value = [layer.rule] if layer.rule else sorted(layer.directories) or list(layer.patterns)
-    label = f'built-in {layer.name}, which check --test-mode reads' if layer.read_under_test_mode else f'built-in {layer.name}'
-    return Resolved('scan.exclude', value, label)
+    """A built-in layer's exclusions. A layer decided by a rule has no patterns, so its value is null and the note states the rule."""
+    value = None if layer.rule else sorted(layer.directories) or list(layer.patterns)
+    read_past = 'check --test-mode reads past it' if layer.read_under_test_mode else None
+    return Resolved('scan.exclude', value, 'builtin', joined(layer.name, layer.rule, read_past))

@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from refcheck.scan_scope import ScanScope
 from refcheck.suggestions import FileSuggestions
 
 
@@ -12,72 +13,7 @@ class TestFileSuggestions:
 
     @pytest.fixture
     def suggestions(self, temp_dir):
-        return FileSuggestions(
-            root_dir=temp_dir,
-            exclude_dirs={'.git', 'node_modules'},
-            exclude_patterns=['*.pyc'],
-        )
-
-    def test_should_skip_file_excludes_dirs(self, suggestions):
-        assert suggestions.should_skip_file(Path('.git/config'))
-        assert suggestions.should_skip_file(Path('node_modules/package/index.js'))
-        assert not suggestions.should_skip_file(Path('src/main.py'))
-
-    def test_should_skip_file_excludes_patterns(self, suggestions):
-        assert suggestions.should_skip_file(Path('src/main.pyc'))
-        assert not suggestions.should_skip_file(Path('src/main.py'))
-
-    def test_subtree_patterns_reach_every_depth(self, temp_dir):
-        """Path.match reads `**` as one component, so a subtree pattern only
-        excluded the files sitting directly in it: `.claude/metrics/top.json`
-        was skipped while `.claude/metrics/a/b.json` beside it was scanned."""
-        suggestions = FileSuggestions(
-            root_dir=temp_dir,
-            exclude_dirs=set(),
-            exclude_patterns=['.claude/metrics/**', '**/fixtures/**'],
-        )
-        assert suggestions.should_skip_file(Path('.claude/metrics/top.json'))
-        assert suggestions.should_skip_file(Path('.claude/metrics/a/b.json'))
-        assert suggestions.should_skip_file(Path('.claude/metrics/a/deep/nested.json'))
-        assert suggestions.should_skip_file(Path('tests/stats/fixtures/tool_outputs/tokei.json'))
-        assert not suggestions.should_skip_file(Path('claude/metrics/notes.md'))
-        assert not suggestions.should_skip_file(Path('src/main.py'))
-
-    def test_bare_filename_patterns_still_match_at_any_depth(self, temp_dir):
-        """The other kind of pattern: name a file, wherever it sits."""
-        suggestions = FileSuggestions(
-            root_dir=temp_dir,
-            exclude_dirs=set(),
-            exclude_patterns=['CHANGELOG.md', '*.log'],
-        )
-        assert suggestions.should_skip_file(Path('CHANGELOG.md'))
-        assert suggestions.should_skip_file(Path('docs/CHANGELOG.md'))
-        assert suggestions.should_skip_file(Path('run/deep/output.log'))
-        assert not suggestions.should_skip_file(Path('docs/changes.md'))
-
-    def test_should_skip_file_excludes_binary_extensions(self, suggestions):
-        assert suggestions.should_skip_file(Path('lib/module.so'))
-        assert suggestions.should_skip_file(Path('build/app.o'))
-        assert suggestions.should_skip_file(Path('lib/lib.dylib'))
-
-    def test_should_skip_binary_content_whatever_the_extension(self, temp_dir, suggestions):
-        """A suffix list never keeps up; content decides.
-
-        Regression for a multi-gigabyte SQLite database being read as text and
-        pattern-matched, which produced 29 of the 31 hits reported for a single
-        --pattern query.
-        """
-        database = temp_dir / 'index.db'
-        database.write_bytes(b'SQLite format 3\x00' + b'\x01\x02\x03' * 100)
-        text = temp_dir / 'notes.md'
-        text.write_text('# Notes\n\nA reference to src/main.py.\n')
-
-        assert suggestions.should_skip_file(database)
-        assert not suggestions.should_skip_file(text)
-
-    def test_missing_file_is_not_treated_as_binary(self, temp_dir, suggestions):
-        """should_skip_file is called on paths that may not exist."""
-        assert not suggestions.should_skip_file(temp_dir / 'does-not-exist.md')
+        return FileSuggestions(ScanScope(root_dir=temp_dir, exclude_dirs={'.git', 'node_modules'}, exclude_patterns=[]))
 
     def test_build_file_index(self, temp_dir, suggestions):
         (temp_dir / 'src').mkdir()
@@ -90,14 +26,6 @@ class TestFileSuggestions:
         assert Path('src/main.py') in index
         assert Path('src/utils.py') in index
         assert Path('README.md') in index
-
-    def test_build_file_index_caches(self, temp_dir, suggestions):
-        (temp_dir / 'file.txt').touch()
-
-        index1 = suggestions.build_file_index()
-        index2 = suggestions.build_file_index()
-
-        assert index1 is index2
 
     def test_find_similar_files_basename_match(self, temp_dir, suggestions):
         (temp_dir / 'lib').mkdir()

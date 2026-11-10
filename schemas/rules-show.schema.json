@@ -1,0 +1,31 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "urn:refcheck:rules-show:v1",
+  "title": "refcheck rules show --json",
+  "description": "One checkout's learned rules and where they live. A run naming no checkout from outside a git repository exits 128 and prints no document.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "checkout", "rules_file", "rules"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "checkout": {"description": "The checkout the rules belong to.", "type": "string"},
+    "rules_file": {"description": "Where its rules are, or would be once learned.", "type": "string"},
+    "rules": {
+      "description": "The rules file's content. Null where none was learned.",
+      "type": ["object", "null"],
+      "required": ["directory_mappings", "file_mappings"],
+      "properties": {
+        "_metadata": {
+          "type": "object",
+          "properties": {
+            "generated": {"description": "When rules learn wrote the file.", "type": "string"},
+            "time_window": {"description": "How far back the history was read, in git log --since's terms.", "type": "string"},
+            "commits_analyzed": {"type": "integer", "minimum": 0}
+          }
+        },
+        "directory_mappings": {"description": "An old directory, ending in /, to the one a rename moved its files to.", "type": "object", "additionalProperties": {"type": "string"}},
+        "file_mappings": {"description": "An old filename to the one a rename gave it.", "type": "object", "additionalProperties": {"type": "string"}}
+      }
+    }
+  }
+}

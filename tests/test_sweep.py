@@ -264,10 +264,11 @@ class TestWhoCanOwnAGonePath:
 
 
 class TestTheRepoThePathsMovedIn:
-    """A repo the registry never listed can own nothing, and that prints as clean."""
+    """The repo a change moved paths in owns them whether or not the registry lists it."""
 
-    def test_says_so_when_the_source_repo_is_not_listed(self, two_repos):
+    def test_an_unlisted_source_repo_is_credited_under_its_directory_name(self, two_repos):
         upstream, consumer = two_repos
+        (consumer / 'config.yml').write_text(f'versions_file: {upstream}/versions.json\n')
 
         result = sweep.across_repos(
             listing(Repo(name='consumer', path=consumer, status='active')),
@@ -276,18 +277,23 @@ class TestTheRepoThePathsMovedIn:
         )
 
         assert not result.source_is_listed
-        assert result.source_root == upstream
+        assert names(result) == ['consumer:config.yml']
+        assert result.issues[0].message == 'Gone from upstream: versions.json'
 
-    def test_stays_quiet_when_it_is_listed(self, two_repos):
+    def test_a_path_relative_to_the_source_repo_counts_where_its_block_names_that_repo(self, two_repos):
+        """A manifest spells another repo's path as that repo does, with the repo in a key beside it."""
         upstream, consumer = two_repos
+        (consumer / 'producers.yaml').write_text('- name: pins\n  repo: upstream\n  files:\n    - config/versions.json\n')
+        (consumer / 'sources.md').write_text('Where each tool keeps its pins:\n\n- othertool `config/versions.json`\n')
 
         result = sweep.across_repos(
             repos_for(upstream, consumer),
-            {'versions.json': 'now pinned-versions.json'},
+            {'config/versions.json': 'now config/pinned-versions.json'},
             source_root=upstream,
         )
 
-        assert result.source_is_listed
+        assert names(result) == ['consumer:producers.yaml']
+        assert result.issues[0].message == 'Gone from upstream: config/versions.json'
 
     def test_an_unusable_entry_is_carried_into_the_result(self, two_repos):
         upstream, consumer = two_repos

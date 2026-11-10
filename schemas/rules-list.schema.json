@@ -1,0 +1,25 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "urn:refcheck:rules-list:v1",
+  "title": "refcheck rules list --json",
+  "description": "Every checkout with learned rules on this machine, in path order.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "checkouts"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "checkouts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["checkout", "rules_file", "checkout_is_there"],
+        "properties": {
+          "checkout": {"description": "The checkout the rules were learned in.", "type": "string"},
+          "rules_file": {"type": "string"},
+          "checkout_is_there": {"description": "False where the checkout was moved or deleted, so only rules clear naming it removes its rules.", "type": "boolean"}
+        }
+      }
+    }
+  }
+}

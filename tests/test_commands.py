@@ -1,17 +1,23 @@
-"""The shape of the command surface: three verbs, and bare invocation shows help.
+"""The shape of the command surface: `check`, the `config` and `rules` namespaces and `update`.
 
-Self-update is a subcommand rather than a flag for the same reason `check` and
-`learn-rules` are verbs: it does work of its own and modifies none of the
-others, and `--update` would read as a modifier of whichever command it sat on.
-Bare `refcheck` prints help because the scan takes flags of its own, which is
-what disqualifies a bare default from standing in for a command.
+Self-update is a subcommand rather than a flag for the same reason `check` is
+a verb: it does work of its own and modifies none of the others, and
+`--update` would read as a modifier of whichever command it sat on. Bare
+`refcheck` prints help because the scan takes flags of its own, which is what
+disqualifies a bare default from standing in for a command.
 """
 
 import re
+import shlex
 import subprocess
 from pathlib import Path
 
+import typer
 import yaml
+
+from refcheck.main import app
+
+REPO = Path(__file__).parent.parent
 
 # Rich styles the help, and whether it does depends on the terminal it thinks it
 # has: a local run pipes into a non-tty and gets plain text, while CI forces
@@ -47,19 +53,46 @@ def test_check_is_the_verb_that_scans(tmp_path):
     assert 'lib/gone.sh' in result.stdout
 
 
-def test_update_is_a_verb(tmp_path):
-    """Asked for its help rather than run, so the suite reaches no network."""
-    result = run('update', '--help', cwd=tmp_path)
+# A command printed for a person to run: in rich bold, a code span or single
+# quotes in the source, or on a line of a shell fence in the README.
+# A word running into a `/` or a `.` is a path argument, not a subcommand.
+WORDS = r'((?: [a-z][\w-]*(?![\w/.-]))+)'
+PRINTED_IN_SOURCE = re.compile(rf"(?:\[b\]|`|')refcheck{WORDS}")
+SHELL_FENCE = re.compile(r'^```(?:bash|sh)\n(.*?)^```', re.MULTILINE | re.DOTALL)
+PRINTED_IN_FENCE = re.compile(rf'^refcheck{WORDS}', re.MULTILINE)
 
-    assert result.returncode == 0
-    assert '--check' in result.stdout
+
+def printed_commands():
+    for source in sorted((REPO / 'src' / 'refcheck').glob('*.py')):
+        for match in PRINTED_IN_SOURCE.finditer(source.read_text()):
+            yield source.name, match.group(1).split()
+    readme = (REPO / 'README.md').read_text()
+    for fence in SHELL_FENCE.finditer(readme):
+        for match in PRINTED_IN_FENCE.finditer(fence.group(1)):
+            yield 'README.md', match.group(1).split()
+    for match in PRINTED_IN_SOURCE.finditer(readme):
+        yield 'README.md', match.group(1).split()
 
 
-def test_learn_rules_is_a_verb(tmp_path):
-    result = run('learn-rules', '--help', cwd=tmp_path)
+def test_every_command_it_prints_is_in_the_command_tree():
+    """A hint naming a command that was renamed sends its reader to an error."""
+    tree = typer.main.get_command(app)
+    missing = []
+    walked = 0
+    for source, words in printed_commands():
+        walked += 1
+        command = tree
+        for word in words:
+            subcommands = getattr(command, 'commands', None)
+            if subcommands is None:
+                break
+            if word not in subcommands:
+                missing.append(f'{source}: refcheck {" ".join(words)}')
+                break
+            command = subcommands[word]
 
-    assert result.returncode == 0
-    assert 'rules.json' in result.stdout
+    assert walked > 20
+    assert missing == []
 
 
 def test_version_is_a_root_option(tmp_path):
@@ -70,12 +103,14 @@ def test_version_is_a_root_option(tmp_path):
     assert result.stdout.startswith('refcheck ')
 
 
-def test_the_hook_entry_runs_the_check():
-    """.pre-commit-hooks.yaml names the invocation, and bare refcheck no longer scans."""
+def test_the_pre_commit_hook_entry_fails_a_consumer_repo_holding_a_broken_source(tmp_path):
+    """pre-commit runs the manifest's entry as argv in the consumer's root, and bare refcheck only prints help."""
+    hooks = yaml.safe_load((REPO / '.pre-commit-hooks.yaml').read_text())
+    (tmp_path / 'deploy.sh').write_text('#!/usr/bin/env bash\nsource lib/gone.sh\n')
 
-    hooks = yaml.safe_load((Path(__file__).parent.parent / '.pre-commit-hooks.yaml').read_text())
+    result = subprocess.run(shlex.split(hooks[0]['entry']), capture_output=True, text=True, cwd=tmp_path)
 
-    assert hooks[0]['entry'] == 'refcheck check'
+    assert result.returncode == 1, result.stdout + result.stderr
 
 
 # The error panel draws a border down each side of the message and wraps it to
@@ -94,11 +129,11 @@ def test_a_scan_flag_at_the_root_names_the_call_under_check(tmp_path):
 
 def test_a_scan_flag_beside_a_command_names_only_the_flag(tmp_path):
     """With a command in the call, the rest of it is not all check's, so only the flag is moved."""
-    result = run('--moves', 'learn-rules', cwd=tmp_path)
+    result = run('--moves', 'rules', 'learn', cwd=tmp_path)
 
     assert result.returncode == 2
     assert '--moves belongs to check: refcheck check --moves' in error_text(result)
-    assert 'check --moves learn-rules' not in error_text(result)
+    assert 'check --moves rules' not in error_text(result)
 
 
 def test_a_flag_no_command_takes_gets_the_plain_refusal(tmp_path):

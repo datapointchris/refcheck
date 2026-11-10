@@ -1,5 +1,6 @@
 """Output formatting and result printing."""
 
+import json
 import sys
 from dataclasses import dataclass
 from dataclasses import field
@@ -9,6 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from .resolved_config import Resolved
     from .sweep import SweepResult
 
 
@@ -152,12 +154,12 @@ def print_results(
         warning_count = len(warnings)
 
         if error_count > 0 and warning_count > 0:
-            both = f'Found {error_count} error(s) and {warning_count} warning(s){search_info}'
+            both = f'Found {count(error_count, "error")} and {count(warning_count, "warning")}{search_info}'
             print(f'\n{marked(FAIL, both)}\n')
         elif error_count > 0:
-            print(f'\n{marked(FAIL, f"Found {error_count} error(s){search_info}")}\n')
+            print(f'\n{marked(FAIL, f"Found {count(error_count, 'error')}{search_info}")}\n')
         else:
-            print(f'\n{marked(WARN, f"Found {warning_count} warning(s){search_info}")}\n')
+            print(f'\n{marked(WARN, f"Found {count(warning_count, 'warning')}{search_info}")}\n')
 
         # Print errors
         if issues:
@@ -243,7 +245,7 @@ def print_unreadable(unreadable: list[Unreadable]) -> None:
     tree it could only partly open cannot support one. Naming what it could not
     reach is what keeps the tick honest for the files it did read.
     """
-    unread = f'{len(unreadable)} path(s) could not be read, so this scan covered less than the tree'
+    unread = f'{count(len(unreadable), "path")} could not be read, so this scan covered less than the tree'
     print(f'\n{marked(FAIL, unread)}\n')
     print('Unreadable:')
     print('─' * 60)
@@ -288,17 +290,17 @@ def print_sweep(
             asked = f'old name {looked_for}'
         elif filenames:
             clean_claim = 'No repo names a path that moved or an old filename'
-            asked = f'{len(patterns)} moved path(s), old filename {", ".join(filenames)}'
+            asked = f'{count(len(patterns), "moved path")}, old filename {", ".join(filenames)}'
         else:
             clean_claim = 'No repo names a path that moved'
-            asked = f'{len(patterns)} moved path(s)'
+            asked = count(len(patterns), 'moved path')
 
         # The tick is a claim about every repo the caller named, so a run that
         # could not read one of them has no tick to print. Saying "no repo names
         # a path that moved" above a repo the sweep never opened is the false
         # clean in one line.
         if sweep.issues:
-            stale = f'Found {len(sweep.issues)} stale reference(s) in {len(sweep.with_issues)} of {repos}{skipped}'
+            stale = f'Found {count(len(sweep.issues), "stale reference")} in {len(sweep.with_issues)} of {repos}{skipped}'
             print(marked(FAIL, stale))
         elif not sweep.unreached:
             clean = f'{clean_claim} — {repos}, {asked}{skipped}'
@@ -307,7 +309,6 @@ def print_sweep(
             partial = f'{repos} swept, {asked}{skipped} — but the sweep could not read everything it was given'
             print(marked(FAIL, partial))
 
-        print_unlisted_source(sweep)
         print()
 
         for result in sweep.with_issues:
@@ -358,39 +359,43 @@ def print_unreached(sweep: 'SweepResult') -> None:
     print()
 
 
-def print_unlisted_source(sweep: 'SweepResult') -> None:
-    """Say when the repo the paths moved in is not one the sweep can credit.
+def print_document(record: dict) -> None:
+    """Print a --json document on stdout, the one way every command emits one."""
+    print(json.dumps(record, indent=2))
 
-    A hit is credited to the repo holding the path that went away, so a repo the
-    registry never listed can own nothing and its renames are unanswerable. Left
-    unsaid that prints the same tick as a machine with no stale references, and
-    a registry omitting one repo silently answers a different question.
+
+def print_rules(path: Path, rules: dict) -> None:
+    """Print where a rules file is, what it was learned from, and every mapping in it."""
+    print(path)
+    metadata = rules.get('_metadata', {})
+    if metadata:
+        print(
+            f'Learned {metadata.get("generated")} from {count(metadata.get("commits_analyzed", 0), "commit")} '
+            f'over {metadata.get("time_window")} of history'
+        )
+    for heading, key in (('Directory mappings', 'directory_mappings'), ('File mappings', 'file_mappings')):
+        mappings = rules.get(key, {})
+        print(f'\n{heading} ({len(mappings)}):')
+        for old, new in mappings.items():
+            print(f'  {old} → {new}')
+
+
+def print_resolved(rows: 'list[Resolved]') -> None:
+    """Print each resolved value under its key, with the layer that set it.
+
+    The layer is the half of the answer that says whether a value was asked
+    for. A built-in pattern and a repo declaration produce the same silence,
+    and only the source tells them apart.
     """
-    if sweep.source_is_listed or sweep.source_root is None:
-        return
-
-    unlisted = f'{sweep.source_root} is not in the registry, so a path that moved here can be credited to no repo.'
-    print(marked(WARN, unlisted))
-
-
-def print_config(repo_config: Path | None, layers: list[tuple[str, list[str]]]) -> None:
-    """Print every exclusion in force, grouped by the layer that set it.
-
-    The layer is the half of the answer that says whether a skipped file was
-    asked for. A built-in pattern, a repo declaration and a --exclude flag all
-    produce the same silence, and only the source tells them apart.
-    """
-    print()
-    print(f'Repo config: {repo_config if repo_config else "none found"}')
-
-    for label, patterns in layers:
-        if not patterns:
-            continue
-        print(f'\n{label} ({len(patterns)}):')
-        print('─' * 60)
-        for pattern in patterns:
-            print(f'  {pattern}')
-    print()
+    width = max(len(row.key) for row in rows)
+    for row in rows:
+        if isinstance(row.value, list):
+            print(f'{row.key:<{width}}  {count(len(row.value), "pattern")}')
+            for item in row.value:
+                print(f'{"":<{width}}    {item}')
+        else:
+            print(f'{row.key:<{width}}  {row.value if row.value is not None else "none"}')
+        print(f'{"":<{width}}    from {row.layer}' + (f': {row.note}' if row.note else ''))
 
 
 def print_rules_hint(issues: list[Issue], rules_path: Path | None) -> None:
@@ -414,7 +419,7 @@ def print_rules_hint(issues: list[Issue], rules_path: Path | None) -> None:
         return
 
     hint = (
-        f'{len(unsuggested)} broken reference(s) came up with no suggestions.\n'
-        "'refcheck learn-rules' reads git's rename history to improve them."
+        f'{count(len(unsuggested), "broken reference")} came up with no suggestion.\n'
+        "'refcheck rules learn' reads git's rename history to suggest where each went."
     )
-    print(f'\n{marked(HINT, hint)}')
+    print(f'\n{marked(HINT, hint)}', file=sys.stderr)

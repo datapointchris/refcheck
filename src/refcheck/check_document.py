@@ -4,7 +4,6 @@ A field added or renamed here changes the schema in the same commit, and
 `SCHEMA_VERSION` moves when a reader of the old shape would misread the new one.
 """
 
-import json
 from pathlib import Path
 from typing import TYPE_CHECKING
 from typing import Any
@@ -121,7 +120,3 @@ def finding(issue: Issue) -> dict[str, Any]:
         'similar_files': list(issue.similar_files),
         'target': issue.target,
     }
-
-
-def print_document(record: dict[str, Any]) -> None:
-    print(json.dumps(record, indent=2))

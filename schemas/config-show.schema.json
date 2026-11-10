@@ -1,0 +1,27 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "urn:refcheck:config-show:v1",
+  "title": "refcheck config show --json",
+  "description": "Every value a run started in one directory resolves, one row per key and layer. A key with several contributing layers, such as scan.exclude, has a row for each. A config file refcheck cannot take as written exits 2 and prints no document.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "start", "rows"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "start": {"description": "The directory the run would start in.", "type": "string"},
+    "rows": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["key", "value", "layer", "note"],
+        "properties": {
+          "key": {"description": "A config key as table.key, or user_config_file, repo_config_file or rules_file for a file refcheck reads or writes.", "type": "string"},
+          "value": {"description": "The resolved value. Null where no such file applies, such as a repo with no repo config, and for a built-in exclusion decided by a rule rather than patterns, which its note states.", "type": ["string", "array", "null"], "items": {"type": "string"}},
+          "layer": {"description": "What set the value. default: refcheck's own default. builtin: a built-in exclusion list. environment: an environment variable, which the note names. discovered: found by searching from the start directory. user_config or repo_config: that config file.", "enum": ["default", "builtin", "environment", "discovered", "user_config", "repo_config"]},
+          "note": {"description": "Prose for a reader, never a value to branch on: which variable or search found a file, that it is not there, or which built-in list a row is. Null where there is nothing.", "type": ["string", "null"]}
+        }
+      }
+    }
+  }
+}

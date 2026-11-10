@@ -32,9 +32,9 @@ have set hits aside and have failed to read a path, all at once.
 
 ## The tool is worth exactly its false-positive rate
 
-Most built-in exclusions and guards in `checker.py` carry a comment naming the
-measured false positive that put them there. A new one carries its incident
-the same way.
+Most built-in exclusions in `scan_scope.py` and guards in `checker.py` carry a
+comment naming the measured false positive that put them there. A new one
+carries its incident the same way.
 
 Documentation context widens the guards and never skips the line.
 `documents_rather_than_runs` counts markdown, a `#` comment and an
@@ -51,7 +51,7 @@ still fire.
 
 `ReferenceChecker` holds every judgment about one tree. `sweep.py` builds one
 per listed repo. `names.py` holds the name shapes, `moves.py` reads git, and
-`cli.py` decides which questions a run asks. `check_document.py` builds what
+`main.py` decides which questions a run asks. `check_document.py` builds what
 `--json` prints, and `schemas/check.schema.json` is its published shape, so a
 change to one is a change to the other.
 
@@ -70,7 +70,12 @@ change to one is a change to the other.
   which set-aside hits are listed, never what is reported.
 - **`--registry`** reports a hit only when the path it names sits inside a
   listed repo and is not there (`_reaches_a_gone_path_in`). That rule is what
-  makes a bare basename safe to sweep.
+  makes a bare basename safe to sweep. The repo the paths moved in is always a
+  listed repo, under its directory's name where the registry omits it. Whether
+  its path is gone is asked of the change's checkout (`MovedIn`), because a
+  linked worktree's main checkout still holds what the change moved. A
+  relative token spelling a moved path counts only where its block names that
+  repo (`_names_a_moved_path`).
 - **`--name`** resolves nothing. The shape is the whole judgment, and the
   shapes that count depend on whether the line is prose, shell or code
   (`NameShapes.names_it`). Shell is what a file declares by suffix or shebang,
@@ -95,13 +100,18 @@ Anything that leaves the process goes through one named function, and every
 caller uses it. That function is where a timeout, an environment change or a
 test stub attaches, once.
 
-- **git** runs only through `git.run`. `rules.get_repo_root`,
-  `rules.learn_rules_from_git` and `moves.read` call it, and each decides what
-  a failure means for its own question. No other module imports `subprocess`
-  to run a program.
-- **The one file refcheck writes** is the rules file, written only by
-  `rules.learn_rules_from_git` at the path `rules.get_rules_path` gives. Every
-  other file is read.
+- **git** runs only through `git.run`. Each caller decides what a failure
+  means for its own question. No other module imports `subprocess` to run a
+  program.
+- **Which repository holds a path** is answered only by `repository.root`,
+  which looks for the `.git` entry git's own discovery looks for. It needs no
+  process, and inside a hook it answers about the directory asked rather than
+  the repository `GIT_DIR` names.
+- **The one file refcheck writes** is the rules file, at the path
+  `rules.get_rules_path` gives. `rules.write_rules` replaces it whole through a
+  temporary file, `rules.clear_rules` deletes it, and
+  `rules._adopt_the_earlier_layout` moves an earlier release's copy into place.
+  Every other file is read.
 - **The network** is reached only by pyselfupdate: the `update` command and
   the once-a-day release check `notify` runs at a terminal.
 
@@ -133,10 +143,14 @@ repos from another's.
 
 ## Exclusions match two ways and prune during the walk
 
+`ScanScope` in `scan_scope.py` decides what a scan reads. `BUILTIN_LAYERS`
+there is the one list of built-in exclusions: the checker builds its scope from
+it, `config show` prints it, and the sweep's filename index skips its directory
+names.
 `_matches_exclusion` tries `Path.match` and `fnmatch` on every pattern.
 `Path.match` is right-anchored, which fits `*.log` and `CHANGELOG.md`. It reads
-`**` as one component. Alone, it lets `.claude/metrics/**` exclude
-`.claude/metrics/top.json` and scan `.claude/metrics/a/b.json`. `fnmatch` over the
+`**` as one component. Alone, it lets `build/reports/**` exclude
+`build/reports/top.json` and scan `build/reports/a/b.json`. `fnmatch` over the
 POSIX path covers subtrees. `should_skip_directory` matches a subtree pattern
 with a trailing slash, so `build/**` prunes `build` itself.
 
@@ -151,7 +165,9 @@ at the git root, so a checkout never inherits an enclosing tree's config.
 `task test` runs the suite (`uv run pytest`). `task --list` shows the rest:
 `setup`, `lint`, `format`, `typecheck` and `build`.
 
-pre-commit runs `uv run pytest` on any commit staging a Python file. Git
+pre-commit runs `uv run pytest` on any commit staging a file a test imports or
+reads. The pytest hook's `files:` pattern in `.pre-commit-config.yaml` lists
+them. Git
 exports `GIT_DIR` and `GIT_INDEX_FILE` to its hooks. Both outrank directory
 discovery. Left in place, a fixture's `git init` reinitializes the repository
 being committed, and its `git add` replaces that repository's index. The
@@ -159,14 +175,16 @@ session fixture `detached_from_the_calling_git` in `tests/conftest.py` strips
 every `GIT_` and `PRE_COMMIT_` variable. `tests/test_suite_isolation.py` holds
 it in place.
 
-- **The CLI tests run `refcheck` from `PATH`.** Under `uv run`, that is the
-  editable install in `.venv`. A bare `pytest` on a machine with refcheck
-  installed tests the installed release instead.
+- **The CLI tests run `refcheck` from `PATH`, and the build under test is
+  first on it.** The session fixture `refcheck_under_test` puts the bin
+  directory beside the interpreter ahead of the rest. A `pytest` with no
+  refcheck there stops rather than testing an installed release.
 - **Fixtures build their trees under `tmp_path`, with `HOME` pointed there.**
   A test reading a directory on the machine makes its result a property of
-  that machine. The user config sits under `$XDG_CONFIG_HOME` and the rules
-  files under `$XDG_STATE_HOME` when each is set, so the autouse
-  `config_follows_home` unsets both and each follows `HOME`.
+  that machine. A check and every rules command may write under the state
+  directory, so the autouse `config_follows_home` gives each test a HOME of
+  its own and unsets `$XDG_CONFIG_HOME` and `$XDG_STATE_HOME`, which would
+  otherwise outrank it.
 - **A fixture or docstring names a placeholder tool, never a real one.** A real
   tool's old name written here is a hit in every cross-repo sweep for that
   rename.
@@ -201,16 +219,30 @@ installed metadata through `importlib.metadata`.
 
 The release rewrites the `rev:` line in the README's pre-commit example, so
 that pin is never bumped by hand. A consumer pins a rev, so a change to
-`.pre-commit-hooks.yaml` reaches nobody until they bump.
-`test_the_hook_entry_runs_the_check` pins the hook's entry.
+`.pre-commit-hooks.yaml` reaches nobody until they bump. A test in
+`tests/test_commands.py` runs the hook's entry against a broken `source`, so
+an entry the CLI no longer accepts fails the suite.
 
 The hook sets `pass_filenames: false` and `always_run: true`. A reference
 breaks in the file that was not edited, so a scan of the staged files would
 miss the whole class of bug.
 
+## Each runtime dependency does one job the standard library cannot
+
+`[project] dependencies` in `pyproject.toml` is the list. The hook's
+`language: python` builds a virtualenv in every consumer, so each one is
+installed wherever the hook runs.
+
+- **Typer** builds the command tree: the `config` and `rules` namespaces, the
+  help panels, and the shared `--json` option. argparse needs subparsers and
+  hand-written help groups for the same surface.
+- **pyselfupdate** is the `update` command and the once-a-day release check.
+  The network code and the install's step order live in that library rather
+  than in this one.
+
 ## Typer's private Click is imported on purpose
 
-`cli.py` imports `Context`, `NoSuchOption` and `TyperGroup` from
+`main.py` imports `Context`, `NoSuchOption` and `TyperGroup` from
 `typer._click` and `typer.core`. Typer bundles its own copy of Click. It
 exports no public path to these names, so a Typer upgrade can move them.
 `RootGroup` uses them to answer a `check` flag given at the root with the call

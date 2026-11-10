@@ -83,8 +83,8 @@
       "properties": {
         "repos_scanned": {"type": "integer", "minimum": 0},
         "files_scanned": {"description": "How many files the sweep set out to read, across every repo.", "type": "integer", "minimum": 0},
-        "source_root": {"description": "The tree the paths moved in, for a sweep after moved paths. Null for a sweep after a name.", "type": ["string", "null"]},
-        "source_is_listed": {"description": "False where the registry does not list source_root, so no hit can be credited to it.", "type": "boolean"},
+        "source_root": {"description": "The checkout the paths moved in, for a sweep after moved paths. Null for a sweep after a name.", "type": ["string", "null"]},
+        "source_is_listed": {"description": "Whether the registry lists the main checkout of source_root's repository. Where it does not, a hit into that repository is credited under its directory's name.", "type": "boolean"},
         "retired": {"description": "Repos the registry marks retired, which the sweep skips on purpose.", "type": "array", "items": {"$ref": "#/definitions/repo"}},
         "absent": {"description": "Repos the registry lists and this machine does not hold. Any one fails the run.", "type": "array", "items": {"$ref": "#/definitions/repo"}},
         "unusable": {"description": "Registry entries naming no usable path. Any one fails the run.", "type": "array", "items": {"type": "string"}},

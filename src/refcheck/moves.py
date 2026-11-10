@@ -68,7 +68,7 @@ def old_filenames(moves: list[Move]) -> tuple[dict[str, str], list[str]]:
 
 def staged(repo_root: Path, include_bare_names: bool = False) -> list[Move]:
     """Renames and deletions in the git index — what a pre-commit hook sees."""
-    return read(['diff', '--cached', '--diff-filter=RD', '-M', '--name-status'], repo_root, include_bare_names)
+    return read(['diff', '--cached', '--diff-filter=RD', '-M', '--name-status', '-z'], repo_root, include_bare_names)
 
 
 def since(ref: str, repo_root: Path, include_bare_names: bool = False) -> list[Move]:
@@ -82,7 +82,7 @@ def between(from_ref: str, to_ref: str, repo_root: Path, include_bare_names: boo
     A shallow CI clone lacks the base commit. Reading that as no moves would
     pass a check that never ran, so it raises UnreadableChange instead.
     """
-    return read(['diff', '--diff-filter=RD', '-M', '--name-status', from_ref, to_ref], repo_root, include_bare_names)
+    return read(['diff', '--diff-filter=RD', '-M', '--name-status', '-z', from_ref, to_ref], repo_root, include_bare_names)
 
 
 def in_pre_commit_change(repo_root: Path, include_bare_names: bool = False) -> list[Move]:
@@ -104,17 +104,12 @@ def read(diff_args: list[str], repo_root: Path, include_bare_names: bool = False
         output = git.run(diff_args, cwd=repo_root)
     except subprocess.CalledProcessError as error:
         raise UnreadableChange(error.stderr.strip()) from error
+    except FileNotFoundError as error:
+        raise UnreadableChange('git is not installed') from error
 
     moves = []
-    for line in output.splitlines():
-        fields = line.split('\t')
-        status = fields[0]
-
-        if status.startswith('R') and len(fields) == 3:
-            old, new = fields[1], fields[2]
-        elif status.startswith('D') and len(fields) == 2:
-            old, new = fields[1], None
-        else:
+    for status, old, new in git.name_status(output):
+        if not status.startswith(('R', 'D')):
             continue
 
         # A bare filename is too generic to match on within this repo: `main.go`

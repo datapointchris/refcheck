@@ -23,13 +23,11 @@ def installed_version() -> str:
 def installed_commit() -> str | None:
     """The git commit refcheck was built from, when uv installed it from a VCS ref."""
     try:
-        distribution = importlib.metadata.distribution('refcheck')
-        direct_url = distribution.read_text('direct_url.json')
-        if direct_url:
-            return json.loads(direct_url).get('vcs_info', {}).get('commit_id')
-    except Exception:
+        direct_url = importlib.metadata.distribution('refcheck').read_text('direct_url.json')
+        recorded = json.loads(direct_url) if direct_url else {}
+    except (importlib.metadata.PackageNotFoundError, OSError, ValueError):
         return None
-    return None
+    return recorded.get('vcs_info', {}).get('commit_id')
 
 
 def print_version() -> None:

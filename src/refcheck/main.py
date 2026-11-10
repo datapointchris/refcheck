@@ -1,7 +1,10 @@
-"""Command-line interface for refcheck."""
+"""Command-line interface for refcheck: the Typer app and every command on it."""
 
+import os
 import shlex
 import sys
+from dataclasses import asdict
+from enum import StrEnum
 from pathlib import Path
 from typing import Annotated
 
@@ -15,9 +18,14 @@ from typer.core import TyperGroup
 from . import check_document
 from . import moves as moves_module
 from . import registry as registry_module
+from . import repository
 from . import sweep as sweep_module
 from .checker import ReferenceChecker
-from .config import REPO_CONFIG_NAME
+from .config import REPO_CONFIG
+from .config import USER_CONFIG
+from .config import Config
+from .config import ConfigError
+from .config import config_example
 from .config import load_config
 from .names import FLAG_WORD
 from .names import NAME_WORD
@@ -25,20 +33,26 @@ from .names import SUBCOMMAND_WORD
 from .output import PASS
 from .output import count
 from .output import marked
-from .output import print_config
+from .output import print_document
+from .output import print_resolved
 from .output import print_results
+from .output import print_rules
 from .output import print_sweep
+from .resolved_config import resolved_config
 from .rules import LearnRulesError
 from .rules import NotAGitRepository
-from .rules import get_repo_root
+from .rules import RulesFileError
+from .rules import clear_rules
+from .rules import get_rules_path
 from .rules import learn_rules_from_git
+from .rules import learned_checkouts
+from .rules import read_rules
 from .selfupdate import CONFIG as UPDATE_CONFIG
 from .selfupdate import print_version
-from .suggestions import CARGO_BUILD_DIR
 
 HELP = (
     'Find file references that no longer resolve, and path patterns that will break the next time '
-    'something moves. [b]check[/b] is the tool; [b]update[/b] and [b]learn-rules[/b] maintain it. '
+    'something moves. [b]check[/b] is the tool; [b]config[/b], [b]rules[/b] and [b]update[/b] maintain it. '
     'A reference breaks in the file that was not edited, so [b]check[/b] always reads the whole tree '
     'rather than a changeset, and infers the repo from the directory you run it in. Run any command '
     'with --help to see what comes next.'
@@ -96,24 +110,36 @@ CHECK_EXAMPLES = [
         '— after renaming, moving or removing a subcommand, every caller and every mention of it'
     ),
     '[b]refcheck check --moves --json[/b] — the same report as one JSON document on stdout, for a script to read',
-    '[b]refcheck check --show-config[/b] — every exclusion in force, and the layer that set it',
 ]
 
-LEARN_RULES_EXAMPLE = "[b]refcheck learn-rules[/b] — derive pattern rules from git's own rename history"
+CONFIG_EXAMPLES = [
+    '[b]refcheck config show[/b] — every value a run resolves, and the layer that set it, the exclusions among them',
+    '[b]refcheck config example repo > .refcheck.toml[/b] — start a repo config, every key at its default',
+]
+
+RULES_EXAMPLES = [
+    "[b]refcheck rules learn[/b] — write this checkout's rules from git's rename history",
+    '[b]refcheck rules show[/b] — where they are and what they map',
+    '[b]refcheck rules list[/b] — every checkout with rules on this machine, and which are gone',
+]
 
 EPILOG = '\n\n'.join(
     [
         EXAMPLES_HEADING,
         *CHECK_EXAMPLES,
-        LEARN_RULES_EXAMPLE,
+        *CONFIG_EXAMPLES,
+        *RULES_EXAMPLES,
         '[b]refcheck update[/b] — install the latest release',
     ]
 )
 
-LEARN_RULES_EPILOG = '\n\n'.join(
+CONFIG_EPILOG = '\n\n'.join([EXAMPLES_HEADING, *CONFIG_EXAMPLES])
+
+RULES_EPILOG = '\n\n'.join(
     [
         EXAMPLES_HEADING,
-        LEARN_RULES_EXAMPLE,
+        *RULES_EXAMPLES,
+        "[b]refcheck rules clear[/b] — delete this checkout's rules",
         '[b]refcheck check[/b] — a broken source or bash reference then lists what the learned rules say replaced its target',
     ]
 )
@@ -138,13 +164,11 @@ CHECK_EPILOG = '\n\n'.join(
         ),
         '[b]Excluding a repo of its own generated output[/b]',
         (
-            'refcheck excludes what is true of any repository — logs, changelogs, tool caches. '
+            'The built-in exclusions cover what is true of any repository — logs, changelogs, tool caches. '
             'Which of [i]this[/i] repo’s directories hold generated output is a fact only the repo '
-            f'knows, so it says so in [b]{REPO_CONFIG_NAME}[/b] at its root:'
+            'knows, so its repo config says so. [b]refcheck config example repo[/b] prints one, and '
+            '[b]refcheck config show[/b] lists every exclusion in force.'
         ),
-        # Rich reads a bracketed lowercase word as a style tag and drops it. The
-        # backslash keeps the table name in the output.
-        '[b]\\[scan][/b]\n[b]exclude = ["build/reports/**", "*.snapshot.json"][/b]',
         (
             'A file written by a tool names what a path was when the tool ran, so a hit inside one is '
             'history rather than a stale reference. --exclude adds a pattern for one run without '
@@ -192,7 +216,7 @@ CHECK_EPILOG = '\n\n'.join(
             'The bare word in a sentence is not one, because nothing tells the tool from the English word '
             'it may also be — so a name in running prose is left for you to find. A subcommand that kept '
             'the old name in the tool that absorbed it is reported too: read those hits, and exclude them '
-            f'in that repo’s {REPO_CONFIG_NAME}.'
+            'in that repo’s config.'
         ),
     ]
 )
@@ -229,6 +253,7 @@ class RootGroup(TyperGroup):
 
 
 app = typer.Typer(
+    name='refcheck',
     cls=RootGroup,
     add_completion=False,
     no_args_is_help=True,
@@ -284,7 +309,7 @@ def check(
         list[str] | None,
         typer.Option(
             '--exclude',
-            help=f'Also skip paths matching this glob. Repeatable, and added to {REPO_CONFIG_NAME}.',
+            help="Also skip paths matching this glob. Repeatable, and added to the repo config's.",
             rich_help_panel='Filters',
         ),
     ] = None,
@@ -342,12 +367,6 @@ def check(
         bool,
         typer.Option('--no-warn', help='Check only for errors, skipping fragile-path warnings.', rich_help_panel='Severity'),
     ] = False,
-    show_config: Annotated[
-        bool,
-        typer.Option(
-            '--show-config', help='Print the exclusions in force and where each came from, then exit.', rich_help_panel='Maintenance'
-        ),
-    ] = False,
     as_json: Annotated[
         bool,
         typer.Option(
@@ -377,28 +396,9 @@ def check(
 
     # Discovery starts at the repo root rather than the cwd, so narrowing the
     # scan to a subdirectory reads the same declarations as a whole-repo run.
-    config = load_config(root_dir)
-    repo_patterns = list(config.exclude)
+    config = config_or_exit(root_dir)
     flag_patterns = list(exclude or [])
-    config.exclude = [*repo_patterns, *flag_patterns]
-
-    if show_config and as_json:
-        print('refcheck: --json prints the check report, and --show-config prints the exclusions instead of one.', file=sys.stderr)
-        raise typer.Exit(2)
-
-    if show_config:
-        print_config(
-            config.config_path,
-            [
-                ('Excluded directory names', sorted(ReferenceChecker.DEFAULT_EXCLUDES)),
-                ('Build output', [CARGO_BUILD_DIR]),
-                ('Built-in patterns', ReferenceChecker.DEFAULT_EXCLUDE_PATTERNS),
-                ('Test fixtures, scanned under --test-mode', [] if test_mode else ReferenceChecker.TEST_FIXTURE_PATTERNS),
-                (f'{REPO_CONFIG_NAME} [scan] exclude', repo_patterns),
-                ('--exclude', flag_patterns),
-            ],
-        )
-        raise typer.Exit(0)
+    config.exclude = [*config.exclude, *flag_patterns]
 
     # The sweep needs old paths to look for, and the source/bash checks are not
     # one: validating another repo's references is that repo's own run. Saying
@@ -440,6 +440,18 @@ def check(
             raise typer.Exit(2)
         name = ' '.join(name.split())
 
+    # Decided from the directory alone, so a run in the wrong place is refused
+    # before it walks a tree it would then throw away.
+    repo_root = repository.root(root_dir)
+    if (check_moves or moves_since) and repo_root is None:
+        flag = '--moves-since' if moves_since else '--moves'
+        print(
+            f'refcheck: {flag} reads the change from git, and {root_dir} is in no git repository. '
+            'Run it inside the repository the change is in.',
+            file=sys.stderr,
+        )
+        raise typer.Exit(128)
+
     checker = ReferenceChecker(
         root_dir=root_dir,
         search_path=search_path,
@@ -455,7 +467,7 @@ def check(
     # With --registry and no path, the current directory is one more tree to
     # ask only when it is a repository. Run from a home directory, it would
     # walk every file under it before asking any listed repo.
-    walks_here = path is not None or not registry or get_repo_root(root_dir) is not None
+    walks_here = path is not None or not registry or repo_root is not None
     sweep_patterns: dict[str, str] = {}
     found: list[moves_module.Move] = []
     gone_filenames: dict[str, str] = {}
@@ -473,17 +485,7 @@ def check(
     else:
         checker.run_all_checks()
 
-        if check_moves or moves_since:
-            repo_root = get_repo_root(root_dir)
-            if repo_root is None:
-                flag = '--moves-since' if moves_since else '--moves'
-                print(
-                    f'refcheck: {flag} reads the change from git, and {root_dir} is in no git repository. '
-                    'Run it inside the repository the change is in.',
-                    file=sys.stderr,
-                )
-                raise typer.Exit(128)
-
+        if (check_moves or moves_since) and repo_root is not None:
             # A bare name is asked for only when there are other repos to ask,
             # where an absolute path settles it. In this repo it stays out.
             try:
@@ -507,13 +509,17 @@ def check(
 
     swept = None
     if listed:
+        source_main = main_checkout_of(repo_root) if repo_root is not None and not name else None
+
         # A filename the change took out of use is cited alone as often as by
         # path. It is asked only once neither this tree nor any listed repo
         # holds a file of that name, because until then the citation names
-        # something real.
+        # something real. The main checkout of a worktree's repository still
+        # holds what the worktree deleted, so the worktree answers for it.
         candidates, unmatchable = moves_module.old_filenames(found)
         if candidates:
-            roots = [get_repo_root(root_dir) or root_dir, *(repo.path for repo in listed.repos if repo.is_on_disk)]
+            others = [repo.path for repo in listed.repos if repo.is_on_disk and Path(os.path.realpath(repo.path)) != source_main]
+            roots = [repo_root or root_dir, *others]
             held = sweep_module.held_filenames(roots)
             gone_filenames = {old: became for old, became in candidates.items() if old not in held}
             filenames_still_held = sorted(set(candidates) - set(gone_filenames))
@@ -526,9 +532,10 @@ def check(
             file_type,
             test_mode,
             flag_patterns,
-            root_dir,
+            repo_root or root_dir,
             search_path if walks_here else None,
             gone_filenames,
+            source_main,
         )
 
     # A filter that leaves no file passes every check over nothing. Unfiltered,
@@ -550,8 +557,14 @@ def check(
     failed = bool(checker.issues or (swept and swept.issues) or unreached or (checker.strict and checker.warnings))
     moves_asked = check_moves or bool(moves_since)
 
+    if checker.rules_unreadable:
+        print(
+            f"refcheck: {checker.rules_unreadable}, so no learned rule fed a suggestion. 'refcheck rules learn' writes it again.",
+            file=sys.stderr,
+        )
+
     if as_json:
-        check_document.print_document(
+        print_document(
             check_document.document(
                 question='pattern' if pattern else 'name' if name else 'moves' if moves_asked else 'references',
                 pattern=pattern,
@@ -602,14 +615,87 @@ def check(
     raise typer.Exit(int(failed))
 
 
-@app.command(name='learn-rules', epilog=LEARN_RULES_EPILOG, rich_help_panel=MAINTENANCE_PANEL)
-def learn_rules():
-    """Write rules.json from git's rename history, so a miss can suggest what replaced it."""
+config_app = typer.Typer(
+    name='config',
+    no_args_is_help=True,
+    help='Show the values a run resolves from the user config, the repo config and the built-ins, or print an example of either file.',
+    epilog=CONFIG_EPILOG,
+)
+app.add_typer(config_app, rich_help_panel=MAINTENANCE_PANEL)
+
+
+def json_option(schema: str):
+    return typer.Option('--json', help=f'Print one JSON document on stdout, in the shape schemas/{schema} publishes.')
+
+
+@config_app.command(name='show', epilog=CONFIG_EPILOG)
+def config_show(
+    path: Annotated[Path | None, typer.Argument(help='The directory a run would start in. Defaults to the current one.')] = None,
+    as_json: Annotated[bool, json_option('config-show.schema.json')] = False,
+):
+    """Every value a run resolves, and the layer that set it: config files, rules file, history window and exclusions."""
+    start = path.resolve() if path else Path.cwd()
     try:
-        learned = learn_rules_from_git(load_config(Path.cwd()).time_window)
+        rows = resolved_config(start)
+    except ConfigError as error:
+        print(f'refcheck: {error}', file=sys.stderr)
+        raise typer.Exit(2) from error
+    if as_json:
+        print_document({'schema_version': 1, 'start': str(start), 'rows': [asdict(row) for row in rows]})
+    else:
+        print_resolved(rows)
+
+
+class ConfigFile(StrEnum):
+    user = 'user'
+    repo = 'repo'
+
+
+@config_app.command(name='example', epilog=CONFIG_EPILOG)
+def print_config_example(
+    which: Annotated[ConfigFile, typer.Argument(help="user for the per-person config, repo for a repository's own.")],
+):
+    """Print an annotated config file holding every key refcheck reads from it, each at its default."""
+    print(config_example(USER_CONFIG if which is ConfigFile.user else REPO_CONFIG), end='')
+
+
+rules_app = typer.Typer(
+    name='rules',
+    no_args_is_help=True,
+    help=(
+        "Learned rules map what git's rename history says a missing file became, so a broken source or bash "
+        'reference can suggest its replacement. They detect nothing. Each checkout has its own, in the '
+        'state directory rather than the checkout.'
+    ),
+    short_help='Learn, show, list or clear the renames that suggest a fix for a broken reference.',
+    epilog=RULES_EPILOG,
+)
+app.add_typer(rules_app, rich_help_panel=MAINTENANCE_PANEL)
+
+CHECKOUT_HELP = "A checkout as 'refcheck rules list' prints it. Defaults to the repository holding the current directory."
+
+
+def checkout_or_exit(checkout: Path | None) -> Path:
+    if checkout is not None:
+        return Path(os.path.abspath(checkout))
+    found = repository.root(Path.cwd())
+    if found is None:
+        print(
+            f"refcheck: {Path.cwd()} is in no git repository, so it has no rules. Name a checkout, as 'refcheck rules list' prints them.",
+            file=sys.stderr,
+        )
+        raise typer.Exit(128)
+    return found
+
+
+@rules_app.command(name='learn', epilog=RULES_EPILOG)
+def rules_learn():
+    """Write this checkout's rules from git's rename history, replacing any it had. 'refcheck rules show' prints where."""
+    try:
+        learned = learn_rules_from_git(config_or_exit(Path.cwd()).time_window)
     except NotAGitRepository as error:
         print(
-            f"refcheck: learn-rules reads git's rename history, and {error}. Run it inside the repository to learn from.",
+            f"refcheck: rules learn reads git's rename history, and {error}. Run it inside the repository to learn from.",
             file=sys.stderr,
         )
         raise typer.Exit(128) from error
@@ -618,14 +704,61 @@ def learn_rules():
         raise typer.Exit(1) from error
     summary = '\n'.join(
         [
-            f'Generated {learned.path}',
+            f'Wrote {learned.path}',
             f'Time window: {learned.time_window}',
             f'Commits analyzed: {learned.commits_analyzed}',
             f'Directory mappings: {learned.directory_mappings}',
             f'File mappings: {learned.file_mappings}',
         ]
     )
-    print(marked(PASS, summary))
+    print(marked(PASS, summary), file=sys.stderr)
+
+
+@rules_app.command(name='show', epilog=RULES_EPILOG)
+def rules_show(
+    checkout: Annotated[Path | None, typer.Argument(help=CHECKOUT_HELP)] = None,
+    as_json: Annotated[bool, json_option('rules-show.schema.json')] = False,
+):
+    """Where a checkout's rules are, and every mapping in them."""
+    root = checkout_or_exit(checkout)
+    path = get_rules_path(root)
+    try:
+        rules = read_rules(path)
+    except RulesFileError as error:
+        print(f"refcheck: {error}. 'refcheck rules learn' in {root} writes it again.", file=sys.stderr)
+        raise typer.Exit(1) from error
+    if as_json:
+        print_document({'schema_version': 1, 'checkout': str(root), 'rules_file': str(path), 'rules': rules})
+    elif rules is None:
+        print(f"No rules learned for {root}. 'refcheck rules learn' there writes them.")
+    else:
+        print_rules(path, rules)
+
+
+@rules_app.command(name='list', epilog=RULES_EPILOG)
+def rules_list(as_json: Annotated[bool, json_option('rules-list.schema.json')] = False):
+    """Every checkout with rules on this machine, marking the ones no longer there."""
+    learned = [(root, path, (root / '.git').exists()) for root, path in learned_checkouts()]
+    if as_json:
+        rows = [{'checkout': str(root), 'rules_file': str(path), 'checkout_is_there': there} for root, path, there in learned]
+        print_document({'schema_version': 1, 'checkouts': rows})
+        return
+    if not learned:
+        print("No rules learned on this machine. 'refcheck rules learn' in a checkout writes them.")
+    for root, _, there in learned:
+        print(root if there else f"{root}  (gone: 'refcheck rules clear {root}' deletes its rules)")
+
+
+@rules_app.command(name='clear', epilog=RULES_EPILOG)
+def rules_clear(checkout: Annotated[Path | None, typer.Argument(help=CHECKOUT_HELP)] = None):
+    """Delete a checkout's rules, so a broken reference suggests nothing from them until rules learn runs again."""
+    root = checkout_or_exit(checkout)
+    try:
+        deleted = clear_rules(root)
+    except RulesFileError as error:
+        print(f'refcheck: {error}', file=sys.stderr)
+        raise typer.Exit(1) from error
+    print(f'Deleted {deleted}' if deleted else f'No rules learned for {root}, so nothing was deleted.')
 
 
 # Registered last so `check` heads the command list, and by the library rather
@@ -682,6 +815,7 @@ def sweep_other_repos(
     source_root: Path,
     scanned_here: Path | None,
     filenames: dict[str, str],
+    source_main: Path | None,
 ) -> sweep_module.SweepResult:
     """Ask every repo the registries list what a move or a rename left behind, printing nothing."""
     if by_name:
@@ -705,8 +839,28 @@ def sweep_other_repos(
             source_root=source_root,
             filenames=filenames,
             already_scanned=scanned_here,
+            source_main=source_main,
         )
     return swept
+
+
+def config_or_exit(start: Path) -> Config:
+    try:
+        return load_config(start)
+    except ConfigError as error:
+        print(f'refcheck: {error}', file=sys.stderr)
+        raise typer.Exit(2) from error
+
+
+def main_checkout_of(repo_root: Path) -> Path:
+    try:
+        return repository.main_checkout(repo_root)
+    except repository.UnknownMainCheckout as error:
+        print(
+            f'refcheck: git could not say which repository {repo_root} belongs to, so no other repo can be checked against it.\n{error}',
+            file=sys.stderr,
+        )
+        raise typer.Exit(2) from error
 
 
 if __name__ == '__main__':

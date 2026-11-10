@@ -2,6 +2,7 @@
 
 import os
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -35,16 +36,33 @@ def detached_from_the_calling_git():
     os.environ.update(inherited)
 
 
+@pytest.fixture(scope='session', autouse=True)
+def refcheck_under_test():
+    """Put the refcheck installed beside this interpreter first on PATH.
+
+    The CLI tests run `refcheck` the way a user does. Left to PATH alone, a
+    machine with a release installed tests the release instead of this tree.
+    """
+    bin_dir = Path(sys.executable).parent
+    if not (bin_dir / 'refcheck').exists():
+        pytest.exit(f'no refcheck beside {sys.executable}, so the CLI tests would run another build. Run the suite with `uv run pytest`.')
+    original = os.environ['PATH']
+    os.environ['PATH'] = os.pathsep.join([str(bin_dir), original])
+    yield
+    os.environ['PATH'] = original
+
+
 @pytest.fixture(autouse=True)
-def config_follows_home(monkeypatch):
-    """Put the user config and the rules files under whatever HOME a test sets.
+def config_follows_home(monkeypatch, tmp_path_factory):
+    """Put the user config and the rules files under a HOME of the test's own.
 
     The config lives under `$XDG_CONFIG_HOME` and the rules under
-    `$XDG_STATE_HOME` when each is set. A test points HOME at its own directory
-    to keep them there, and an inherited XDG_STATE_HOME would send `learn-rules`
-    to write into the caller's real state. A test that sets either variable
-    itself does so after this fixture runs.
+    `$XDG_STATE_HOME` when each is set, and under HOME otherwise. Any rules
+    command, and any check, may write there, so a test left on the caller's
+    HOME would change the caller's real state. A test that sets HOME or either
+    variable itself does so after this fixture runs.
     """
+    monkeypatch.setenv('HOME', str(tmp_path_factory.mktemp('home')))
     monkeypatch.delenv('XDG_CONFIG_HOME', raising=False)
     monkeypatch.delenv('XDG_STATE_HOME', raising=False)
 
@@ -91,10 +109,13 @@ def test_fixtures(temp_dir):
     src.mkdir()
     docs.mkdir()
 
+    # The variable every script that sets it points at the root, so prose borrows it.
+    (src / 'paths.sh').write_text('#!/usr/bin/env bash\nPROJECT_ROOT="${PROJECT_ROOT:-$(git rev-parse --show-toplevel)}"\n')
+
     (src / 'good.sh').write_text(
         '#!/usr/bin/env bash\n'
-        'source "$DOTFILES_DIR/platforms/common/.local/shell/logging.sh"\n'
-        'bash "$DOTFILES_DIR/install.sh"\n'
+        'source "$PROJECT_ROOT/platforms/common/.local/shell/logging.sh"\n'
+        'bash "$PROJECT_ROOT/install.sh"\n'
         'echo "This file has valid references"\n'
     )
 
@@ -113,7 +134,7 @@ def test_fixtures(temp_dir):
     stale_docs = temp_dir / 'stale-docs'
     stale_docs.mkdir()
     (stale_docs / 'stale-source.md').write_text(
-        '# Architecture\n\nEvery installer starts with:\n\n```bash\nsource "$DOTFILES_DIR/valid/gone.sh"\nbash valid/also-gone.sh\n```\n'
+        '# Architecture\n\nEvery installer starts with:\n\n```bash\nsource "$PROJECT_ROOT/valid/gone.sh"\nbash valid/also-gone.sh\n```\n'
     )
 
     (docs / 'placeholders.md').write_text(
@@ -122,12 +143,12 @@ def test_fixtures(temp_dir):
         '```bash\n'
         'bash install/github-releases/toolname.sh\n'
         'bash install/plugins/{tool}-plugins.sh\n'
-        'source "$DOTFILES_DIR/shell/my-library.sh"\n'
+        'source "$PROJECT_ROOT/shell/my-library.sh"\n'
         'bash script.sh\n'
         '```\n'
     )
 
-    (docs / 'live-source.md').write_text('# Using the helpers\n\n```bash\nsource "$DOTFILES_DIR/valid/lib/helpers.sh"\n```\n')
+    (docs / 'live-source.md').write_text('# Using the helpers\n\n```bash\nsource "$PROJECT_ROOT/valid/lib/helpers.sh"\n```\n')
 
     (docs / 'other-trees.md').write_text(
         '# Shell semantics\n\n'
@@ -231,15 +252,13 @@ def config_dir(temp_dir, monkeypatch):
 def deployed_repo(tmp_path, monkeypatch):
     """A git repository shaped like one refcheck is pointed at in anger.
 
-    Built here rather than read off the machine. Seven tests used to run
-    against whatever `~/dotfiles` happened to hold, which made the suite's
-    result a property of the machine — green where that directory existed,
-    skipped where it did not, and red whenever a tree this repository does not
-    control grew a stale reference of its own.
+    Built here rather than read off the machine, so the suite's result is a
+    property of this repository and not of whatever a directory on the machine
+    holds.
 
-    It carries what those seven need and nothing else: a clean shell directory,
+    It carries a clean shell directory,
     a fixtures directory holding a reference that does not resolve, and a
-    rename in its history for `learn-rules` to read. HOME points at `tmp_path`
+    rename in its history for `rules learn` to read. HOME points at `tmp_path`
     so the rules file lands under the test's own directory instead of the
     caller's config.
     """
@@ -256,14 +275,14 @@ def deployed_repo(tmp_path, monkeypatch):
     git('config', 'user.name', 'Test')
 
     (repo / 'shell' / 'logging.sh').write_text('#!/usr/bin/env bash\necho "logging"\n')
-    (repo / 'apps' / 'run.sh').write_text('#!/usr/bin/env bash\nsource "$DOTFILES_DIR/shell/logging.sh"\n')
+    (repo / 'apps' / 'run.sh').write_text('#!/usr/bin/env bash\nsource "$PROJECT_ROOT/shell/logging.sh"\n')
     git('add', '-A')
     git('commit', '-m', 'add the shell library')
 
-    # A rename in the history is the whole input to learn-rules, so a fixture
+    # A rename in the history is the whole input to rules learn, so a fixture
     # without one exercises the command and asserts on an empty result.
     git('mv', 'shell/logging.sh', 'shell/log.sh')
-    (repo / 'apps' / 'run.sh').write_text('#!/usr/bin/env bash\nsource "$DOTFILES_DIR/shell/log.sh"\n')
+    (repo / 'apps' / 'run.sh').write_text('#!/usr/bin/env bash\nsource "$PROJECT_ROOT/shell/log.sh"\n')
     git('add', '-A')
     git('commit', '-m', 'rename the shell library')
 

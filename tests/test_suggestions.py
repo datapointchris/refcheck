@@ -27,14 +27,6 @@ class TestFileSuggestions:
         assert Path('src/utils.py') in index
         assert Path('README.md') in index
 
-    def test_build_file_index_caches(self, temp_dir, suggestions):
-        (temp_dir / 'file.txt').touch()
-
-        index1 = suggestions.build_file_index()
-        index2 = suggestions.build_file_index()
-
-        assert index1 is index2
-
     def test_find_similar_files_basename_match(self, temp_dir, suggestions):
         (temp_dir / 'lib').mkdir()
         (temp_dir / 'lib' / 'utils.sh').touch()

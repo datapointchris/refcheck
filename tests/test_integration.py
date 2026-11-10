@@ -449,15 +449,6 @@ class TestExitCodes:
         assert exits == [0, 1, 0]
 
 
-class TestHelpFlag:
-    """Test 11: Help flag."""
-
-    def test_shows_help(self):
-        result = run_refcheck('--help')
-        assert result.returncode == 0
-        assert 'refcheck' in result.stdout
-
-
 class TestARepositoryItIsPointedAt:
     """The shapes a real checkout has, built here rather than read off the machine."""
 

@@ -219,8 +219,9 @@ installed metadata through `importlib.metadata`.
 
 The release rewrites the `rev:` line in the README's pre-commit example, so
 that pin is never bumped by hand. A consumer pins a rev, so a change to
-`.pre-commit-hooks.yaml` reaches nobody until they bump.
-`test_the_hook_entry_runs_the_check` pins the hook's entry.
+`.pre-commit-hooks.yaml` reaches nobody until they bump. A test in
+`tests/test_commands.py` runs the hook's entry against a broken `source`, so
+an entry the CLI no longer accepts fails the suite.
 
 The hook sets `pass_filenames: false` and `always_run: true`. A reference
 breaks in the file that was not edited, so a scan of the staged files would

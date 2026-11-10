@@ -8,6 +8,7 @@ disqualifies a bare default from standing in for a command.
 """
 
 import re
+import shlex
 import subprocess
 from pathlib import Path
 
@@ -102,12 +103,14 @@ def test_version_is_a_root_option(tmp_path):
     assert result.stdout.startswith('refcheck ')
 
 
-def test_the_hook_entry_runs_the_check():
-    """Bare refcheck prints help, so the hook has to name the subcommand that scans."""
+def test_the_pre_commit_hook_entry_fails_a_consumer_repo_holding_a_broken_source(tmp_path):
+    """pre-commit runs the manifest's entry as argv in the consumer's root, and bare refcheck only prints help."""
+    hooks = yaml.safe_load((REPO / '.pre-commit-hooks.yaml').read_text())
+    (tmp_path / 'deploy.sh').write_text('#!/usr/bin/env bash\nsource lib/gone.sh\n')
 
-    hooks = yaml.safe_load((Path(__file__).parent.parent / '.pre-commit-hooks.yaml').read_text())
+    result = subprocess.run(shlex.split(hooks[0]['entry']), capture_output=True, text=True, cwd=tmp_path)
 
-    assert hooks[0]['entry'] == 'refcheck check'
+    assert result.returncode == 1, result.stdout + result.stderr
 
 
 # The error panel draws a border down each side of the message and wraps it to

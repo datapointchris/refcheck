@@ -303,6 +303,23 @@ class ReferenceChecker:
         """Check if path is dynamic/runtime-generated."""
         return any(re.search(pattern, path) for pattern in self.DYNAMIC_PATH_PATTERNS)
 
+    def sourced_argument(self, line: str) -> str | None:
+        """The file a `source` or `.` on this line reads into the shell, where its argument names one.
+
+        A quoted argument is taken as written. A bare one has to look like a
+        path, because prose and an echoed sentence put words after "source" too.
+        """
+        match = self.SOURCE_COMMAND.search(line)
+        if match is None:
+            return None
+        quoted = match.group(1) or match.group(3)
+        if quoted:
+            return quoted
+        bare = match.group(2) or match.group(4)
+        if bare and self.PATH_SHAPED_ARGUMENT.search(bare):
+            return bare
+        return None
+
     def runs_on_another_host(self, line: str) -> bool:
         """Check if the line hands its command to a remote or container executor."""
         return any(re.search(pattern, line) for pattern in self.REMOTE_EXECUTION_PATTERNS)
@@ -316,10 +333,10 @@ class ReferenceChecker:
         a usage function echoing the same line back, produced seven reported
         misses from one file — none of them a reference to anything.
 
-        This chooses which guards apply, never whether the line is read. A
-        comment naming a directory the repo has still resolves and is still
-        reported, which is the drift the comment at check_relative_path_fragility
-        was careful to keep scanning for.
+        For a broken reference this chooses which guards apply, never whether
+        the line is read. A comment naming a gone path under a directory the
+        repo has is still reported. Only the working-directory warning skips
+        documentation outright, since nothing documented runs from a directory.
         """
         return file_path.suffix == '.md' or line.lstrip().startswith('#') or bool(self.DOCUMENTING_COMMANDS.match(line))
 
@@ -1410,19 +1427,11 @@ class ReferenceChecker:
                 continue
 
             for line_num, line in self.lines_a_shell_could_run(file_path, lines):
-                match = self.SOURCE_COMMAND.search(line)
-                if not match:
+                source_path = self.sourced_argument(line)
+                if source_path is None:
                     continue
 
                 if self.runs_on_another_host(line):
-                    continue
-
-                quoted, bare = match.group(1) or match.group(3), match.group(2) or match.group(4)
-                source_path = quoted or bare
-                if not source_path:
-                    continue
-
-                if bare and not self.PATH_SHAPED_ARGUMENT.search(bare):
                     continue
 
                 if '$' not in source_path and self.is_dynamic_path(source_path):
@@ -1505,8 +1514,6 @@ class ReferenceChecker:
 
     def check_relative_path_fragility(self):
         """Check if relative paths are fragile to working directory changes."""
-        source_pattern = re.compile(r'source\s+(?:["\']([^"\']+)["\']|([^\s]+))')
-
         for file_path in self.scanning(self.shell_files()):
             rel_path = file_path.relative_to(self.root_dir)
 
@@ -1515,22 +1522,15 @@ class ReferenceChecker:
                 continue
 
             for line_num, line in enumerate(lines, 1):
-                if 'source' not in line:
+                source_path = self.sourced_argument(line)
+                if source_path is None:
                     continue
 
-                match = source_pattern.search(line)
-                if not match:
-                    continue
-
-                source_path = match.group(1) or match.group(2)
-                if not source_path:
-                    continue
-
-                # A commented `source` has no working directory to be
-                # fragile about. Broken-reference errors still scan
-                # comments, because a stale path in a usage example is
-                # exactly the drift this tool exists to catch.
-                if line.strip().startswith('#'):
+                # A documented `source` runs nothing, so it has no working
+                # directory to be fragile about. The broken-reference checks
+                # still read documentation, because a stale path in a usage
+                # example is exactly the drift this tool exists to catch.
+                if self.documents_rather_than_runs(line, file_path) or self.runs_on_another_host(line):
                     continue
 
                 if '$' in source_path or source_path.startswith('/') or self.is_dynamic_path(source_path):

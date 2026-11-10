@@ -170,7 +170,7 @@ def learn_rules_from_git(time_window: str = '6 months') -> LearnedRules:
     top_directory_mappings = {k: v[0] for k, v in sorted_dirs[:20]}
     rules = {
         '_metadata': {
-            'generated': dt.datetime.now().isoformat()[:19],
+            'generated': dt.datetime.now(dt.UTC).isoformat(timespec='seconds'),
             'time_window': time_window,
             'commits_analyzed': len(commits_analyzed),
         },

@@ -19,7 +19,6 @@ refcheck = "refcheck.cli:app"
 
 [dependency-groups]
 dev = [
-    "bandit>=1.7.8",
     "jsonschema>=4.0",
     "mypy>=1.10.0",
     "pre-commit>=4.3.0",
@@ -30,11 +29,6 @@ dev = [
 
 
 # ---------- Tool Configurations ---------- #
-
-
-[tool.bandit]
-exclude_dirs = [".git", ".mypy_cache", ".pytest_cache", ".ruff_cache", ".venv", "tests"]
-skips = ["B404", "B603"]
 
 
 [tool.codespell]
@@ -58,13 +52,8 @@ minversion = "8.0"
 verbosity_assertions = 2
 
 
-[tool.refurb]
-enable_all = true
-
-
 [tool.ruff]
 line-length = 140
-target-version = "py313"
 extend-exclude = ["*.md"]
 
 [tool.ruff.lint]

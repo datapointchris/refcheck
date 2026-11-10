@@ -100,9 +100,9 @@ Anything that leaves the process goes through one named function, and every
 caller uses it. That function is where a timeout, an environment change or a
 test stub attaches, once.
 
-- **git** runs only through `git.run`. `rules.learn_rules_from_git` and
-  `moves.read` call it, and each decides what a failure means for its own
-  question. No other module imports `subprocess` to run a program.
+- **git** runs only through `git.run`. Each caller decides what a failure
+  means for its own question. No other module imports `subprocess` to run a
+  program.
 - **Which repository holds a path** is answered only by `repository.root`,
   which looks for the `.git` entry git's own discovery looks for. It needs no
   process, and inside a hook it answers about the directory asked rather than
@@ -166,8 +166,8 @@ at the git root, so a checkout never inherits an enclosing tree's config.
 `setup`, `lint`, `format`, `typecheck` and `build`.
 
 pre-commit runs `uv run pytest` on any commit staging a file a test imports or
-reads: `src/`, `tests/`, `schemas/`, the README, the hook manifest,
-`pyproject.toml` and `uv.lock`. Git
+reads. The pytest hook's `files:` pattern in `.pre-commit-config.yaml` lists
+them. Git
 exports `GIT_DIR` and `GIT_INDEX_FILE` to its hooks. Both outrank directory
 discovery. Left in place, a fixture's `git init` reinitializes the repository
 being committed, and its `git add` replaces that repository's index. The
@@ -226,11 +226,11 @@ The hook sets `pass_filenames: false` and `always_run: true`. A reference
 breaks in the file that was not edited, so a scan of the staged files would
 miss the whole class of bug.
 
-## Two runtime dependencies, each for one job
+## Each runtime dependency does one job the standard library cannot
 
-Everything else is the standard library. The hook's `language: python` builds
-a virtualenv in every consumer, so a runtime dependency is installed wherever
-the hook runs.
+`[project] dependencies` in `pyproject.toml` is the list. The hook's
+`language: python` builds a virtualenv in every consumer, so each one is
+installed wherever the hook runs.
 
 - **Typer** builds the command tree: the `config` and `rules` namespaces, the
   help panels, and the shared `--json` option. argparse needs subparsers and

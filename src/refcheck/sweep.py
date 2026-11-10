@@ -44,10 +44,10 @@ class RepoResult:
 class SweepResult:
     """The sweep's findings, and what it did not look at.
 
-    Three things stop a listed repo being read: an entry that names no path,
-    a repo marked retired, and a directory that is not on disk. All three end
-    in the same tick unless each is counted, and a reader cannot then tell "no
-    stale references" from "the repo holding one was never opened".
+    A listed repo can go unread without a finding: its entry names no path,
+    it is retired, its directory is not on disk, or its config cannot be taken
+    as written. Each is counted, so a reader can tell "no stale references"
+    from "the repo holding one was never opened".
 
     `source_is_listed` says whether the registry lists the repo the paths
     moved in. Unlisted, that repo is credited under its directory's name.

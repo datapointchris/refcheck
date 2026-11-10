@@ -109,10 +109,10 @@ Exit codes:
 - `0`: clean, or only warnings without `--strict`. A set-aside hit never fails.
 - `1`: an error, a path the run could not read, a listed repo the sweep could
   not reach, or a warning under `--strict`.
-- `2`: refused before the scan. That is a directory that is not there, a
-  `--registry` that cannot be read as one, `--registry` with no question, two
-  questions in one run, a `--name` that is not a name, a range git cannot
-  diff, or a config file refcheck cannot take as written.
+- `2`: refused before the scan, because an input or the repository could not
+  be taken as given. A directory that is not there, a range git cannot diff and
+  a config file refcheck cannot take as written are each refused this way. The
+  message on stderr names which.
 - `128`: `--moves`, `--moves-since`, `rules learn`, or `rules show` or
   `rules clear` with no checkout named, outside a git repository, which is
   git's own code for it.
@@ -572,9 +572,9 @@ A rules file that is there and does not parse is reported, never read as
 empty. `refcheck rules show` exits 1 naming it, and a check prints a notice and
 runs without it.
 
-The user config's `[learn] time_window` sets how far back the history is read,
-six months by default. `refcheck config example user` prints the file with that
-key, and `refcheck config show` names where it is read from.
+The user config's `[learn] time_window` sets how far back the history is read.
+`refcheck config example user` prints the file with that key at its default,
+and `refcheck config show` names where it is read from.
 
 ## Exclusions — history is skipped, and each repo names its own generated output
 
@@ -613,9 +613,9 @@ in, and stops at the git root. A checkout never inherits the config of whatever
 encloses it.
 
 A config file that is not TOML, or that holds a table, key or type refcheck does
-not read, stops the run with exit 2 and names what it found. The repo config
-holds only `[scan] exclude`, and the user config only `[learn] time_window`. A
-swept repo whose config fails this way is listed as unread, which fails the
+not read, stops the run with exit 2 and names what it found.
+`refcheck config example repo` and `refcheck config example user` print every
+key each file takes. A swept repo whose config fails this way is listed as unread, which fails the
 sweep. Read on the defaults instead, it would report what it declared excluded.
 
 ## Development

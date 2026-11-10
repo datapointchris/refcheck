@@ -182,7 +182,7 @@ def write_rules(rules_path: Path, rules: dict) -> None:
         raise LearnRulesError(f'{rules_path} could not be written: {error.strerror}') from error
 
 
-def learn_rules_from_git(time_window: str = '6 months') -> LearnedRules:
+def learn_rules_from_git(time_window: str) -> LearnedRules:
     """
     Scan git history for renames and generate rules.json.
 

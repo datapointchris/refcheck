@@ -21,11 +21,12 @@ from . import registry as registry_module
 from . import repository
 from . import sweep as sweep_module
 from .checker import ReferenceChecker
+from .config import REPO_CONFIG
+from .config import USER_CONFIG
 from .config import Config
 from .config import ConfigError
+from .config import config_example
 from .config import load_config
-from .config import repo_config_example
-from .config import user_config_example
 from .names import FLAG_WORD
 from .names import NAME_WORD
 from .names import SUBCOMMAND_WORD
@@ -651,11 +652,11 @@ class ConfigFile(StrEnum):
 
 
 @config_app.command(name='example', epilog=CONFIG_EPILOG)
-def config_example(
+def print_config_example(
     which: Annotated[ConfigFile, typer.Argument(help="user for the per-person config, repo for a repository's own.")],
 ):
     """Print an annotated config file holding every key refcheck reads from it, each at its default."""
-    print(user_config_example() if which is ConfigFile.user else repo_config_example(), end='')
+    print(config_example(USER_CONFIG if which is ConfigFile.user else REPO_CONFIG), end='')
 
 
 rules_app = typer.Typer(

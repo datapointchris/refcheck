@@ -1,5 +1,6 @@
 """Configuration management for refcheck."""
 
+import json
 import os
 import tomllib
 from dataclasses import dataclass
@@ -10,14 +11,74 @@ from . import repository
 
 REPO_CONFIG_NAME = '.refcheck.toml'
 
+USER_CONFIG = 'user_config'
+REPO_CONFIG = 'repo_config'
+
+
+@dataclass(frozen=True)
+class Key:
+    """One setting refcheck reads, declared once.
+
+    Reading and checking a file, its annotated example and `config show` are
+    each built from these, so a new key is one record.
+    """
+
+    file: str
+    table: str
+    name: str
+    reads_as: str
+    default: str | tuple[str, ...]
+    explanation: tuple[str, ...]
+
+    @property
+    def dotted(self) -> str:
+        return f'{self.table}.{self.name}'
+
+
+TIME_WINDOW = Key(
+    USER_CONFIG,
+    'learn',
+    'time_window',
+    'a string',
+    '6 months',
+    ("How far back `refcheck rules learn` reads git's rename history, in git log --since's terms.",),
+)
+EXCLUDE = Key(
+    REPO_CONFIG,
+    'scan',
+    'exclude',
+    'an array of strings',
+    (),
+    (
+        'Globs matched against the repo-relative path, added to the built-in exclusions',
+        '`refcheck config show` lists. `**` crosses directory separators. Name the',
+        'directories this repo fills with generated output, such as test reports.',
+    ),
+)
+KEYS = (TIME_WINDOW, EXCLUDE)
+
+
+def tables_in(file: str) -> dict[str, dict[str, str]]:
+    """Each table a config file may hold, with each key in it and what that key reads as."""
+    tables: dict[str, dict[str, str]] = {}
+    for key in KEYS:
+        if key.file == file:
+            tables.setdefault(key.table, {})[key.name] = key.reads_as
+    return tables
+
 
 @dataclass
 class Config:
-    """Settings from the user config and from the repository being checked."""
+    """Settings from the user config and from the repository being checked.
 
-    time_window: str = '6 months'
-    exclude: list[str] = field(default_factory=list)
+    `set_by` names the file that set each key, by its dotted name. A key absent
+    from it is at its default.
+    """
+
+    time_window: str = str(TIME_WINDOW.default)
+    exclude: list[str] = field(default_factory=lambda: list(EXCLUDE.default))
     config_path: Path | None = None
+    set_by: dict[str, str] = field(default_factory=dict)
 
 
 def user_config_dir() -> Path:
@@ -74,9 +135,6 @@ class ConfigError(Exception):
         super().__init__(message)
         self.path = path
 
-
-USER_CONFIG_TABLES = {'learn': {'time_window': 'a string'}}
-REPO_CONFIG_TABLES = {'scan': {'exclude': 'an array of strings'}}
 
 READS_AS = {
     'a string': lambda value: isinstance(value, str),
@@ -135,34 +193,23 @@ def read_toml(path: Path, tables: dict[str, dict[str, str]]) -> dict[str, dict]:
     return data
 
 
-def user_config_example() -> str:
-    """An annotated user config holding every key refcheck reads from it, each at its default."""
-    return '\n'.join(
-        [
-            "# refcheck's user config. `refcheck config show` names where it is read from.",
-            '',
-            '[learn]',
-            "# How far back `refcheck rules learn` reads git's rename history, in git log --since's terms.",
-            f'time_window = "{Config().time_window}"',
-            '',
-        ]
-    )
+EXAMPLE_HEADERS = {
+    USER_CONFIG: "# refcheck's user config. `refcheck config show` names where it is read from.",
+    REPO_CONFIG: f"# A repository's refcheck config, read from {REPO_CONFIG_NAME} at the repository's root.",
+}
 
 
-def repo_config_example() -> str:
-    """An annotated repo config holding every key refcheck reads from it, each at its default."""
-    return '\n'.join(
-        [
-            f"# A repository's refcheck config, read from {REPO_CONFIG_NAME} at the repository's root.",
-            '',
-            '[scan]',
-            '# Globs matched against the repo-relative path, added to the built-in exclusions',
-            '# `refcheck config show` lists. `**` crosses directory separators. Name the',
-            '# directories this repo fills with generated output, such as test reports.',
-            f'exclude = {Config().exclude}',
-            '',
-        ]
-    )
+def config_example(file: str) -> str:
+    """An annotated config file holding every key refcheck reads from it, each at its default."""
+    lines = [EXAMPLE_HEADERS[file], '']
+    for table in tables_in(file):
+        lines.append(f'[{table}]')
+        for key in KEYS:
+            if key.file == file and key.table == table:
+                lines.extend(f'# {line}' for line in key.explanation)
+                lines.append(f'{key.name} = {json.dumps(key.default if isinstance(key.default, str) else list(key.default))}')
+        lines.append('')
+    return '\n'.join(lines)
 
 
 def load_config(start: Path | None = None) -> Config:
@@ -171,16 +218,14 @@ def load_config(start: Path | None = None) -> Config:
     A file that is not there leaves its defaults. One that is there and cannot
     be taken as written raises ConfigError.
     """
-    config = Config()
-
-    learn = read_toml(user_config_path(), USER_CONFIG_TABLES).get('learn', {})
-    config.time_window = learn.get('time_window', config.time_window)
-
-    repo_config = find_repo_config(start or Path.cwd())
-    if repo_config is None:
-        return config
-
-    config.config_path = repo_config
-    config.exclude = list(read_toml(repo_config, REPO_CONFIG_TABLES).get('scan', {}).get('exclude', []))
-
+    config = Config(config_path=find_repo_config(start or Path.cwd()))
+    for file, path in ((USER_CONFIG, user_config_path()), (REPO_CONFIG, config.config_path)):
+        if path is None:
+            continue
+        data = read_toml(path, tables_in(file))
+        for key in KEYS:
+            if key.file == file and key.name in data.get(key.table, {}):
+                value = data[key.table][key.name]
+                setattr(config, key.name, list(value) if isinstance(value, list) else value)
+                config.set_by[key.dotted] = file
     return config

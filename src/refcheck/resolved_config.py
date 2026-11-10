@@ -11,10 +11,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import repository
+from .config import KEYS
 from .config import REPO_CONFIG_NAME
-from .config import USER_CONFIG_TABLES
 from .config import load_config
-from .config import read_toml
 from .config import user_config_path
 from .rules import get_rules_path
 from .scan_scope import BUILTIN_LAYERS
@@ -39,7 +38,6 @@ def resolved_config(start: Path) -> list[Resolved]:
     """The rows for a run started in start. Raises ConfigError where a config file cannot be taken as written."""
     config = load_config(start)
     user_config = user_config_path()
-    learn = read_toml(user_config, USER_CONFIG_TABLES).get('learn', {})
     repo_root = repository.root(start)
     rules_file = get_rules_path(repo_root) if repo_root is not None else None
 
@@ -61,10 +59,9 @@ def resolved_config(start: Path) -> list[Resolved]:
             f'the nearest {REPO_CONFIG_NAME} at or above {start}, stopping at the git root',
             None if config.config_path else "none found: 'refcheck config example repo' starts one",
         ),
-        Resolved('learn.time_window', config.time_window, 'user_config' if 'time_window' in learn else 'the default'),
         Resolved('rules_file', str(rules_file) if rules_file else None, from_environment('XDG_STATE_HOME', '~/.local/state'), rules_note),
         *(builtin_row(layer) for layer in BUILTIN_LAYERS),
-        Resolved('scan.exclude', config.exclude, 'repo_config'),
+        *(Resolved(key.dotted, getattr(config, key.name), config.set_by.get(key.dotted, 'the default')) for key in KEYS),
     ]
 
 

@@ -2,24 +2,28 @@
 
 import pytest
 
+from refcheck.config import KEYS
+from refcheck.config import REPO_CONFIG
 from refcheck.config import REPO_CONFIG_NAME
-from refcheck.config import REPO_CONFIG_TABLES
-from refcheck.config import USER_CONFIG_TABLES
+from refcheck.config import USER_CONFIG
 from refcheck.config import ConfigError
+from refcheck.config import config_example
 from refcheck.config import load_config
 from refcheck.config import read_toml
-from refcheck.config import repo_config_example
-from refcheck.config import user_config_example
+from refcheck.config import tables_in
 
 
-@pytest.mark.parametrize(('example', 'tables'), [(user_config_example, USER_CONFIG_TABLES), (repo_config_example, REPO_CONFIG_TABLES)])
-def test_an_example_config_reads_back_with_every_key_its_file_holds(tmp_path, example, tables):
+@pytest.mark.parametrize('file', [USER_CONFIG, REPO_CONFIG])
+def test_an_example_config_reads_back_with_every_key_at_its_default(tmp_path, file):
     path = tmp_path / 'example.toml'
-    path.write_text(example())
+    path.write_text(config_example(file))
 
-    data = read_toml(path, tables)
+    data = read_toml(path, tables_in(file))
 
-    assert {table: set(body) for table, body in data.items()} == {table: set(body) for table, body in tables.items()}
+    declared = [key for key in KEYS if key.file == file]
+    read = [data[key.table][key.name] for key in declared]
+    assert read == [key.default if isinstance(key.default, str) else list(key.default) for key in declared]
+    assert {table: set(body) for table, body in data.items()} == {table: set(body) for table, body in tables_in(file).items()}
 
 
 class TestLoadConfig:

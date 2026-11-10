@@ -10,8 +10,7 @@ from jsonschema import Draft7Validator
 
 from refcheck import moves
 from refcheck.checker import ReferenceChecker
-from refcheck.config import REPO_CONFIG_TABLES
-from refcheck.config import USER_CONFIG_TABLES
+from refcheck.config import KEYS
 from refcheck.config import Config
 from refcheck.config import user_config_path
 from refcheck.rules import get_rules_path
@@ -980,8 +979,7 @@ def test_config_show_has_a_row_for_every_key_and_file_it_resolves(temp_git_repo)
     values = {}
     for row in shown['rows']:
         values.setdefault(row['key'], []).append(row['value'])
-    keys = [f'{table}.{key}' for tables in (USER_CONFIG_TABLES, REPO_CONFIG_TABLES) for table, body in tables.items() for key in body]
-    assert [key for key in keys if key not in values] == []
+    assert [key.dotted for key in KEYS if key.dotted not in values] == []
     assert values['user_config'] == [str(user_config_path())]
     assert values['repo_config'] == [str(temp_git_repo / '.refcheck.toml')]
     assert values['rules_file'] == [str(get_rules_path(temp_git_repo))]

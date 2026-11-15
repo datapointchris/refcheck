@@ -967,7 +967,7 @@ def test_config_show_has_a_row_for_every_key_and_file_it_resolves(temp_git_repo)
 
     shown = published_document(run_refcheck('config', 'show', '--json', cwd=temp_git_repo), 'config-show')
 
-    values = {}
+    values: dict[str, list[str]] = {}
     for row in shown['rows']:
         values.setdefault(row['key'], []).append(row['value'])
     assert [key.dotted for key in KEYS if key.dotted not in values] == []

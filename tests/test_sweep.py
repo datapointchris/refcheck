@@ -38,7 +38,7 @@ def listing(*repos, unusable=()):
 
 
 def names(sweep_result):
-    found = []
+    found: list[str] = []
     for result in sweep_result.with_issues:
         found.extend(f'{result.repo.name}:{issue.file}' for issue in result.issues)
     return found

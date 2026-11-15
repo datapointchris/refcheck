@@ -191,32 +191,13 @@ CHECK_EPILOG = '\n\n'.join(
         ),
         '[b]What --name counts as a use of the name[/b]',
         (
-            'On any line: a code span opening on it, a quoted literal, bold or a table cell holding only '
-            'it, and a path segment such as ~/.local/bin/oldtool or oldtool.db. On a line of code or config, '
-            'also an import, a value that is only it, a list item, and a line opening on it in aligned '
-            'columns. On a line a shell would run, the whole word outside a comment.'
-        ),
-        (
-            'A tool and its subcommand, "tool oldsub", count as the words in order on a line of code, '
-            'config or shell, comments included, with or without an installed path ahead of the tool '
-            '(/usr/bin/tool oldsub). In prose they count in the shapes a single name takes: a code '
-            'span, a quoted literal, bold, or a table cell. On every line they also count as '
-            'consecutive quoted items of an argument list: ["tool", "oldsub"]. A flag between them, '
-            'tool --json oldsub, is not matched.'
-        ),
-        (
-            'A tool and a flag, "tool --oldflag", take the same shapes, and other flags may stand before '
-            'it: tool --json --oldflag. A word between the tool and the flag that is not itself a flag '
-            'is taken for a subcommand, so "tool sub --oldflag", the corrected call, is not matched; '
-            'name a subcommand\'s own flag as "tool sub --oldflag". A flag after a value or a positional '
-            'argument, as in tool --type md --oldflag or tool sub src/ --oldflag, is not matched, because '
-            'nothing tells the value from a subcommand.'
-        ),
-        (
-            'The bare word in a sentence is not one, because nothing tells the tool from the English word '
-            'it may also be — so a name in running prose is left for you to find. A subcommand that kept '
-            'the old name in the tool that absorbed it is reported too: read those hits, and exclude them '
-            'in that repo’s config.'
+            'A hit counts only in a shape the English word never takes, such as a code span, a path '
+            'segment or a shell command, and which shapes count depends on whether the line is prose, '
+            'code or config, or shell. The bare word in a sentence is not one, because nothing tells the '
+            'tool from the English word it may also be, so a name in running prose is left for you to '
+            'find. A subcommand that kept the old name in the tool that absorbed it is reported too: read '
+            'those hits, and exclude them in that repo’s config. The --name section of the refcheck '
+            'README lists every shape for a tool, a subcommand and a flag.'
         ),
     ]
 )

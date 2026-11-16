@@ -53,6 +53,7 @@ from .selfupdate import print_version
 HELP = (
     'Find file references that no longer resolve, and path patterns that will break the next time '
     'something moves. [b]check[/b] is the tool; [b]config[/b], [b]rules[/b] and [b]update[/b] maintain it. '
+    'Bare [b]refcheck[/b] runs [b]refcheck check[/b], and every flag of the scan goes after [b]check[/b]. '
     'A reference breaks in the file that was not edited, so [b]check[/b] always reads the whole tree '
     'rather than a changeset, and infers the repo from the directory you run it in. Run any command '
     'with --help to see what comes next.'
@@ -237,7 +238,6 @@ app = typer.Typer(
     name='refcheck',
     cls=RootGroup,
     add_completion=False,
-    no_args_is_help=True,
     help=HELP,
     epilog=EPILOG,
     context_settings={'help_option_names': ['-h', '--help']},
@@ -250,8 +250,9 @@ def version_callback(value: bool) -> None:
         raise typer.Exit(0)
 
 
-@app.callback()
+@app.callback(invoke_without_command=True)
 def root(
+    ctx: typer.Context,
     version: Annotated[
         bool,
         typer.Option(
@@ -263,6 +264,8 @@ def root(
     ] = False,
 ):
     """Options that belong to refcheck itself rather than to any one of its commands."""
+    if ctx.invoked_subcommand is None:
+        ctx.invoke(check)
 
 
 @app.command(help=CHECK_HELP, short_help=CHECK_SHORT_HELP, epilog=CHECK_EPILOG, rich_help_panel=CHECK_PANEL)

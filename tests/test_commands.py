@@ -3,8 +3,8 @@
 Self-update is a subcommand rather than a flag for the same reason `check` is
 a verb: it does work of its own and modifies none of the others, and
 `--update` would read as a modifier of whichever command it sat on. Bare
-`refcheck` prints help because the scan takes flags of its own, which is what
-disqualifies a bare default from standing in for a command.
+`refcheck` runs `check`, the one read the tool exists for, and every flag of the
+scan stays on `check`.
 """
 
 import re
@@ -12,6 +12,7 @@ import shlex
 import subprocess
 from pathlib import Path
 
+import pytest
 import typer
 import yaml
 
@@ -36,18 +37,11 @@ def run(*args, cwd=None) -> subprocess.CompletedProcess:
     )
 
 
-def test_bare_invocation_shows_help(tmp_path):
-    """Not a scan of the current directory, which is what a bare default would run."""
-    result = run(cwd=tmp_path)
-
-    assert 'Usage: refcheck' in result.stdout
-    assert 'check' in result.stdout
-
-
-def test_check_is_the_verb_that_scans(tmp_path):
+@pytest.mark.parametrize('args', [('check',), ()], ids=['check', 'bare'])
+def test_check_and_bare_refcheck_scan(tmp_path, args):
     (tmp_path / 'run.sh').write_text('#!/usr/bin/env bash\nsource lib/gone.sh\n')
 
-    result = run('check', cwd=tmp_path)
+    result = run(*args, cwd=tmp_path)
 
     assert result.returncode == 1
     assert 'lib/gone.sh' in result.stdout
@@ -104,7 +98,7 @@ def test_version_is_a_root_option(tmp_path):
 
 
 def test_the_pre_commit_hook_entry_fails_a_consumer_repo_holding_a_broken_source(tmp_path):
-    """pre-commit runs the manifest's entry as argv in the consumer's root, and bare refcheck only prints help."""
+    """pre-commit runs the manifest's entry as argv in the consumer's root."""
     hooks = yaml.safe_load((REPO / '.pre-commit-hooks.yaml').read_text())
     (tmp_path / 'deploy.sh').write_text('#!/usr/bin/env bash\nsource lib/gone.sh\n')
 

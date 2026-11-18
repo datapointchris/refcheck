@@ -212,6 +212,7 @@ class ReferenceChecker:
         # nothing, so the command needs the count to tell that from a clean run.
         self.files_scanned: set[Path] = set()
         self._found_files: dict[str | None, list[Path]] = {}
+        self._lines: dict[Path, list[str] | None] = {}
         self._rules: dict | None = None
         self._rules_path: Path | None = None
         self.rules_unreadable: str | None = None
@@ -539,8 +540,15 @@ class ReferenceChecker:
         if entry not in self.unreadable:
             self.unreadable.append(entry)
 
-    def lines_of(self, file_path: Path) -> list[str] | None:
+    def lines_of(self, file_path: Path, keep: bool = True) -> list[str] | None:
         """The file's lines, or None when it could not be read as text.
+
+        Read once per checker. A shell file is opened for its shebang, its
+        variable assignments, its `source` lines, its script calls and both
+        fragile-path warnings, and each of those asks here. `keep=False` is for
+        a scan that reads every text file once and nothing after it: it uses a
+        copy already held but stores none, so a whole tree's text is never
+        held at once.
 
         The one place a scanned file is read as text, so `encoding` and `errors`
         are decided once for every check that reads one. `ScanScope`'s binary
@@ -562,6 +570,14 @@ class ReferenceChecker:
         churns: a file that lasts only as long as its process would otherwise
         fail a run that missed nothing.
         """
+        if file_path in self._lines:
+            return self._lines[file_path]
+        lines = self._read_lines(file_path)
+        if keep:
+            self._lines[file_path] = lines
+        return lines
+
+    def _read_lines(self, file_path: Path) -> list[str] | None:
         try:
             return file_path.read_text(encoding='utf-8').splitlines(keepends=True)
         except FileNotFoundError:
@@ -1072,7 +1088,7 @@ class ReferenceChecker:
             return
 
         for file_path in self.scanning(self.text_search_files()):
-            lines = self.lines_of(file_path)
+            lines = self.lines_of(file_path, keep=False)
             if lines is None:
                 continue
 
@@ -1155,7 +1171,7 @@ class ReferenceChecker:
         set_aside: list[SetAside] = []
 
         for file_path in self.scanning(self.text_search_files()):
-            lines = self.lines_of(file_path)
+            lines = self.lines_of(file_path, keep=False)
             if lines is None:
                 continue
 

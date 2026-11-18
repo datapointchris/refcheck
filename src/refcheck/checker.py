@@ -3,6 +3,7 @@
 import os
 import re
 from collections.abc import Callable
+from collections.abc import Iterable
 from collections.abc import Iterator
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -52,6 +53,33 @@ class MovedIn:
     name: str
     home: Path
     checkout: Path
+
+
+def any_of(literals: Iterable[str]) -> re.Pattern[str]:
+    """One pattern whose search finds any of these strings, built as a trie of their characters.
+
+    `re` tries a flat alternation branch by branch at every position, so a line
+    costs as much as the list is long when the strings share no prefix, as the
+    paths a sweep carries from all over a repo often do. As a trie, each step
+    offers only the characters that can come next.
+    """
+    trie: dict[str, dict] = {}
+    for literal in literals:
+        node = trie
+        for char in literal:
+            node = node.setdefault(char, {})
+        node[''] = {}
+    return re.compile(_trie_source(trie))
+
+
+def _trie_source(node: dict[str, dict]) -> str:
+    branches = [re.escape(char) + _trie_source(child) for char, child in node.items() if char]
+    if not branches:
+        return ''
+    ends_here = '' in node
+    if len(branches) == 1 and not ends_here:
+        return branches[0]
+    return '(?:' + '|'.join(branches) + ')' + ('?' if ends_here else '')
 
 
 def block_around(lines: Sequence[str], index: int) -> Sequence[str]:
@@ -1011,9 +1039,10 @@ class ReferenceChecker:
         """Check for several old paths in one walk of the tree.
 
         A commit that moves a directory stages a rename per file in it, and
-        --moves turns each into a pattern. One walk serves them all, so the cost
-        does not grow with the size of the move. The large refactor is exactly
-        the one worth checking.
+        --moves turns each into a pattern. One walk serves them all, and a line
+        is first tested against every pattern at once, so only a line naming a
+        moved path is asked about each one. The large refactor is exactly the
+        one worth checking.
 
         `replacements` maps a pattern to the path it became, which git records
         for a rename and a typed-in --pattern cannot supply. It decides only
@@ -1195,6 +1224,12 @@ class ReferenceChecker:
 
         set_aside: list[SetAside] = []
 
+        # One search says whether a line holds any pattern, so a line holding
+        # none costs about the same however many paths moved. A line it matches
+        # is asked of each pattern, because one moved path can sit inside
+        # another and a search reports only one.
+        holds_any = any_of(patterns)
+
         for file_path in self.scanning(self.text_search_files()):
             lines = self.lines_of(file_path, keep=False)
             if lines is None:
@@ -1206,6 +1241,8 @@ class ReferenceChecker:
                 continue
 
             for line_num, line in enumerate(lines, 1):
+                if holds_any.search(line) is None:
+                    continue
                 for pattern, description in patterns.items():
                     if pattern not in line:
                         continue

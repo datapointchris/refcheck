@@ -213,6 +213,7 @@ class ReferenceChecker:
         self.files_scanned: set[Path] = set()
         self._found_files: dict[str | None, list[Path]] = {}
         self._lines: dict[Path, list[str] | None] = {}
+        self._existing: dict[Path, bool] = {}
         self._rules: dict | None = None
         self._rules_path: Path | None = None
         self.rules_unreadable: str | None = None
@@ -739,6 +740,17 @@ class ReferenceChecker:
             return None
         return Path(expanded)
 
+    def _exists(self, path: Path) -> bool:
+        """Whether the path is there, asked of the kernel once per checker.
+
+        A pattern scan resolves the same token on every line that names it, and
+        a run reads the tree rather than changing it, so one answer serves them all.
+        """
+        known = self._existing.get(path)
+        if known is None:
+            known = self._existing[path] = path.exists()
+        return known
+
     def _resolved_hits(self, pattern: str, line: str, from_file: Path | None = None) -> list[tuple[str, Path]] | None:
         """Every hit on this line paired with the path it resolves to, or None.
 
@@ -790,7 +802,7 @@ class ReferenceChecker:
             # just repaired. Falling through on a miss keeps the root-relative
             # candidates below, which answer for a variable pointing elsewhere.
             target = self._on_this_filesystem(token)
-            if target is not None and target.exists():
+            if target is not None and self._exists(target):
                 resolved.append((token, target))
                 continue
 
@@ -802,12 +814,13 @@ class ReferenceChecker:
             # `$REPO_ROOT/cluster-hosts.json` is the corrected reference rather
             # than a stale one. The variable is dropped and the remainder is
             # resolved, so a live name is found and `$REPO_ROOT/hosts.json` still
-            # resolves to nothing and is still reported.
-            candidates = [token, self.VARIABLE_ROOT.sub('', token, count=1)]
+            # resolves to nothing and is still reported. A token with no variable
+            # is the same string both ways, so it is tried once.
+            candidates = dict.fromkeys([token, self.VARIABLE_ROOT.sub('', token, count=1)])
             found = None
             for base in bases:
                 for candidate in candidates:
-                    if candidate and (base / candidate).exists():
+                    if candidate and self._exists(base / candidate):
                         found = base / candidate
                         break
                 if found is not None:

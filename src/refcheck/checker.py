@@ -80,6 +80,7 @@ class ReferenceChecker:
         r'\bssh\s+\S+',
         r'\bsu\s+-\s*\S*\s+-c\b',
     ]
+    RUNS_ON_ANOTHER_HOST = re.compile('|'.join(f'(?:{pattern})' for pattern in REMOTE_EXECUTION_PATTERNS))
 
     DYNAMIC_PATH_PATTERNS = [
         r'^\$',
@@ -245,7 +246,7 @@ class ReferenceChecker:
 
     def runs_on_another_host(self, line: str) -> bool:
         """Check if the line hands its command to a remote or container executor."""
-        return any(re.search(pattern, line) for pattern in self.REMOTE_EXECUTION_PATTERNS)
+        return self.RUNS_ON_ANOTHER_HOST.search(line) is not None
 
     def documents_rather_than_runs(self, line: str, file_path: Path) -> bool:
         """Whether this occurrence is showing a command rather than issuing one.
@@ -1437,12 +1438,13 @@ class ReferenceChecker:
                 if 'bash' not in line and 'sh' not in line:
                     continue
 
-                if self.runs_on_another_host(line):
+                invocations = list(script_pattern.finditer(line))
+                if not invocations or self.runs_on_another_host(line):
                     continue
 
                 documentation = self.documents_rather_than_runs(line, file_path)
 
-                for match in script_pattern.finditer(line):
+                for match in invocations:
                     script_path = match.group(1).rstrip('"\'')
 
                     if not script_path or self.is_dynamic_path(script_path):

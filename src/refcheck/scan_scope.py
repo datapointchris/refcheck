@@ -1,9 +1,13 @@
 """Which files and directories a scan reads."""
 
+import re
+from collections.abc import Iterable
 from dataclasses import dataclass
-from fnmatch import fnmatch
+from fnmatch import translate as fnmatch_translate
+from glob import translate as glob_translate
 from itertools import chain
 from pathlib import Path
+from pathlib import PurePosixPath
 
 EXCLUDED_DIRECTORY_NAMES = frozenset(
     {
@@ -116,6 +120,24 @@ def is_cargo_build_dir(directory: Path) -> bool:
     return directory.name == 'target' and (directory.parent / 'Cargo.toml').is_file()
 
 
+def _right_anchored(pattern: str) -> str:
+    """A regex matching a posix path wherever `Path.match` matches it against this relative pattern.
+
+    `Path.match` compares components from the right: each `*` stays inside one
+    component, `**` reads as `*`, and a leading dot is matched like any other
+    character. The pattern is normalized the way `Path` reads it, so `./a//b/`
+    is `a/b`.
+    """
+    normalized = '/'.join(PurePosixPath(pattern).parts)
+    return r'(?s:.*/)?' + glob_translate(normalized, recursive=False, include_hidden=True, seps='/')
+
+
+def _alternation(regexes: Iterable[str]) -> re.Pattern[str]:
+    """One compiled pattern matching where any of these matches. None of them matches nothing."""
+    joined = '|'.join(f'(?:{regex})' for regex in regexes)
+    return re.compile(joined or r'(?!)')
+
+
 class ScanScope:
     """The exclusions one tree is scanned under, asked of repo-relative paths."""
 
@@ -125,6 +147,8 @@ class ScanScope:
         self.root_dir = root_dir
         self.exclude_dirs = exclude_dirs
         self.exclude_patterns = exclude_patterns
+        self._by_name = _alternation(_right_anchored(pattern) for pattern in exclude_patterns if not pattern.startswith('/'))
+        self._by_path = _alternation(fnmatch_translate(pattern) for pattern in exclude_patterns)
 
     @classmethod
     def for_tree(cls, root_dir: Path, repo_patterns: list[str], test_mode: bool = False) -> 'ScanScope':
@@ -155,7 +179,7 @@ class ScanScope:
             return True
         if is_cargo_build_dir(self.root_dir / rel_path):
             return True
-        return any(fnmatch(f'{rel_path.as_posix()}/', pattern) for pattern in self.exclude_patterns)
+        return self._by_path.match(f'{rel_path.as_posix()}/') is not None
 
     def should_skip_file(self, rel_path: Path) -> bool:
         """Whether a file is outside what the scan reads, by its place, its name or its content."""
@@ -187,9 +211,12 @@ class ScanScope:
         `build/reports/top.json` while scanning `build/reports/a/b.json`
         right beside it. fnmatch over the posix string is anchored at the root and
         lets `*` cross separators, which is what a subtree pattern means.
+
+        Each reading is compiled once into one alternation, because every file
+        the walk yields is asked against every pattern.
         """
         posix = rel_path.as_posix()
-        return any(rel_path.match(pattern) or fnmatch(posix, pattern) for pattern in self.exclude_patterns)
+        return self._by_name.match(posix) is not None or self._by_path.match(posix) is not None
 
     @staticmethod
     def _holds_binary_content(file_path: Path) -> bool:

@@ -147,12 +147,14 @@ repos from another's.
 there is the one list of built-in exclusions: the checker builds its scope from
 it, `config show` prints it, and the sweep's filename index skips its directory
 names.
-`_matches_exclusion` tries `Path.match` and `fnmatch` on every pattern.
-`Path.match` is right-anchored, which fits `*.log` and `CHANGELOG.md`. It reads
-`**` as one component. Alone, it lets `build/reports/**` exclude
-`build/reports/top.json` and scan `build/reports/a/b.json`. `fnmatch` over the
-POSIX path covers subtrees. `should_skip_directory` matches a subtree pattern
-with a trailing slash, so `build/**` prunes `build` itself.
+`_matches_exclusion` reads every pattern two ways, `Path.match`'s and
+`fnmatch`'s. Each way is compiled once into one alternation, because every
+file the walk yields is asked against every pattern. `Path.match` is
+right-anchored, which fits `*.log` and `CHANGELOG.md`. It reads `**` as one
+component. Alone, it lets `build/reports/**` exclude `build/reports/top.json`
+and scan `build/reports/a/b.json`. `fnmatch` over the POSIX path covers
+subtrees. `should_skip_directory` matches a subtree pattern with a trailing
+slash, so `build/**` prunes `build` itself.
 
 The built-in list holds what is true of any repository: logs, changelogs, tool
 caches, backups, coverage output and recorded fixtures. Each records what a

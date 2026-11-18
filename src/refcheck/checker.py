@@ -215,6 +215,7 @@ class ReferenceChecker:
         self._found_files: dict[str | None, list[Path]] = {}
         self._lines: dict[Path, list[str] | None] = {}
         self._existing: dict[Path, bool] = {}
+        self._similar: dict[str, list[str]] = {}
         self._rules: dict | None = None
         self._rules_path: Path | None = None
         self.rules_unreadable: str | None = None
@@ -481,9 +482,14 @@ class ReferenceChecker:
         return self._rules
 
     def find_similar_files(self, missing_path: str) -> list[str]:
-        """Find files that might be renamed versions of missing_path."""
-        rules = self.load_rules()
-        return self._suggestions.find_similar_files(missing_path, rules)
+        """Find files that might be renamed versions of missing_path.
+
+        Answered once per path, since the rules and the tree are fixed for the
+        run and one missing library is often cited from many scripts.
+        """
+        if missing_path not in self._similar:
+            self._similar[missing_path] = self._suggestions.find_similar_files(missing_path, self.load_rules())
+        return list(self._similar[missing_path])
 
     def reference_check_files(self) -> list[Path]:
         """Files whose source/script references get validated.

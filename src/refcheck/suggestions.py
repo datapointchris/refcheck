@@ -16,12 +16,25 @@ class FileSuggestions:
         self.scope = scope
         self._list_files = list_files or self._walk
         self._file_index: list[Path] | None = None
+        self._by_name: dict[str, list[Path]] | None = None
 
     def build_file_index(self) -> list[Path]:
         """Build index of all files in repo for suggestion matching."""
         if self._file_index is None:
             self._file_index = self._list_files()
         return self._file_index
+
+    def files_named(self) -> dict[str, list[Path]]:
+        """Each basename in the index with the files carrying it, in index order.
+
+        Every broken reference asks for a name, so the index is grouped once
+        rather than scanned once per question.
+        """
+        if self._by_name is None:
+            self._by_name = {}
+            for file_path in self.build_file_index():
+                self._by_name.setdefault(file_path.name, []).append(file_path)
+        return self._by_name
 
     def _walk(self) -> list[Path]:
         """Every file under the root the scope reads, repo-relative. An excluded directory is never entered."""
@@ -45,7 +58,7 @@ class FileSuggestions:
         3. Fuzzy matches using difflib
         4. Known mappings from rules file
         """
-        file_index = self.build_file_index()
+        by_name = self.files_named()
         basename = Path(missing_path).name
         suggestions = []
         seen_paths: set[str] = set()
@@ -65,14 +78,12 @@ class FileSuggestions:
         # Check file mappings from rules
         if basename in rules.get('file_mappings', {}):
             new_name = rules['file_mappings'][basename]
-            for f in file_index:
-                if f.name == new_name:
-                    add_suggestion(str(f), 'known mapping')
+            for f in by_name.get(new_name, []):
+                add_suggestion(str(f), 'known mapping')
 
         # 1. Exact basename match
-        for f in file_index:
-            if f.name == basename:
-                add_suggestion(str(f), 'basename match')
+        for f in by_name.get(basename, []):
+            add_suggestion(str(f), 'basename match')
 
         # 2. Transform variants (hyphen <-> underscore)
         variants = {
@@ -84,19 +95,16 @@ class FileSuggestions:
         }
         variants.discard(basename)
 
-        for f in file_index:
-            if f.name in variants:
-                add_suggestion(str(f), 'name variant')
+        # The index is sorted, so sorting the variants' files keeps index order.
+        for f in sorted(f for variant in variants for f in by_name.get(variant, [])):
+            add_suggestion(str(f), 'name variant')
 
-        # 3. Fuzzy match using difflib (only if few suggestions so far)
+        # 3. Fuzzy match using difflib (only if few suggestions so far).
+        # Over distinct names, so three files sharing one name take one slot.
         if len(suggestions) < 3:
-            all_names = [f.name for f in file_index]
-            matches = get_close_matches(basename, all_names, cutoff=0.8)
+            matches = get_close_matches(basename, list(by_name), cutoff=0.8)
             for m in matches:
                 if m != basename and m not in variants:
-                    for f in file_index:
-                        if f.name == m:
-                            add_suggestion(str(f), 'similar name')
-                            break
+                    add_suggestion(str(by_name[m][0]), 'similar name')
 
         return suggestions[:5]

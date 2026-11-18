@@ -1,5 +1,6 @@
 """File similarity and suggestion finding."""
 
+from collections.abc import Callable
 from difflib import get_close_matches
 from pathlib import Path
 
@@ -9,28 +10,30 @@ from .scan_scope import ScanScope
 class FileSuggestions:
     """Find similar files for missing references."""
 
-    def __init__(self, scope: ScanScope):
+    def __init__(self, scope: ScanScope, list_files: Callable[[], list[Path]] | None = None):
+        """`list_files` gives the repo-relative files a scan of the whole tree already found, so they are not walked and judged again."""
         self.root_dir = scope.root_dir
         self.scope = scope
+        self._list_files = list_files or self._walk
         self._file_index: list[Path] | None = None
 
     def build_file_index(self) -> list[Path]:
         """Build index of all files in repo for suggestion matching."""
-        if self._file_index is not None:
-            return self._file_index
-
-        self._file_index = []
-        for file_path in self.root_dir.rglob('*'):
-            if not file_path.is_file():
-                continue
-            try:
-                rel_path = file_path.relative_to(self.root_dir)
-            except ValueError:
-                continue
-            if self.scope.should_skip_file(rel_path):
-                continue
-            self._file_index.append(rel_path)
+        if self._file_index is None:
+            self._file_index = self._list_files()
         return self._file_index
+
+    def _walk(self) -> list[Path]:
+        """Every file under the root the scope reads, repo-relative. An excluded directory is never entered."""
+        files = []
+        for directory, directory_names, file_names in self.root_dir.walk():
+            rel_dir = directory.relative_to(self.root_dir)
+            directory_names[:] = [name for name in directory_names if not self.scope.should_skip_directory(rel_dir / name)]
+            for name in file_names:
+                rel_path = rel_dir / name
+                if (directory / name).is_file() and not self.scope.should_skip_file(rel_path):
+                    files.append(rel_path)
+        return sorted(files)
 
     def find_similar_files(self, missing_path: str, rules: dict) -> list[str]:
         """

@@ -221,7 +221,12 @@ class ReferenceChecker:
         self._borrowed: dict[str, str] | None = None
 
         self.scope = ScanScope.for_tree(self.root_dir, self.config.exclude, test_mode=test_mode)
-        self._suggestions = FileSuggestions(self.scope)
+        reads_whole_tree = self.search_path == self.root_dir and self.file_type is None
+        self._suggestions = FileSuggestions(self.scope, self._scanned_tree if reads_whole_tree else None)
+
+    def _scanned_tree(self) -> list[Path]:
+        """The files the walk found, repo-relative, for a run whose walk covers the whole tree."""
+        return [file_path.relative_to(self.root_dir) for file_path in self.find_files()]
 
     def is_dynamic_path(self, path: str) -> bool:
         """Check if path is dynamic/runtime-generated."""

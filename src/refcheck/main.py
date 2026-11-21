@@ -9,8 +9,6 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
-from pyselfupdate import notify
-from pyselfupdate.typercmd import add_update_command
 from typer._click.core import Context
 from typer._click.exceptions import NoSuchOption
 from typer.core import TyperGroup
@@ -47,8 +45,8 @@ from .rules import get_rules_path
 from .rules import learn_rules_from_git
 from .rules import learned_checkouts
 from .rules import read_rules
-from .selfupdate import CONFIG as UPDATE_CONFIG
 from .selfupdate import print_version
+from .selfupdate import update_config
 
 HELP = (
     'Find file references that no longer resolve, and path patterns that will break the next time '
@@ -135,6 +133,15 @@ EPILOG = '\n\n'.join(
 )
 
 CONFIG_EPILOG = '\n\n'.join([EXAMPLES_HEADING, *CONFIG_EXAMPLES])
+
+UPDATE_EPILOG = '\n\n'.join(
+    [
+        EXAMPLES_HEADING,
+        '[b]refcheck update[/b] — install the newest release and list its commits',
+        '[b]refcheck update --check[/b] — only report whether a newer one exists',
+        '[b]refcheck update --no-changelog[/b] — install it without listing its commits',
+    ]
+)
 
 RULES_EPILOG = '\n\n'.join(
     [
@@ -594,7 +601,10 @@ def check(
             if filenames_still_held or unmatchable:
                 print()
 
-    notify(UPDATE_CONFIG)
+    # 444ms → 340ms on `refcheck --help`, 2026-11-21
+    from pyselfupdate import notify
+
+    notify(update_config())
 
     raise typer.Exit(int(failed))
 
@@ -745,12 +755,20 @@ def rules_clear(checkout: Annotated[Path | None, typer.Argument(help=CHECKOUT_HE
     print(f'Deleted {deleted}' if deleted else f'No rules learned for {root}, so nothing was deleted.')
 
 
-# Registered last so `check` heads the command list, and by the library rather
-# than by hand: the step order inside run_update is load-bearing, so calling it
-# is what keeps the update path the same as every other consumer's.
-add_update_command(app, UPDATE_CONFIG)
-# The library takes no panel, so the command it just registered is placed here.
-app.registered_commands[-1].rich_help_panel = MAINTENANCE_PANEL
+# Registered last so `check` heads the command list. The command is declared
+# here rather than by pyselfupdate's add_update_command, which needs the library
+# imported to build it, so every command would load the HTTP and TLS stack. The
+# body calls run_update, whose step order is load-bearing, so the update path
+# stays the same as every other consumer's.
+@app.command(name='update', help='Update refcheck to the latest release.', epilog=UPDATE_EPILOG, rich_help_panel=MAINTENANCE_PANEL)
+def update(
+    check_only: Annotated[bool, typer.Option('--check', help='Report whether an update is available without installing it.')] = False,
+    skip_changelog: Annotated[bool, typer.Option('--no-changelog', help='Do not list the commits between versions.')] = False,
+) -> None:
+    # 444ms → 340ms on `refcheck --help`, 2026-11-21
+    from pyselfupdate.typercmd import run_update
+
+    run_update(update_config(), check_only=check_only, skip_changelog=skip_changelog)
 
 
 def clean_claim(pattern: str | None, name: str | None, moved: list[moves_module.Move] | None, moves_since: str | None) -> str:

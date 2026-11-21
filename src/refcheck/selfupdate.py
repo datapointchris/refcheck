@@ -7,10 +7,22 @@ network happens before the install -- so it is imported, never reimplemented.
 
 import importlib.metadata
 import json
+from typing import TYPE_CHECKING
 
-from pyselfupdate import Config
+if TYPE_CHECKING:
+    import pyselfupdate
 
-CONFIG = Config(tool='refcheck', owner='datapointchris')
+
+def update_config() -> 'pyselfupdate.Config':
+    """What `update` installs and what the release notice compares against.
+
+    One source, so the notice cannot name a release the update command would
+    not install. Importing pyselfupdate loads the HTTP and TLS stack, so it is
+    imported here, when an update path runs, rather than by every command."""
+    # 444ms → 340ms on `refcheck --help`, 2026-11-21
+    import pyselfupdate
+
+    return pyselfupdate.Config(tool='refcheck', owner='datapointchris')
 
 
 def installed_version() -> str:

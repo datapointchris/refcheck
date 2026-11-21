@@ -113,7 +113,9 @@ test stub attaches, once.
   `rules._adopt_the_earlier_layout` moves an earlier release's copy into place.
   Every other file is read.
 - **The network** is reached only by pyselfupdate: the `update` command and
-  the once-a-day release check `notify` runs at a terminal.
+  the once-a-day release check `notify` runs at a terminal. Importing
+  pyselfupdate loads the HTTP and TLS stack, so it is imported inside those two
+  paths and `selfupdate.update_config`, never at the top of a module.
 
 ## Existence and containment take different forms of one path
 
